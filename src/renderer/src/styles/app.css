@@ -1192,6 +1192,27 @@
   gap: 5px;
 }
 
+/* approval bar under the transcript */
+.approval-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
+  animation: fade-in-up 160ms var(--ease-out);
+}
+.approval-bar .t-sm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-1);
+}
+
 /* composer */
 .composer-wrap {
   flex: none;

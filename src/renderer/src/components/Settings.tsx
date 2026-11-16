@@ -202,6 +202,26 @@ export function SettingsDialog(): React.ReactElement {
                   ))}
                 </div>
               </Field>
+              <Field label="Always-allowed tools" hint="Raised by the 'always' button in an approval prompt. These skip the prompt until you clear them.">
+                {settings.allowedTools?.length ? (
+                  <div className="row gap-2 wrap">
+                    {settings.allowedTools.map((t) => (
+                      <span key={t} className="ctx-chip">
+                        <Icon name="check" size={10} className="ok" />
+                        {t}
+                        <button onClick={() => void setSettings({ allowedTools: settings.allowedTools.filter((x) => x !== t) })}>
+                          <Icon name="close" size={9} />
+                        </button>
+                      </span>
+                    ))}
+                    <button className="btn ghost sm" onClick={() => void setSettings({ allowedTools: [] })}>
+                      clear all
+                    </button>
+                  </div>
+                ) : (
+                  <span className="t-xs faint">Nothing yet — every write, edit and command asks first.</span>
+                )}
+              </Field>
               <Row label="Max agent steps" hint="Tool-call rounds before the run stops. Default 40.">
                 <div className="row gap-3">
                   <input

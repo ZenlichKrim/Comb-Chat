@@ -14,7 +14,7 @@ import type {
 import { streamChat, toApiHistory, type LlmMessage } from './llm'
 import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, type ToolContext } from './tools'
 import { IGNORED_DIRS, toRel } from './fsops'
-import { getSettings, saveCheckpoint } from './store'
+import { getSettings, saveCheckpoint, setSettings } from './store'
 
 export interface AgentDeps {
   emit: (e: AgentEvent) => void
@@ -165,7 +165,12 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     return { ok: false, error: 'missing-api-key' }
   }
 
-  const run: ActiveRun = { controller: new AbortController(), approvals: new Map(), autoApproved: new Set() }
+  const persisted = await getSettings().catch(() => null)
+  const run: ActiveRun = {
+    controller: new AbortController(),
+    approvals: new Map(),
+    autoApproved: new Set(persisted?.allowedTools || [])
+  }
   active.set(req.runId, run)
   const { signal } = run.controller
 
@@ -200,7 +205,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }, 15 * 60 * 1000)
         run.approvals.set(call.id, (d) => {
           clearTimeout(timer)
-          if (d === 'allow-always') run.autoApproved.add(call.name)
+          if (d === 'allow-always') {
+            run.autoApproved.add(call.name)
+            const tools = Array.from(new Set([...(persisted?.allowedTools || []), call.name]))
+            void setSettings({ allowedTools: tools }).catch(() => undefined)
+          }
           resolve(d)
         })
       })

@@ -75,6 +75,7 @@ export interface Settings {
   lastWorkspace: string | null
   recentWorkspaces: string[]
   alphaFeatures: boolean
+  allowedTools: string[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -103,7 +104,8 @@ export const DEFAULT_SETTINGS: Settings = {
   customInstructions: '',
   lastWorkspace: null,
   recentWorkspaces: [],
-  alphaFeatures: false
+  alphaFeatures: false,
+  allowedTools: []
 }
 
 /* ------------------------------------------------------------------ */
