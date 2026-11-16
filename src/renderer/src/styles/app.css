@@ -851,6 +851,25 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.msg-image {
+  display: inline-block;
+  max-width: 220px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  line-height: 0;
+  transition: border-color var(--dur-fast);
+}
+.msg-image:hover {
+  border-color: var(--accent);
+}
+.msg-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 160px;
+  object-fit: cover;
+}
 .msg-attachments {
   display: flex;
   flex-wrap: wrap;

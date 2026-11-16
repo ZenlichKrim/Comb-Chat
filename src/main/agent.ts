@@ -11,7 +11,7 @@ import type {
   TokenUsage,
   TodoItem
 } from '../shared/types'
-import { streamChat, toApiHistory, type LlmMessage } from './llm'
+import { streamChat, toApiHistory, type LlmContentPart, type LlmMessage } from './llm'
 import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, type ToolContext } from './tools'
 import { IGNORED_DIRS, toRel } from './fsops'
 import { getSettings, saveCheckpoint, setSettings } from './store'
@@ -71,6 +71,8 @@ You have direct read/write access to the user's project at \`${opts.workspace}\`
 - Change code with \`edit_file\` (exact string replacement). Include enough context lines so the match is unique. Use \`write_file\` only for new files or full rewrites.
 - Verify your work: run the project's type checker, tests or linter with \`run_command\` when they exist. Read package.json / Makefile / pyproject.toml first to learn the right commands.
 - \`run_command\` is non-interactive: no vim, no prompts, no servers that never exit (background them or skip).
+- You have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
+- The model accepts images: if the user attached a screenshot, read it and act on what it shows.
 - Use \`todo_write\` for anything with more than 2 steps, and keep it current.`
     : `
 # No workspace open
@@ -448,21 +450,32 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   return { ok: true }
 }
 
-function buildUserContent(msg: ChatMessage, attachments: Attachment[]): string {
-  let text = msg.content || ''
-  if (!attachments.length) return text
-  const blocks = attachments
+/**
+ * The current user turn. Images travel as OpenAI-style `image_url` blocks so a
+ * vision-capable model actually sees them; text attachments stay inline because
+ * they cost a fraction of the tokens.
+ */
+function buildUserContent(msg: ChatMessage, attachments: Attachment[]): string | LlmContentPart[] {
+  const text = msg.content || ''
+  const images = (attachments || []).filter((a) => a.kind === 'image' && a.content)
+  const docs = (attachments || []).filter((a) => a.kind !== 'image')
+  const docBlocks = docs
     .map((a) => {
       if (a.kind === 'selection') {
         return `<selection path="${a.rel}" lines="${a.from}-${a.to}">\n${a.content}\n</selection>`
       }
-      if (a.kind === 'image') {
-        return `<image name="${a.name}" />`
-      }
       return `<file path="${a.rel || a.name}">\n${a.content}\n</file>`
     })
     .join('\n\n')
-  return `${text}\n\n${blocks}`
+  const body = docBlocks ? `${text}\n\n${docBlocks}` : text
+  if (!images.length) return body
+
+  const parts: LlmContentPart[] = images.map((a) => ({
+    type: 'image_url' as const,
+    image_url: { url: a.content, detail: 'original' as const }
+  }))
+  if (body.trim()) parts.unshift({ type: 'text' as const, text: body })
+  return parts
 }
 
 export function listActiveRuns(): string[] {

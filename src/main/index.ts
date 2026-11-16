@@ -220,6 +220,13 @@ function registerIpc(): void {
     return res.canceled ? [] : res.filePaths
   })
   ipcMain.handle('fs:list', (_e, dir: string) => fsops.listDir(dir))
+  ipcMain.handle('fs:readImage', async (_e, file: string) => {
+    try {
+      return { ok: true, dataUrl: await fsops.readImageDataUrl(file) }
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
   ipcMain.handle('fs:tree', async (_e, root: string, depth = 2) => {
     const out: any[] = []
     const walk = async (dir: string, d: number): Promise<void> => {

@@ -46,6 +46,14 @@ export async function getSettings(): Promise<Settings> {
   const stored = await readJson<Settings>(file, DEFAULTS)
   // merge defaults for keys added in later versions
   settingsCache = { ...DEFAULTS, ...stored }
+  // deepseek-chat / deepseek-reasoner were retired by the API on 2026-07-24
+  const legacy: Record<string, string> = {
+    'deepseek-chat': 'deepseek-flash',
+    'deepseek-reasoner': 'deepseek-flash-thinking',
+    'deepseek-v4-flash': 'deepseek-flash',
+    'deepseek-v4-flash-vision-exp': 'deepseek-flash'
+  }
+  if (legacy[settingsCache.model]) settingsCache = { ...settingsCache, model: legacy[settingsCache.model] }
   // First run: follow the OS language so a Russian system opens in Russian.
   if (!existed) {
     const lang = (app.getLocale?.() || process.env.LANG || 'en').toLowerCase()

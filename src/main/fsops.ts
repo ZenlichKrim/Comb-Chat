@@ -151,6 +151,23 @@ export async function listDir(dir: string, root?: string): Promise<DirEntry[]> {
   })
 }
 
+/** Read an image (or any small binary) as a data: URL the API can consume. */
+export async function readImageDataUrl(file: string, maxBytes = 20 * 1024 * 1024): Promise<string | null> {
+  const st = await fs.stat(file)
+  if (st.isDirectory()) throw new Error('Path is a directory')
+  if (st.size > maxBytes) throw new Error(`Image is too large (${Math.round(st.size / 1024 / 1024)} MB, limit ${maxBytes / 1024 / 1024} MB)`)
+  const ext = path.extname(file).toLowerCase()
+  const mime =
+    ext === '.png' ? 'image/png'
+      : ext === '.gif' ? 'image/gif'
+        : ext === '.webp' ? 'image/webp'
+          : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+            : null
+  if (!mime) return null
+  const buf = await fs.readFile(file)
+  return `data:${mime};base64,${buf.toString('base64')}`
+}
+
 export async function readFileSafe(file: string, root?: string): Promise<FileContent> {
   const st = await fs.stat(file)
   if (st.isDirectory()) throw new Error('Path is a directory')

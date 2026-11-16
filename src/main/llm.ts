@@ -1,5 +1,5 @@
 import type { ChatMessage, TokenUsage } from '../shared/types'
-import { MODELS } from '../shared/types'
+import { MODELS, modelOptions, wireModel } from '../shared/types'
 
 export interface LlmToolCall {
   id: string
@@ -25,9 +25,14 @@ export interface LlmStreamResult {
   cachedTokens: number
 }
 
+/** OpenAI-style content blocks: text and images mixed in one user message. */
+export type LlmContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'original' | 'auto' } }
+
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
+  content: string | LlmContentPart[] | null
   reasoning_content?: string
   tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[]
   tool_call_id?: string
@@ -71,7 +76,7 @@ export function priceFor(model: string): { priceIn: number; priceInCached: numbe
   if (m) {
     return { priceIn: m.priceIn, priceInCached: m.priceInCached, priceOut: m.priceOut, contextWindow: m.contextWindow, maxOutput: m.maxOutput }
   }
-  return { priceIn: 0.28, priceInCached: 0.028, priceOut: 0.42, contextWindow: 131072, maxOutput: 8192 }
+  return { priceIn: 0.3, priceInCached: 0.006, priceOut: 1.2, contextWindow: 1_000_000, maxOutput: 384_000 }
 }
 
 export function computeCost(model: string, promptTokens: number, cachedTokens: number, completionTokens: number): number {
@@ -102,7 +107,7 @@ export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok:
         Authorization: `Bearer ${apiKey.trim()}`
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-flash',
         messages: [{ role: 'user', content: 'reply with exactly: ok' }],
         max_tokens: 5,
         stream: false
@@ -111,7 +116,7 @@ export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok:
     })
     if (res.ok) {
       const json: any = await res.json().catch(() => null)
-      const served = json?.model || 'deepseek-chat'
+      const served = json?.model || 'deepseek-flash'
       return { ok: true, message: `Connected · ${served} · ${json?.usage?.total_tokens ?? '?'} tokens round-trip` }
     }
     const body = await res.text().catch(() => '')
@@ -133,12 +138,13 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
   const endpoint = normalizeBase(baseUrl)
 
   const body: Record<string, any> = {
-    model,
+    model: wireModel(model),
     messages,
     stream: true,
     stream_options: { include_usage: true },
-    max_tokens: Math.max(256, Math.min(maxTokens || 8192, 65536)),
-    temperature
+    max_tokens: Math.max(256, Math.min(maxTokens || 16384, 384_000)),
+    temperature,
+    ...modelOptions(model)
   }
   if (tools.length) {
     body.tools = tools
@@ -203,7 +209,16 @@ async function runOnce(opts: {
     if (res.status === 401 || res.status === 403) throw new LlmError(`Authentication failed: ${msg}`, 'auth', res.status)
     if (res.status === 402) throw new LlmError(`Insufficient balance: ${msg}`, 'balance', res.status)
     if (res.status === 429) throw new LlmError(`Rate limited: ${msg}`, 'rate', res.status)
-    if (res.status === 400 || res.status === 422) throw new LlmError(`Bad request: ${msg}`, 'bad-request', res.status)
+    if (res.status === 400 || res.status === 422) {
+      if (/model.*(not exist|not found|does not exist|retired|deprecated|invalid)/i.test(msg)) {
+        throw new LlmError(
+          `Model "${wireModel(body.model)}" is not available: ${msg}. DeepSeek retired deepseek-chat / deepseek-reasoner on 2026-07-24 — pick deepseek-flash in Settings → Model.`,
+          'bad-request',
+          res.status
+        )
+      }
+      throw new LlmError(`Bad request: ${msg}`, 'bad-request', res.status)
+    }
     throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status)
   }
   if (!res.body) throw new LlmError('Empty response body', 'server')
@@ -330,7 +345,13 @@ async function runOnce(opts: {
  * Rough token estimate used for the context meter and compaction decisions.
  * DeepSeek's tokenizer is ~3.6 chars/token for English + code.
  */
-export function estimateTokens(text: string): number {
+export function messageText(content: string | LlmContentPart[] | null | undefined): string {
+  if (!content) return ''
+  if (typeof content === 'string') return content
+  return content.map((p) => (p.type === 'text' ? p.text : '[image]')).join('\n')
+}
+
+function estimateTokens(text: string): number {
   if (!text) return 0
   return Math.ceil(text.length / 3.6)
 }
@@ -339,7 +360,7 @@ export function estimateMessagesTokens(messages: LlmMessage[]): number {
   let total = 0
   for (const m of messages) {
     total += 6
-    if (m.content) total += estimateTokens(m.content)
+    if (m.content) total += estimateTokens(messageText(m.content))
     if (m.reasoning_content) total += estimateTokens(m.reasoning_content)
     if (m.tool_calls) total += m.tool_calls.reduce((a, c) => a + estimateTokens(c.function.arguments) + 8, 0)
   }
@@ -353,8 +374,10 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
     if (msg.role === 'system') continue
     if (msg.role === 'user') {
       let text = msg.content
-      if (msg.attachments?.length) {
-        const blocks = msg.attachments
+      const images = (msg.attachments || []).filter((a) => a.kind === 'image' && a.content)
+      const docs = (msg.attachments || []).filter((a) => a.kind !== 'image')
+      if (docs.length) {
+        const blocks = docs
           .map((a) => {
             const head = a.kind === 'selection' ? `### Selection from ${a.rel} (lines ${a.from}-${a.to})` : `### File: ${a.rel || a.name}`
             return `${head}\n\`\`\`\n${a.content.slice(0, 12000)}\n\`\`\``
@@ -362,7 +385,16 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
           .join('\n\n')
         text = `${text}\n\n${blocks}`
       }
-      out.push({ role: 'user', content: text })
+      if (images.length) {
+        const parts: LlmContentPart[] = images.map((a) => ({
+          type: 'image_url',
+          image_url: { url: a.content, detail: 'original' }
+        }))
+        if (text) parts.unshift({ type: 'text', text })
+        out.push({ role: 'user', content: parts })
+      } else {
+        out.push({ role: 'user', content: text })
+      }
     } else if (msg.role === 'assistant') {
       const toolCalls = (msg.tools || [])
         .filter((t) => t.status !== 'denied' && t.status !== 'aborted')
@@ -392,7 +424,7 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
     // drop from the front, keeping pairs, until we fit
     while (out.length > 2 && total > budget) {
       const removed = out.shift()
-      total -= estimateTokens(removed?.content || '') + 8
+      total -= estimateTokens(messageText(removed?.content)) + 8
     }
   }
   return out

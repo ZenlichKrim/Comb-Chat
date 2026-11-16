@@ -13,42 +13,65 @@ export interface ModelInfo {
   id: string
   label: string
   family: 'deepseek' | 'custom'
+  /** picks the mode in the UI; thinking is a request parameter on V4+, not a separate model */
   reasoning: boolean
   contextWindow: number
   maxOutput: number
-  /** USD per 1M tokens */
+  /** USD per 1M tokens, peak rates (off-peak is half) */
   priceIn: number
   priceInCached: number
   priceOut: number
-  blurb: string
+  /** accepts image input */
+  vision: boolean
+  blurbKey: 'model.blurbFlash' | 'model.blurbPro'
 }
 
+/**
+ * DeepSeek V4 lineup (see api-docs.deepseek.com/quick_start/pricing).
+ * `deepseek-chat` / `deepseek-reasoner` were retired on 2026-07-24; thinking mode
+ * moved into the request body, so both entries below are the same wire model
+ * with a different `thinking` flag.
+ */
 export const MODELS: ModelInfo[] = [
   {
-    id: 'deepseek-chat',
-    label: 'deepseek-chat',
+    id: 'deepseek-flash',
+    label: 'deepseek-flash',
     family: 'deepseek',
     reasoning: false,
-    contextWindow: 131072,
-    maxOutput: 8192,
-    priceIn: 0.28,
-    priceInCached: 0.028,
-    priceOut: 0.42,
-    blurb: 'V3.2 non-thinking · fast agentic coding'
+    contextWindow: 1_000_000,
+    maxOutput: 384_000,
+    priceIn: 0.3,
+    priceInCached: 0.006,
+    priceOut: 1.2,
+    vision: true,
+    blurbKey: 'model.blurbFlash'
   },
   {
-    id: 'deepseek-reasoner',
-    label: 'deepseek-reasoner',
+    id: 'deepseek-flash-thinking',
+    label: 'deepseek-flash · thinking',
     family: 'deepseek',
     reasoning: true,
-    contextWindow: 131072,
-    maxOutput: 65536,
-    priceIn: 0.28,
-    priceInCached: 0.028,
-    priceOut: 0.42,
-    blurb: 'V3.2 thinking · deep reasoning, slower'
+    contextWindow: 1_000_000,
+    maxOutput: 384_000,
+    priceIn: 0.3,
+    priceInCached: 0.006,
+    priceOut: 1.2,
+    vision: true,
+    blurbKey: 'model.blurbPro'
   }
 ]
+
+/** Wire model name for a UI model id — thinking is a request flag, not a model. */
+export function wireModel(id: string): string {
+  return id === 'deepseek-flash-thinking' ? 'deepseek-flash' : id
+}
+
+/** Extra request fields a UI model id implies. */
+export function modelOptions(id: string): { thinking?: { type: 'enabled' | 'disabled' } } {
+  if (id === 'deepseek-flash-thinking') return { thinking: { type: 'enabled' } }
+  if (id === 'deepseek-flash') return { thinking: { type: 'disabled' } }
+  return {}
+}
 
 export interface Settings {
   apiKey: string
@@ -84,9 +107,9 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-chat',
+  model: 'deepseek-flash',
   temperature: 0.2,
-  maxTokens: 8192,
+  maxTokens: 16384,
   approvalPolicy: 'ask',
   theme: 'comb',
   accent: '#e8b14c',
@@ -241,6 +264,8 @@ export interface Attachment {
   rel?: string
   name: string
   content: string
+  /** SVG dropped in chat: attached as text (it is code), not as pixels */
+  vector?: boolean
   /** for selections, 1-based line range */
   from?: number
   to?: number
@@ -372,6 +397,7 @@ export interface CombApi {
     clearAll(): Promise<void>
   }
   fs: {
+    readonly readImage: (path: string) => Promise<{ ok: boolean; dataUrl?: string | null; error?: string }>
     pickFolder(): Promise<string | null>
     pickFiles(): Promise<string[]>
     list(dir: string): Promise<DirEntry[]>

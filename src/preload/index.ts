@@ -41,6 +41,7 @@ const api = {
     list: (dir: string) => ipcRenderer.invoke('fs:list', dir),
     tree: (root: string, depth?: number) => ipcRenderer.invoke('fs:tree', root, depth),
     read: (p: string) => ipcRenderer.invoke('fs:read', p),
+    readImage: (p: string) => ipcRenderer.invoke('fs:readImage', p),
     write: (p: string, c: string) => ipcRenderer.invoke('fs:write', p, c),
     create: (p: string, isDir: boolean) => ipcRenderer.invoke('fs:create', p, isDir),
     rename: (a: string, b: string) => ipcRenderer.invoke('fs:rename', a, b),

@@ -89,7 +89,7 @@ export function TitleBar(): React.ReactElement {
                   <Icon name={m.reasoning ? 'sparkles' : 'zap'} size={13} />
                   <span className="col" style={{ alignItems: 'flex-start', gap: 0 }}>
                     <span className="mono">{m.label}</span>
-                    <span className="t-xs faint">{t(m.id === 'deepseek-reasoner' ? 'model.blurbReasoner' : 'model.blurbChat')}</span>
+                    <span className="t-xs faint">{t(m.blurbKey)}</span>
                   </span>
                   {settings.model === m.id && <Icon name="check" size={12} className="acc" />}
                 </button>
@@ -97,7 +97,7 @@ export function TitleBar(): React.ReactElement {
               <div className="divider" />
               <div className="menu-item" style={{ cursor: 'default' }}>
                 <span className="t-xs faint">
-                  {model.contextWindow / 1024}k · ${model.priceIn}/M {t('menu.context')} · ${model.priceOut}/M {t('menu.out')}
+                  {model.contextWindow >= 1_000_000 ? `${Math.round(model.contextWindow / 1_000_000)}M` : `${Math.round(model.contextWindow / 1024)}k`} {t('menu.context')} · ${model.priceIn}/M {t('menu.in')} · ${model.priceOut}/M {t('menu.out')}{model.vision ? ` · ${t('model.vision')}` : ''}
                 </span>
               </div>
             </div>

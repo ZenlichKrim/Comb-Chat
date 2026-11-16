@@ -140,7 +140,7 @@ export function SettingsDialog(): React.ReactElement {
                         <span className="mono t-sm" style={{ fontWeight: 600 }}>{m.label}</span>
                         {settings.model === m.id && <Icon name="check" size={11} className="acc" style={{ marginLeft: 'auto' }} />}
                       </div>
-                      <span className="t-xs faint">{t(m.id === 'deepseek-reasoner' ? 'model.blurbReasoner' : 'model.blurbChat')}</span>
+                      <span className="t-xs faint">{t(m.blurbKey)}</span>
                       <span className="t-xs ghost">
                         {m.contextWindow / 1024}k · ${m.priceIn}/M {t('menu.context')} · ${m.priceOut}/M {t('menu.out')}
                       </span>
@@ -164,10 +164,10 @@ export function SettingsDialog(): React.ReactElement {
                 <input
                   type="range"
                   min={1024}
-                  max={settings.model === 'deepseek-reasoner' ? 65536 : 8192}
+                  max={65536}
                   step={1024}
                   value={settings.maxTokens}
-                  style={{ ['--fill' as any]: `${((settings.maxTokens - 1024) / ((settings.model === 'deepseek-reasoner' ? 65536 : 8192) - 1024)) * 100}%` }}
+                  style={{ ['--fill' as any]: `${((settings.maxTokens - 1024) / (65536 - 1024)) * 100}%` }}
                   onChange={(e) => void setSettings({ maxTokens: Number(e.target.value) })}
                 />
               </Row>

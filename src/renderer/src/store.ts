@@ -15,7 +15,7 @@ import type {
   TodoItem,
   FileContent
 } from '../../shared/types'
-import { DEFAULT_SETTINGS } from '../../shared/types'
+import { DEFAULT_SETTINGS, MODELS } from '../../shared/types'
 
 let idCounter = 0
 export function uid(prefix = 'id'): string {
@@ -551,12 +551,17 @@ export const useStore = create<State & Actions>((set, get) => ({
   setBottomPanel: (p) => set({ bottomPanel: p }),
   setRightPanel: (p) => set({ rightPanel: p }),
 
-  addContextFile: (a) =>
+  addContextFile: (a) => {
+    if (a.kind === 'image') {
+      const m = MODELS.find((x) => x.id === get().settings.model)
+      if (m && !m.vision) get().toast('warn', tr('chat.imageNotSupported'))
+    }
     set((s) => ({
       contextFiles: s.contextFiles.some((c) => c.path === a.path && c.kind === a.kind && c.from === a.from)
         ? s.contextFiles
         : [...s.contextFiles, a]
-    })),
+    }))
+  },
   removeContextFile: (id) => set((s) => ({ contextFiles: s.contextFiles.filter((c) => c.id !== id) })),
 
   setActiveThreadTodos: (todos) =>

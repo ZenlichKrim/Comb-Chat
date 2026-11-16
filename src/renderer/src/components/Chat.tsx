@@ -38,10 +38,21 @@ export function ChatPane(): React.ReactElement {
       const full = (file as File & { path?: string }).path
       if (!full) continue
       const rel = workspace && full.startsWith(workspace) ? full.slice(workspace.length + 1).replace(/\\/g, '/') : full.split(/[\\/]/).pop() || full
-      const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(full)
+      const isImage = /\.(png|jpe?g|gif|webp)$/i.test(full)
+      const isVector = /\.svg$/i.test(full)
       let content = ''
       try {
-        content = isImage ? '' : (await window.comb.fs.read(full)).content
+        if (isImage) {
+          // vision models need the bytes, not a path — send a data: URL
+          const img = await window.comb.fs.readImage(full)
+          if (!img?.ok || !img.dataUrl) {
+            st.toast('err', img?.error || t('chat.couldNotRead', { rel }))
+            continue
+          }
+          content = img.dataUrl
+        } else {
+          content = (await window.comb.fs.read(full)).content
+        }
       } catch {
         st.toast('err', t('chat.couldNotRead', { rel }))
         continue
@@ -50,6 +61,7 @@ export function ChatPane(): React.ReactElement {
       st.addContextFile({
         id: `drop_${Date.now()}_${attached}`,
         kind: isImage ? 'image' : 'file',
+        vector: isVector,
         path: full,
         rel,
         name: rel.split('/').pop() || rel,
@@ -121,6 +133,31 @@ export function ChatPane(): React.ReactElement {
     setHistoryIdx(-1)
     pinnedBottom.current = true
     await sendMessage(text, contextFiles)
+  }
+
+  // Ctrl+V a screenshot straight from the clipboard — the fastest way to ask
+  // "why does this look broken?"
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
+    const items = Array.from(e.clipboardData?.items || [])
+    const imageItem = items.find((i) => i.kind === 'file' && i.type.startsWith('image/'))
+    if (!imageItem) return
+    const file = imageItem.getAsFile()
+    if (!file) return
+    e.preventDefault()
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '')
+      if (!dataUrl) return
+      const st = useStore.getState()
+      st.addContextFile({
+        id: `paste_${Date.now()}`,
+        kind: 'image',
+        name: `screenshot-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.png`,
+        content: dataUrl
+      })
+      st.toast('ok', t('chat.pasteImage'))
+    }
+    reader.readAsDataURL(file)
   }
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -302,6 +339,7 @@ export function ChatPane(): React.ReactElement {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder={
               workspace
                 ? running
@@ -361,7 +399,7 @@ export function ChatPane(): React.ReactElement {
         </div>
         <div className="composer-foot">
           <span className="t-xs ghost">
-            {model.label} · {t(settings.model === 'deepseek-reasoner' ? 'model.blurbReasoner' : 'model.blurbChat')}
+            {model.label} · {t(model.blurbKey)}
           </span>
           <span className="spacer" />
           <span className="t-xs ghost">
@@ -402,11 +440,17 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
           <div className="chat-text msg-user-text">{msg.content}</div>
           {!!msg.attachments?.length && (
             <div className="msg-attachments">
-              {msg.attachments.map((a) => (
-                <span key={a.id} className="ctx-chip">
-                  <Icon name={a.kind === 'selection' ? 'diff' : 'file'} size={10} /> {a.name}
-                </span>
-              ))}
+              {msg.attachments.map((a) =>
+                a.kind === 'image' && a.content ? (
+                  <a key={a.id} className="msg-image" href="#" onClick={(e) => e.preventDefault()} title={a.name}>
+                    <img src={a.content} alt={a.name} />
+                  </a>
+                ) : (
+                  <span key={a.id} className="ctx-chip">
+                    <Icon name={a.kind === 'selection' ? 'diff' : 'file'} size={10} /> {a.name}
+                  </span>
+                )
+              )}
             </div>
           )}
         </div>
