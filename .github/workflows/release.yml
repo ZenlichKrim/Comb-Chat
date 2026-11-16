@@ -28,23 +28,32 @@ jobs:
         continue-on-error: true
 
       - name: Build installer + portable exe
-        run: npm run dist:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+        shell: bash
+        run: npm run dist:win > build-win.log 2>&1 || (tail -n 120 build-win.log > build-tail.log; echo "BUILD FAILED"; exit 1)
+
+      - name: Publish failure log
+        if: failure()
+        shell: bash
+        run: |
+          git config user.name "comb-ci"
+          git config user.email "ci@comb.local"
+          git checkout -b ci-logs || git checkout ci-logs
+          git add -f build-tail.log build-win.log 2>/dev/null || true
+          git commit -m "ci: windows build log" || true
+          git push -f origin ci-logs || true
 
       - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: comb-chat-windows
           path: |
             release/*.exe
-            release/*.exe.blockmap
             release/latest.yml
           retention-days: 30
 
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: success() && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -63,10 +72,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
-      - run: npm run dist:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build AppImage + deb
+        run: npm run dist:linux > /tmp/build-linux.log 2>&1 || (tail -n 100 /tmp/build-linux.log; exit 1)
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: comb-chat-linux
           path: |
@@ -74,7 +83,7 @@ jobs:
             release/*.deb
           retention-days: 30
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: success() && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
