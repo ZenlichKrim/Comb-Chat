@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { Icon } from './Icon'
+import { useT } from '../lib/i18n'
 import { useStore, uid } from '../store'
 import { highlightLine } from '../lib/highlight'
 import type { GitFile } from '../../../shared/types'
@@ -32,6 +33,7 @@ export function BottomPanel(): React.ReactElement {
 
   if (panel === 'none') return <></>
 
+  const t = useT()
   const problems = git?.files.filter((f) => f.index === '!').length || 0
 
   return (
@@ -39,17 +41,17 @@ export function BottomPanel(): React.ReactElement {
       <div className="bp-resize" onMouseDown={() => setDragging(true)} />
       <div className="bp-tabs">
         <button className="bp-tab" data-active={panel === 'terminal'} onClick={() => setPanel('terminal')}>
-          <Icon name="terminal" size={11} /> terminal
+          <Icon name="terminal" size={11} /> {t('bp.terminal')}
         </button>
         <button className="bp-tab" data-active={panel === 'output'} onClick={() => setPanel('output')}>
-          <Icon name="zap" size={11} /> output
+          <Icon name="zap" size={11} /> {t('bp.output')}
         </button>
         <button className="bp-tab" data-active={panel === 'problems'} onClick={() => setPanel('problems')}>
-          <Icon name="alert" size={11} /> problems
+          <Icon name="alert" size={11} /> {t('bp.problems')}
           {problems > 0 && <span className="pill err" style={{ height: 14 }}>{problems}</span>}
         </button>
         <span className="spacer" />
-        <button className="icon-btn" onClick={() => setPanel('none')} data-tip="Hide panel">
+        <button className="icon-btn" onClick={() => setPanel('none')} data-tip={t('bp.hide')}>
           <Icon name="close" size={11} />
         </button>
       </div>
@@ -101,6 +103,7 @@ function terminalTheme(): any {
 }
 
 function TermTab(): React.ReactElement {
+  const t = useT()
   const host = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -200,11 +203,11 @@ function TermTab(): React.ReactElement {
   return (
     <div className="term-wrap">
       <div className="term-toolbar">
-        <span className="pill">{backend || 'starting'}</span>
+        <span className="pill">{backend || t('bp.starting')}</span>
         <span className="t-xs faint ellipsis">{workspace || '~'}</span>
         <span className="spacer" />
-        <button className="btn ghost sm" onClick={() => setKey((k) => k + 1)} data-tip="Restart shell">
-          <Icon name="refresh" size={10} /> restart
+        <button className="btn ghost sm" onClick={() => setKey((k) => k + 1)} data-tip={t('bp.restartShell')}>
+          <Icon name="refresh" size={10} /> {t('common.restart')}
         </button>
         <button
           className="btn ghost sm"
@@ -212,15 +215,15 @@ function TermTab(): React.ReactElement {
             window.comb.terminal.write(idRef.current, 'clear\n')
           }}
         >
-          clear
+          {t('bp.clear')}
         </button>
       </div>
       <div className="term-host" ref={host} />
       {exited && (
         <div className="term-exited">
-          <span className="t-xs faint">Shell exited.</span>
+          <span className="t-xs faint">{t('bp.shellExited')}</span>
           <button className="btn sm" onClick={() => setKey((k) => k + 1)}>
-            <Icon name="play" size={10} /> restart
+            <Icon name="play" size={10} /> {t('common.restart')}
           </button>
         </div>
       )}
@@ -233,6 +236,7 @@ function TermTab(): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 function OutputTab(): React.ReactElement {
+  const t = useT()
   const threads = useStore((s) => s.threads)
   const activeId = useStore((s) => s.activeThreadId)
   const thread = threads.find((t) => t.id === activeId)
@@ -263,13 +267,14 @@ function OutputTab(): React.ReactElement {
           </details>
         ))
       ) : (
-        <div className="t-xs faint" style={{ padding: 14 }}>No agent activity in this session yet.</div>
+        <div className="t-xs faint" style={{ padding: 14 }}>{t('bp.noActivity')}</div>
       )}
     </div>
   )
 }
 
 function ProblemsTab(): React.ReactElement {
+  const t = useT()
   const git = useStore((s) => s.git)
   const files: GitFile[] = git?.files || []
   return (
@@ -277,12 +282,12 @@ function ProblemsTab(): React.ReactElement {
       {files.length ? (
         files.map((f) => (
           <div key={f.path} className="problem-row">
-            <span className={f.index === '?' ? 'pill ok' : 'pill warn'}>{f.index === '?' ? 'untracked' : f.index === 'M' ? 'modified' : f.index === 'D' ? 'deleted' : 'changed'}</span>
+            <span className={f.index === '?' ? 'pill ok' : 'pill warn'}>{f.index === '?' ? t('gitStatus.untracked') : f.index === 'M' ? t('tool.modified') : f.index === 'D' ? t('tool.deleted') : t('gitStatus.changed')}</span>
             <span className="mono t-xs">{f.path}</span>
           </div>
         ))
       ) : (
-        <div className="t-xs faint" style={{ padding: 14 }}>No workspace problems detected.</div>
+        <div className="t-xs faint" style={{ padding: 14 }}>{t('bp.noProblems')}</div>
       )}
     </div>
   )

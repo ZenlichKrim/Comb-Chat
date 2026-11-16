@@ -48,6 +48,7 @@ import { lua } from '@codemirror/legacy-modes/mode/lua'
 import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile'
 import { Icon } from './Icon'
 import { useStore, useActiveTab } from '../store'
+import { useT, tr } from '../lib/i18n'
 
 /* ------------------------------------------------------------------ */
 /* Language resolution                                                 */
@@ -391,6 +392,7 @@ export function CodeEditor({
 /* ------------------------------------------------------------------ */
 
 export function EditorPane(): React.ReactElement {
+  const t = useT()
   const tabs = useStore((s) => s.tabs)
   const activePath = useStore((s) => s.activeTabPath)
   const setActive = useStore((s) => s.setActiveTab)
@@ -426,7 +428,7 @@ export function EditorPane(): React.ReactElement {
         from: sel.fromLine,
         to: sel.toLine
       })
-      useStore.getState().toast('ok', 'Selection attached to chat')
+      useStore.getState().toast('ok', tr('ed.selectionAttached'))
     }
     window.addEventListener('comb:find-click', onFind)
     window.addEventListener('comb:attach-selection', onAttach)
@@ -453,7 +455,7 @@ export function EditorPane(): React.ReactElement {
       from: sel.fromLine,
       to: sel.toLine
     })
-    toast('ok', 'Selection attached to chat')
+    toast('ok', tr('ed.selectionAttached'))
   }
 
   const attachFile = (): void => {
@@ -466,7 +468,7 @@ export function EditorPane(): React.ReactElement {
       name: active.rel.split('/').pop() || active.rel,
       content: active.content
     })
-    toast('ok', 'File attached to chat')
+    toast('ok', tr('ed.fileAttached'))
   }
 
   return (
@@ -511,15 +513,15 @@ export function EditorPane(): React.ReactElement {
         <div className="spacer" />
         {active && (
           <div className="tab-actions">
-            <button className="icon-btn" data-tip="Attach selection to chat" onClick={attachSelection}>
+            <button className="icon-btn" data-tip={t('ed.attachSelection')} onClick={attachSelection}>
               <Icon name="diff" size={12} />
             </button>
-            <button className="icon-btn" data-tip="Attach file to chat" onClick={attachFile}>
+            <button className="icon-btn" data-tip={t('ed.attachFile')} onClick={attachFile}>
               <Icon name="file-plus" size={12} />
             </button>
             <button
               className="icon-btn"
-              data-tip="Save (Ctrl+S)"
+              data-tip={t('ed.saveTip')}
               disabled={!active.dirty}
               onClick={() => void saveTab()}
               style={{ opacity: active.dirty ? 1 : 0.4 }}
@@ -528,7 +530,7 @@ export function EditorPane(): React.ReactElement {
             </button>
             <button
               className="icon-btn"
-              data-tip="Find (Ctrl+F)"
+              data-tip={t('ed.findTip')}
               onClick={() => {
                 window.dispatchEvent(new Event('comb:find-click'))
               }}
@@ -561,14 +563,15 @@ export function EditorPane(): React.ReactElement {
 }
 
 function EmptyEditor({ workspace, onOpen }: { workspace: string | null; onOpen: () => void }): React.ReactElement {
+  const t = useT()
   const shortcuts = [
-    ['Ctrl O', 'open folder'],
-    ['Ctrl N', 'new session'],
-    ['Ctrl K', 'command palette'],
-    ['Ctrl P', 'quick open file'],
-    ['Ctrl B', 'toggle sidebar'],
-    ['Ctrl `', 'toggle terminal'],
-    ['Ctrl ,', 'settings']
+    ['Ctrl O', t('keys.openFolder')],
+    ['Ctrl N', t('keys.newSession')],
+    ['Ctrl K', t('keys.palette')],
+    ['Ctrl P', t('keys.quickOpen')],
+    ['Ctrl B', t('keys.toggleSidebar')],
+    ['Ctrl `', t('keys.toggleTerminal')],
+    ['Ctrl ,', t('keys.settings')]
   ]
   return (
     <div className="empty-editor">
@@ -582,20 +585,20 @@ function EmptyEditor({ workspace, onOpen }: { workspace: string | null; onOpen: 
         <p className="empty-sub">
           {workspace ? (
             <>
-              Workspace ready. Open a file from the explorer,
+              {t('ed.readyLine1')}
               <br />
-              or just ask the agent to build it.
+              {t('ed.readyLine2')}
             </>
           ) : (
             <>
-              A coding agent that lives in your machine.
+              {t('ed.noFolderLine1')}
               <br />
-              Pick a folder to give it hands.
+              {t('ed.noFolderLine2')}
             </>
           )}
         </p>
         <button className="btn primary" onClick={onOpen} style={{ height: 32, padding: '0 16px' }}>
-          <Icon name="folder" size={13} /> {workspace ? 'Change folder' : 'Open folder'} <kbd style={{ marginLeft: 4 }}>Ctrl O</kbd>
+          <Icon name="folder" size={13} /> {workspace ? t('common.changeFolder') : t('common.openFolder')} <kbd style={{ marginLeft: 4 }}>Ctrl O</kbd>
         </button>
         <div className="empty-keys">
           {shortcuts.map(([k, label]) => (

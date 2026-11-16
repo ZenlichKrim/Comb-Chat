@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { highlightLine } from '../lib/highlight'
 import { Icon } from './Icon'
 import { useStore } from '../store'
+import { useT } from '../lib/i18n'
 
 export function CodeBlock({
   code,
@@ -101,6 +102,7 @@ export function DiffView({
   rel: string
   maxHeight?: number
 }): React.ReactElement {
+  const t = useT()
   const [mode, setMode] = useState<'unified' | 'split'>('unified')
   const lang = rel.split('.').pop() || 'text'
 
@@ -136,7 +138,7 @@ export function DiffView({
       ) : (
         <div className="diff-split" style={{ maxHeight }}>
           <div className="diff-split-col">
-            <div className="diff-split-head">before</div>
+            <div className="diff-split-head">{t('diff.before')}</div>
             <div className="code-body">
               {before.split('\n').map((l, i) => (
                 <div className="code-line" key={i}>
@@ -147,7 +149,7 @@ export function DiffView({
             </div>
           </div>
           <div className="diff-split-col">
-            <div className="diff-split-head">after</div>
+            <div className="diff-split-head">{t('diff.after')}</div>
             <div className="code-body">
               {after.split('\n').map((l, i) => (
                 <div className="code-line" key={i}>
@@ -165,10 +167,10 @@ export function DiffView({
         <span className="spacer" />
         <div className="segmented">
           <button data-active={mode === 'unified'} onClick={() => setMode('unified')}>
-            unified
+            {t('diff.unified')}
           </button>
           <button data-active={mode === 'split'} onClick={() => setMode('split')}>
-            split
+            {t('diff.split')}
           </button>
         </div>
       </div>

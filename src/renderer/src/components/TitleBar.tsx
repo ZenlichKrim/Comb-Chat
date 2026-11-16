@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
+import { useT } from '../lib/i18n'
 import { useStore, formatCost } from '../store'
 import { MODELS } from '../../../shared/types'
 
 export function TitleBar(): React.ReactElement {
+  const t = useT()
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
   const workspace = useStore((s) => s.workspace)
@@ -29,7 +31,7 @@ export function TitleBar(): React.ReactElement {
       <div className="tb-left">
         <button
           className="icon-btn"
-          data-tip="Toggle sidebar"
+          data-tip={t('title.toggleSidebar')}
           onClick={() => useStore.setState({ sidebarOpen: !sidebarOpen })}
         >
           <Icon name="sidebar" size={14} />
@@ -39,9 +41,9 @@ export function TitleBar(): React.ReactElement {
           <span className="brand-name">comb</span>
         </div>
         <span className="tb-sep" />
-        <button className="ws-chip" onClick={() => void openWorkspace()} data-tip={workspace || 'Open a folder'}>
+        <button className="ws-chip" onClick={() => void openWorkspace()} data-tip={workspace || t('title.openFolder')}>
           <Icon name="folder" size={12} />
-          <span className="ellipsis">{wsName || 'open folder'}</span>
+          <span className="ellipsis">{wsName || t('common.openFolder')}</span>
           <Icon name="chevron-down" size={10} />
         </button>
       </div>
@@ -51,12 +53,12 @@ export function TitleBar(): React.ReactElement {
           {running ? (
             <>
               <span className="spinner" />
-              <span className="tb-status acc">agent running</span>
+              <span className="tb-status acc">{t('title.agentRunning')}</span>
             </>
           ) : (
             <>
               <span className="dot" style={{ background: 'var(--ok)' }} />
-              <span className="tb-status">ready</span>
+              <span className="tb-status">{t('title.ready')}</span>
             </>
           )}
         </div>
@@ -73,7 +75,7 @@ export function TitleBar(): React.ReactElement {
           <>
             <div className="backdrop" onClick={() => setModelMenu(false)} />
             <div className="menu model-menu">
-              <div className="menu-label">Model</div>
+              <div className="menu-label">{t('title.model')}</div>
               {MODELS.map((m) => (
                 <button
                   key={m.id}
@@ -87,7 +89,7 @@ export function TitleBar(): React.ReactElement {
                   <Icon name={m.reasoning ? 'sparkles' : 'zap'} size={13} />
                   <span className="col" style={{ alignItems: 'flex-start', gap: 0 }}>
                     <span className="mono">{m.label}</span>
-                    <span className="t-xs faint">{m.blurb}</span>
+                    <span className="t-xs faint">{t(m.id === 'deepseek-reasoner' ? 'model.blurbReasoner' : 'model.blurbChat')}</span>
                   </span>
                   {settings.model === m.id && <Icon name="check" size={12} className="acc" />}
                 </button>
@@ -95,26 +97,26 @@ export function TitleBar(): React.ReactElement {
               <div className="divider" />
               <div className="menu-item" style={{ cursor: 'default' }}>
                 <span className="t-xs faint">
-                  {model.contextWindow / 1024}k context · ${model.priceIn}/M in · ${model.priceOut}/M out
+                  {model.contextWindow / 1024}k · ${model.priceIn}/M {t('menu.context')} · ${model.priceOut}/M {t('menu.out')}
                 </span>
               </div>
             </div>
           </>
         )}
-        <span className="tb-cost" data-tip="Total spend this app">
+        <span className="tb-cost" data-tip={t('title.totalSpend')}>
           {formatCost(totalCost)}
         </span>
-        <button className="icon-btn" data-tip="Settings (Ctrl+,)" onClick={() => useStore.setState({ settingsOpen: true })}>
+        <button className="icon-btn" data-tip={t('title.settings')} onClick={() => useStore.setState({ settingsOpen: true })}>
           <Icon name="settings" size={14} />
         </button>
         {!isMac && (
           <div className="win-controls">
-            <button className="win-btn" onClick={() => window.comb.app.minimize()} aria-label="Minimize">
+            <button className="win-btn" onClick={() => window.comb.app.minimize()} aria-label={t('title.minimize')}>
               <svg width="10" height="10" viewBox="0 0 10 10">
                 <path d="M2 5h6" stroke="currentColor" strokeWidth="1" />
               </svg>
             </button>
-            <button className="win-btn" onClick={() => window.comb.app.maximize()} aria-label="Maximize">
+            <button className="win-btn" onClick={() => window.comb.app.maximize()} aria-label={t('title.maximize')}>
               {maximized ? (
                 <svg width="10" height="10" viewBox="0 0 10 10">
                   <rect x="1.5" y="3" width="5.5" height="5.5" fill="none" stroke="currentColor" strokeWidth="1" />
@@ -126,7 +128,7 @@ export function TitleBar(): React.ReactElement {
                 </svg>
               )}
             </button>
-            <button className="win-btn close" onClick={() => window.comb.app.close()} aria-label="Close">
+            <button className="win-btn close" onClick={() => window.comb.app.close()} aria-label={t('title.close')}>
               <svg width="10" height="10" viewBox="0 0 10 10">
                 <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1" />
               </svg>

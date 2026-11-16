@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, useActiveThread, formatTokens, formatCost, timeAgo } from '../store'
 import type { Checkpoint } from '../../../shared/types'
+import { useT } from '../lib/i18n'
 
 export function RightPanel(): React.ReactElement {
+  const t = useT()
   const panel = useStore((s) => s.rightPanel)
   const setPanel = useStore((s) => s.setRightPanel)
   const thread = useActiveThread()
@@ -15,16 +17,16 @@ export function RightPanel(): React.ReactElement {
     <aside className="right-panel">
       <div className="rp-tabs">
         <button className="rp-tab" data-active={panel === 'plan'} onClick={() => setPanel('plan')}>
-          <Icon name="check-circle" size={12} /> plan
+          <Icon name="check-circle" size={12} /> {t('rp.plan')}
         </button>
         <button className="rp-tab" data-active={panel === 'context'} onClick={() => setPanel('context')}>
-          <Icon name="layers" size={12} /> context
+          <Icon name="layers" size={12} /> {t('rp.context')}
         </button>
         <button className="rp-tab" data-active={panel === 'history'} onClick={() => setPanel('history')}>
-          <Icon name="history" size={12} /> history
+          <Icon name="history" size={12} /> {t('rp.history')}
         </button>
         <span className="spacer" />
-        <button className="icon-btn" onClick={() => setPanel('none')} data-tip="Hide panel">
+        <button className="icon-btn" onClick={() => setPanel('none')} data-tip={t('rp.hide')}>
           <Icon name="close" size={11} />
         </button>
       </div>
@@ -33,7 +35,7 @@ export function RightPanel(): React.ReactElement {
         <div className="rp-body">
           <div className="rp-section">
             <div className="rp-head">
-              <span className="cap">task plan</span>
+              <span className="cap">{t('rp.taskPlan')}</span>
               <span className="spacer" />
               <span className="t-xs faint">{doneCount}/{todos.length}</span>
             </div>
@@ -59,9 +61,9 @@ export function RightPanel(): React.ReactElement {
               </>
             ) : (
               <div className="rp-empty">
-                <span className="t-xs faint">No plan yet.</span>
+                <span className="t-xs faint">{t('rp.noPlan')}</span>
                 <span className="t-xs ghost" style={{ lineHeight: 1.6 }}>
-                  The agent writes a plan here for multi-step tasks so you can see exactly where it is.
+                  {t('rp.noPlanBody')}
                 </span>
               </div>
             )}
@@ -77,6 +79,7 @@ export function RightPanel(): React.ReactElement {
 }
 
 function PlanStats(): React.ReactElement {
+  const t = useT()
   const thread = useActiveThread()
   const settings = useStore((s) => s.settings)
   const changed = useStore((s) => s.changedFiles)
@@ -89,31 +92,31 @@ function PlanStats(): React.ReactElement {
     <>
       <div className="rp-section">
         <div className="rp-head">
-          <span className="cap">run stats</span>
+          <span className="cap">{t('rp.runStats')}</span>
         </div>
         <div className="stat-grid">
-          <Stat label="steps" value={thread ? String(thread.messages.filter((m) => m.role === 'assistant').length) : '0'} />
-          <Stat label="tool calls" value={String((thread?.messages || []).reduce((a, m) => a + (m.tools?.length || 0), 0))} />
-          <Stat label="tokens" value={formatTokens((thread?.usage.promptTokens || 0) + (thread?.usage.completionTokens || 0))} />
-          <Stat label="cost" value={formatCost(thread?.usage.cost || 0)} />
+          <Stat label={t('rp.steps')} value={thread ? String(thread.messages.filter((m) => m.role === 'assistant').length) : '0'} />
+          <Stat label={t('rp.toolCalls')} value={String((thread?.messages || []).reduce((a, m) => a + (m.tools?.length || 0), 0))} />
+          <Stat label={t('rp.tokens')} value={formatTokens((thread?.usage.promptTokens || 0) + (thread?.usage.completionTokens || 0))} />
+          <Stat label={t('rp.cost')} value={formatCost(thread?.usage.cost || 0)} />
         </div>
         <div className="rp-kv">
-          <span className="faint">policy</span>
+          <span className="faint">{t('rp.policy')}</span>
           <span className="mono">{settings.approvalPolicy}</span>
         </div>
         <div className="rp-kv">
-          <span className="faint">model</span>
+          <span className="faint">{t('rp.model')}</span>
           <span className="mono">{settings.model}</span>
         </div>
         <div className="rp-kv">
-          <span className="faint">max steps</span>
+          <span className="faint">{t('rp.maxSteps')}</span>
           <span className="mono">{settings.maxAgentSteps}</span>
         </div>
       </div>
 
       <div className="rp-section grow">
         <div className="rp-head">
-          <span className="cap">changed this run</span>
+          <span className="cap">{t('rp.changedThisRun')}</span>
           <span className="spacer" />
           <span className="t-xs faint">{changed.length}</span>
         </div>
@@ -133,12 +136,12 @@ function PlanStats(): React.ReactElement {
             </button>
           ))
         ) : (
-          <span className="t-xs ghost">Nothing yet — the agent's edits will appear here.</span>
+          <span className="t-xs ghost">{t('rp.nothingChanged')}</span>
         )}
         {!!git?.files.length && (
           <div className="rp-note">
             <Icon name="git" size={10} />
-            <span className="t-xs faint">{git.files.length} uncommitted in working tree</span>
+            <span className="t-xs faint">{t('rp.uncommitted', { n: git.files.length })}</span>
           </div>
         )}
         <span className="hidden">{String(!!diffPreview)}{String(!!thread)}</span>
@@ -157,6 +160,7 @@ function Stat({ label, value }: { label: string; value: string }): React.ReactEl
 }
 
 function ContextPanel(): React.ReactElement {
+  const t = useT()
   const tabs = useStore((s) => s.tabs)
   const settings = useStore((s) => s.settings)
   const workspace = useStore((s) => s.workspace)
@@ -174,22 +178,22 @@ function ContextPanel(): React.ReactElement {
     <div className="rp-body">
       <div className="rp-section">
         <div className="rp-head">
-          <span className="cap">open in editor</span>
+          <span className="cap">{t('rp.openInEditor')}</span>
           <span className="spacer" />
           <span className="t-xs faint">{tabs.length}</span>
         </div>
         {tabs.length ? (
-          tabs.map((t) => (
-            <div key={t.path} className="ctx-row">
-              <Icon name="file" size={11} className={t.dirty ? 'warn' : 'faint'} />
-              <span className="ellipsis t-xs" title={t.rel}>{t.rel}</span>
+          tabs.map((tab) => (
+            <div key={tab.path} className="ctx-row">
+              <Icon name="file" size={11} className={tab.dirty ? 'warn' : 'faint'} />
+              <span className="ellipsis t-xs" title={tab.rel}>{tab.rel}</span>
               <button
                 className="icon-btn"
                 style={{ width: 16, height: 16 }}
-                data-tip="Attach to prompt"
+                data-tip={t('rp.attachToPrompt')}
                 onClick={() => {
-                  addContext({ id: `f_${Date.now()}`, kind: 'file', path: t.path, rel: t.rel, name: t.rel.split('/').pop() || t.rel, content: t.content })
-                  toast('ok', 'Attached')
+                  addContext({ id: `f_${Date.now()}`, kind: 'file', path: tab.path, rel: tab.rel, name: tab.rel.split('/').pop() || tab.rel, content: tab.content })
+                  toast('ok', t('rp.attached'))
                 }}
               >
                 <Icon name="plus" size={10} />
@@ -197,13 +201,13 @@ function ContextPanel(): React.ReactElement {
             </div>
           ))
         ) : (
-          <span className="t-xs ghost">No files open</span>
+          <span className="t-xs ghost">{t('rp.noFilesOpen')}</span>
         )}
       </div>
 
       <div className="rp-section">
         <div className="rp-head">
-          <span className="cap">attached to next prompt</span>
+          <span className="cap">{t('rp.attachedToNext')}</span>
           <span className="spacer" />
           <span className="t-xs faint">{contextFiles.length}</span>
         </div>
@@ -218,17 +222,17 @@ function ContextPanel(): React.ReactElement {
             </div>
           ))
         ) : (
-          <span className="t-xs ghost">Select code → attach (⌘⇧A)</span>
+          <span className="t-xs ghost">{t('rp.attachHint')}</span>
         )}
       </div>
 
       <div className="rp-section grow">
         <div className="rp-head">
-          <span className="cap">project instructions</span>
+          <span className="cap">{t('rp.projectInstructions')}</span>
           <span className="spacer" />
           {instructions !== settings.customInstructions && (
             <button className="link t-xs" onClick={() => void setSettings({ customInstructions: instructions })}>
-              save
+              {t('common.save')}
             </button>
           )}
         </div>
@@ -236,18 +240,18 @@ function ContextPanel(): React.ReactElement {
           className="textarea rp-textarea"
           value={instructions}
           spellCheck={false}
-          placeholder={`Rules for this project, e.g.\n- Use pnpm, never npm\n- Tests: pnpm vitest\n- Never touch src/legacy`}
+          placeholder={t('rp.instructionsPlaceholder')}
           onChange={(e) => setInstructions(e.target.value)}
           onBlur={() => {
             if (instructions !== settings.customInstructions) void setSettings({ customInstructions: instructions })
           }}
         />
         <div className="rp-kv" style={{ marginTop: 8 }}>
-          <span className="faint">workspace</span>
+          <span className="faint">{t('rp.workspace')}</span>
           <span className="mono ellipsis t-xs" title={workspace || ''}>{workspace ? workspace.split(/[\\/]/).pop() : '—'}</span>
         </div>
         <div className="rp-kv">
-          <span className="faint">context budget</span>
+          <span className="faint">{t('rp.contextBudget')}</span>
           <span className="mono t-xs">{Math.round((settings.model.includes('reasoner') ? 131072 : 131072) / 1024)}k</span>
         </div>
         <span className="hidden">{model}</span>
@@ -257,6 +261,7 @@ function ContextPanel(): React.ReactElement {
 }
 
 function HistoryPanel(): React.ReactElement {
+  const t = useT()
   const checkpoints = useStore((s) => s.checkpoints)
   const restore = useStore((s) => s.restoreCheckpoint)
   const toast = useStore((s) => s.toast)
@@ -288,32 +293,32 @@ function HistoryPanel(): React.ReactElement {
     <div className="rp-body">
       <div className="rp-section grow">
         <div className="rp-head">
-          <span className="cap">checkpoints</span>
+          <span className="cap">{t('rp.checkpoints')}</span>
           <span className="spacer" />
           <span className="t-xs faint">{merged.length}</span>
         </div>
         <span className="t-xs ghost" style={{ lineHeight: 1.6, marginBottom: 8, display: 'block' }}>
-          Every agent edit round is snapshotted. Restore puts the previous file contents back.
+          {t('rp.checkpointsHint')}
         </span>
         {merged.map((c) => (
           <div key={c.id} className="checkpoint-row">
             <Icon name="history" size={11} className="faint" />
             <div className="col grow" style={{ gap: 0, minWidth: 0 }}>
               <span className="t-xs ellipsis">{c.label}</span>
-              <span className="t-xs ghost">{timeAgo(c.createdAt)} · {c.files.length} files</span>
+              <span className="t-xs ghost">{timeAgo(c.createdAt)} · {t('rp.fileCount', { n: c.files.length })}</span>
             </div>
             <button
               className="btn ghost sm"
               onClick={async () => {
                 await restore(c.id)
-                toast('ok', 'Checkpoint restored')
+                toast('ok', t('rp.restoredToast'))
               }}
             >
-              restore
+              {t('rp.restoreShort')}
             </button>
           </div>
         ))}
-        {!merged.length && <span className="t-xs ghost">No checkpoints in this session yet.</span>}
+        {!merged.length && <span className="t-xs ghost">{t('rp.noCheckpoints')}</span>}
       </div>
     </div>
   )

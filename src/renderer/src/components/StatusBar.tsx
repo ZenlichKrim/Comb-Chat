@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, useActiveThread, formatTokens, formatCost } from '../store'
 import { MODELS } from '../../../shared/types'
+import { useT } from '../lib/i18n'
 
 export function StatusBar(): React.ReactElement {
+  const t = useT()
   const workspace = useStore((s) => s.workspace)
   const git = useStore((s) => s.git)
   const tabs = useStore((s) => s.tabs)
@@ -28,7 +30,7 @@ export function StatusBar(): React.ReactElement {
 
   return (
     <footer className="statusbar">
-      <button className="sb-item" onClick={() => useStore.getState().setPalette({ open: true, mode: 'commands' })} data-tip="Command palette">
+      <button className="sb-item" onClick={() => useStore.getState().setPalette({ open: true, mode: 'commands' })} data-tip={t('status.commandPalette')}>
         <Icon name="command" size={11} />
         <span>comb</span>
       </button>
@@ -44,24 +46,24 @@ export function StatusBar(): React.ReactElement {
       ) : (
         <span className="sb-item faint">
           <Icon name="git" size={11} />
-          <span>no repo</span>
+          <span>{t('status.noRepo')}</span>
         </span>
       )}
       <span className="sb-sep" />
       {running ? (
         <span className="sb-item acc">
           <span className="spinner" style={{ width: 8, height: 8 }} />
-          agent working
+          {t('title.agentRunning')}
         </span>
       ) : (
         <span className="sb-item">
           <span className="dot" style={{ background: backendOk ? 'var(--ok)' : 'var(--warn)' }} />
-          {backendOk ? 'ready' : 'no api key'}
+          {backendOk ? t('title.ready') : t('status.noKey')}
         </span>
       )}
       {dirty > 0 && (
         <span className="sb-item warn">
-          <Icon name="save" size={11} /> {dirty} unsaved
+          <Icon name="save" size={11} /> {t('status.unsaved', { n: dirty })}
         </span>
       )}
       <span className="sb-item faint ellipsis" style={{ maxWidth: 280 }} title={active?.path || workspace || ''}>
@@ -73,22 +75,22 @@ export function StatusBar(): React.ReactElement {
 
       {thread && (
         <>
-          <span className="sb-item faint" data-tip="Context used">
+          <span className="sb-item faint" data-tip={t('status.contextUsed')}>
             ctx {usagePct}%
           </span>
-          <span className="sb-item faint" data-tip="Session cost">
+          <span className="sb-item faint" data-tip={t('status.sessionCost')}>
             {formatCost(thread.usage.cost)}
           </span>
-          <span className="sb-item faint" data-tip="Tokens">
+          <span className="sb-item faint" data-tip={t('status.tokens')}>
             {formatTokens(thread.usage.promptTokens + thread.usage.completionTokens)} tok
           </span>
           <span className="sb-sep" />
         </>
       )}
-      <button className="sb-item" onClick={() => setRightPanel(rightPanel === 'none' ? 'plan' : 'none')} data-tip="Toggle side panel">
+      <button className="sb-item" onClick={() => setRightPanel(rightPanel === 'none' ? 'plan' : 'none')} data-tip={t('status.toggleSidePanel')}>
         <Icon name="panel-right" size={11} />
       </button>
-      <button className="sb-item" onClick={() => setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')} data-tip="Toggle terminal (Ctrl+`)">
+      <button className="sb-item" onClick={() => setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')} data-tip={t('status.toggleTerminal')}>
         <Icon name="panel-bottom" size={11} />
       </button>
       <span className="sb-sep" />

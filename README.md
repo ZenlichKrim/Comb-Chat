@@ -23,6 +23,18 @@ Built for programmers: monospace everywhere, dense information, keyboard-first, 
 | **Sessions & terminal** — a real shell in the workspace<br>![](docs/screenshots/11-sessions-and-terminal.png) | **Settings** — 6 themes, accents, scale, font<br>![](docs/screenshots/09-settings-appearance.png) |
 | **Agent settings** — policies, remembered grants, instructions<br>![](docs/screenshots/08-settings-agent.png) | **First run** — bring your own key<br>![](docs/screenshots/01-onboarding.png) |
 
+### In Russian / По-русски
+
+The whole interface is localised — Settings → Appearance → **Language** (`English` / `Русский`), applied live and
+persisted. A Russian-locale system starts in Russian automatically. The agent also replies in the language you write in.
+
+| | |
+| --- | --- |
+| **Session** — same density, Russian copy<br>![](docs/screenshots/ru-01-session.png) | **Approval prompt** — «разрешить / всегда / отклонить»<br>![](docs/screenshots/ru-02-approval.png) |
+| **Appearance** — language switch, themes, accents<br>![](docs/screenshots/ru-04-settings-appearance.png) | **Command palette** — every command translated<br>![](docs/screenshots/ru-08-palette.png) |
+| **Agent settings** — policies and grants<br>![](docs/screenshots/ru-03-settings-agent.png) | **Keys** — the full shortcut sheet in Russian<br>![](docs/screenshots/ru-05-settings-keys.png) |
+| **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
+
 ## Download
 
 | Platform | Artifact |

@@ -3,24 +3,27 @@ import type { ToolResultView } from '../../../shared/types'
 import { Icon, type IconName } from './Icon'
 import { DiffView } from './CodeBlock'
 import { useStore } from '../store'
+import { useT } from '../lib/i18n'
+import type { DictKey } from '../../../shared/i18n'
 
-const TOOL_META: Record<string, { icon: IconName; label: string; verb: string }> = {
-  read_file: { icon: 'file', label: 'Read', verb: 'reading' },
-  write_file: { icon: 'save', label: 'Write', verb: 'writing' },
-  edit_file: { icon: 'edit', label: 'Edit', verb: 'editing' },
-  multi_edit: { icon: 'edit', label: 'Multi-edit', verb: 'editing' },
-  list_dir: { icon: 'folder', label: 'List', verb: 'listing' },
-  glob: { icon: 'search', label: 'Glob', verb: 'matching' },
-  grep: { icon: 'search', label: 'Grep', verb: 'searching' },
-  run_command: { icon: 'terminal', label: 'Run', verb: 'running' },
-  delete_path: { icon: 'trash', label: 'Delete', verb: 'deleting' },
-  move_path: { icon: 'arrow-right', label: 'Move', verb: 'moving' },
-  todo_write: { icon: 'check', label: 'Plan', verb: 'planning' },
-  ask_user: { icon: 'chat', label: 'Ask', verb: 'asking' },
-  finish: { icon: 'check-circle', label: 'Done', verb: 'finishing' }
+/** label/verb are dictionary keys so the card follows the UI language. */
+const TOOL_META: Record<string, { icon: IconName; label: DictKey; verb: DictKey }> = {
+  read_file: { icon: 'file', label: 'tool.read', verb: 'tool.verbReading' },
+  write_file: { icon: 'save', label: 'tool.write', verb: 'tool.verbWriting' },
+  edit_file: { icon: 'edit', label: 'tool.edit', verb: 'tool.verbEditing' },
+  multi_edit: { icon: 'edit', label: 'tool.multiEdit', verb: 'tool.verbEditing' },
+  list_dir: { icon: 'folder', label: 'tool.list', verb: 'tool.verbListing' },
+  glob: { icon: 'search', label: 'tool.glob', verb: 'tool.verbMatching' },
+  grep: { icon: 'search', label: 'tool.grep', verb: 'tool.verbSearching' },
+  run_command: { icon: 'terminal', label: 'tool.run', verb: 'tool.verbRunning' },
+  delete_path: { icon: 'trash', label: 'tool.delete', verb: 'tool.verbDeleting' },
+  move_path: { icon: 'arrow-right', label: 'tool.move', verb: 'tool.verbMoving' },
+  todo_write: { icon: 'check', label: 'tool.plan', verb: 'tool.verbPlanning' },
+  ask_user: { icon: 'chat', label: 'tool.ask', verb: 'tool.verbAsking' },
+  finish: { icon: 'check-circle', label: 'tool.done', verb: 'tool.verbFinishing' }
 }
 
-function summarise(call: ToolResultView): string {
+function summarise(call: ToolResultView, t: (k: DictKey, v?: Record<string, string | number>) => string): string {
   const a = call.args || {}
   switch (call.name) {
     case 'read_file':
@@ -28,7 +31,7 @@ function summarise(call: ToolResultView): string {
     case 'write_file':
     case 'edit_file':
     case 'multi_edit':
-      return a.path || (a.edits ? `${a.edits.length} edits` : '')
+      return a.path || (a.edits ? t('tool.edits', { n: a.edits.length }) : '')
     case 'list_dir':
       return a.path || '.'
     case 'glob':
@@ -42,15 +45,18 @@ function summarise(call: ToolResultView): string {
     case 'move_path':
       return `${a.from} → ${a.to}`
     case 'todo_write':
-      return `${(a.todos || []).length} steps`
+      return t('tool.steps', { n: (a.todos || []).length })
     case 'finish':
-      return 'summary'
+      return t('tool.summary')
     default:
       return ''
   }
 }
 
-function statusPill(status: ToolResultView['status']): React.ReactElement {
+function statusPill(
+  status: ToolResultView['status'],
+  t: (k: DictKey, v?: Record<string, string | number>) => string
+): React.ReactElement {
   switch (status) {
     case 'running':
       return (
@@ -59,7 +65,7 @@ function statusPill(status: ToolResultView['status']): React.ReactElement {
         </span>
       )
     case 'awaiting-approval':
-      return <span className="tool-status warn">needs approval</span>
+      return <span className="tool-status warn">{t('tool.needsApproval')}</span>
     case 'ok':
       return (
         <span className="tool-status ok">
@@ -73,16 +79,17 @@ function statusPill(status: ToolResultView['status']): React.ReactElement {
         </span>
       )
     case 'denied':
-      return <span className="tool-status err">denied</span>
+      return <span className="tool-status err">{t('tool.denied')}</span>
     case 'aborted':
-      return <span className="tool-status faint">stopped</span>
+      return <span className="tool-status faint">{t('tool.stopped')}</span>
     default:
-      return <span className="tool-status faint">queued</span>
+      return <span className="tool-status faint">{t('tool.queued')}</span>
   }
 }
 
 export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement {
-  const meta = TOOL_META[call.name] || { icon: 'zap' as IconName, label: call.name, verb: call.name }
+  const t = useT()
+  const meta = TOOL_META[call.name] || { icon: 'zap' as IconName, label: call.name as DictKey, verb: call.name as DictKey }
   const [open, setOpen] = useState(false)
   const hasDiff = !!call.diff?.length
   const wantsOpen = call.status === 'error' || call.status === 'awaiting-approval'
@@ -97,8 +104,8 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
       <button className="tool-head" onClick={() => setOpen((v) => !v)}>
         <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={9} className="tool-caret" />
         <Icon name={meta.icon} size={11} className="tool-icon" />
-        <span className="tool-label">{meta.label}</span>
-        <span className="tool-arg ellipsis">{summarise(call)}</span>
+        <span className="tool-label">{TOOL_META[call.name] ? t(meta.label) : meta.label}</span>
+        <span className="tool-arg ellipsis">{summarise(call, t)}</span>
         {diff && (diff.add > 0 || diff.del > 0) && (
           <span className="tool-stats">
             <span className="ok">+{diff.add}</span>
@@ -106,20 +113,20 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
           </span>
         )}
         {call.durationMs ? <span className="tool-time faint">{call.durationMs < 1000 ? `${call.durationMs}ms` : `${(call.durationMs / 1000).toFixed(1)}s`}</span> : null}
-        {statusPill(call.status)}
+        {statusPill(call.status, t)}
       </button>
 
       {expanded && (
         <div className="tool-body">
           {call.status === 'awaiting-approval' && <ApprovalInline call={call} />}
-          {call.status === 'denied' && <div className="tool-note err">Action denied by you.</div>}
+          {call.status === 'denied' && <div className="tool-note err">{t('tool.deniedNote')}</div>}
 
           {hasDiff ? (
             (call.diff || []).map((d, i) => (
               <div key={i} className="tool-diff">
                 <div className="tool-diff-head">
                   <span className={`pill ${d.kind === 'create' ? 'ok' : d.kind === 'delete' ? 'err' : 'acc'}`}>
-                    {d.kind === 'create' ? 'new file' : d.kind === 'delete' ? 'deleted' : 'modified'}
+                    {d.kind === 'create' ? t('tool.newFile') : d.kind === 'delete' ? t('tool.deleted') : t('tool.modified')}
                   </span>
                   <button
                     className="link"
@@ -135,7 +142,7 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
                   <button
                     className="icon-btn"
                     style={{ width: 18, height: 18 }}
-                    data-tip="Show full diff"
+                    data-tip={t('tool.showFullDiff')}
                     onClick={() =>
                       useStore.getState().setDiffPreview({
                         path: d.path,
@@ -153,10 +160,10 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
               </div>
             ))
           ) : call.output ? (
-            <pre className="tool-output">{call.output.length > 6000 ? call.output.slice(0, 6000) + '\n… truncated' : call.output}</pre>
+            <pre className="tool-output">{call.output.length > 6000 ? call.output.slice(0, 6000) + '\n' + t('tool.truncated') : call.output}</pre>
           ) : null}
           {call.error && <pre className="tool-error">{call.error}</pre>}
-          {call.status === 'running' && <div className="tool-running"><span className="spinner" /> {meta.verb}…</div>}
+          {call.status === 'running' && <div className="tool-running"><span className="spinner" /> {t(meta.verb)}…</div>}
         </div>
       )}
     </div>
@@ -164,6 +171,7 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
 }
 
 function ApprovalInline({ call }: { call: ToolResultView }): React.ReactElement {
+  const t = useT()
   const approve = useStore((s) => s.approve)
   const [expanded, setExpanded] = useState(false)
   return (
@@ -171,19 +179,19 @@ function ApprovalInline({ call }: { call: ToolResultView }): React.ReactElement 
       <div className="approval-head">
         <Icon name="shield" size={13} className="warn" />
         <span className="t-sm">
-          Comb wants to <strong>{(TOOL_META[call.name]?.verb || 'run').replace('…', '')}</strong> — review before allowing.
+          {t('tool.combWants', { verb: TOOL_META[call.name] ? t(TOOL_META[call.name].verb) : t('tool.verbRunning') })}
         </span>
       </div>
       {call.name === 'run_command' && <pre className="approval-code">$ {String(call.args.command || '')}</pre>}
       {(call.name === 'write_file') && (
         <pre className="approval-code">
-          {String(call.args.path || '')} · {String(call.args.content || '').split('\n').length} lines
+          {String(call.args.path || '')} · {t('tool.diffLines', { n: String(call.args.content || '').split('\n').length })}
         </pre>
       )}
       {(call.name === 'edit_file' || call.name === 'multi_edit') && !expanded && (
         <pre className="approval-code">
           {call.args.edits
-            ? `${call.args.edits.length} edits in ${new Set(call.args.edits.map((e: any) => e.path)).size} file(s)`
+            ? t('tool.editsInFiles', { n: call.args.edits.length, f: new Set(call.args.edits.map((e: any) => e.path)).size })
             : `${String(call.args.path || '')}\n- ${String(call.args.old_string || '').slice(0, 200).split('\n').join('\n- ')}\n+ ${String(call.args.new_string || '').slice(0, 200).split('\n').join('\n+ ')}`}
         </pre>
       )}
@@ -194,17 +202,17 @@ function ApprovalInline({ call }: { call: ToolResultView }): React.ReactElement 
       )}
       <div className="approval-actions">
         <button className="btn primary sm" onClick={() => void approve('allow')}>
-          <Icon name="check" size={11} /> Allow <kbd style={{ opacity: 0.6 }}>↵</kbd>
+          <Icon name="check" size={11} /> {t('tool.allow')} <kbd style={{ opacity: 0.6 }}>↵</kbd>
         </button>
         <button className="btn sm" onClick={() => void approve('allow-always')}>
-          Always allow {call.name}
+          {t('tool.alwaysAllow', { tool: call.name })}
         </button>
         <button className="btn danger sm" onClick={() => void approve('deny')}>
-          Deny
+          {t('tool.deny')}
         </button>
         <span className="spacer" />
         <button className="btn ghost sm" onClick={() => setExpanded((v) => !v)}>
-          {expanded ? 'less' : 'details'}
+          {expanded ? t('common.less') : t('common.details')}
         </button>
       </div>
     </div>

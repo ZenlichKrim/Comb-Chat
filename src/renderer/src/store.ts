@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { tr } from './lib/i18n'
 import type {
   AgentEvent,
   Attachment,
@@ -218,7 +219,7 @@ export const useStore = create<State & Actions>((set, get) => ({
     window.comb.fs.watch(target, 'workspace')
     await get().refreshTree(target)
     await get().refreshGit()
-    get().toast('ok', `Workspace opened`, target)
+    get().toast('ok', tr('store.workspaceOpened'), target)
   },
 
   refreshTree: async (dir) => {
@@ -229,7 +230,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       const entries = (await window.comb.fs.list(target)) as DirEntry[]
       set((s) => ({ dirCache: { ...s.dirCache, [target]: entries } }))
     } catch (e: any) {
-      get().toast('err', 'Cannot read folder', e?.message)
+      get().toast('err', tr('store.cannotRead'), e?.message)
     }
   },
 
@@ -263,7 +264,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       set((s) => ({ tabs: [...s.tabs, tab], activeTabPath: path }))
     } catch (e: any) {
-      get().toast('err', 'Cannot open file', e?.message)
+      get().toast('err', tr('store.cannotOpen'), e?.message)
     }
   },
 
@@ -293,7 +294,7 @@ export const useStore = create<State & Actions>((set, get) => ({
         tabs: s.tabs.map((t) => (t.path === tab.path ? { ...t, original: t.content, dirty: false, mtime: (res as any).mtime } : t))
       }))
     } catch (e: any) {
-      get().toast('err', 'Save failed', e?.message)
+      get().toast('err', tr('store.saveFailed'), e?.message)
     }
   },
 
@@ -511,14 +512,14 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       case 'error':
         updateAssistant((m) => ({ ...m, error: e.message, streaming: false }))
-        get().toast('err', 'Agent error', e.message)
+        get().toast('err', tr('store.agentError'), e.message)
         break
       case 'run-end': {
         updateAssistant((m) => ({ ...m, streaming: false, stopped: e.reason === 'stopped' }))
         set({ running: false, pendingApproval: null })
         const t = get().threads.find((x) => x.id === threadId)
         if (t) get().persistThread({ ...t, updatedAt: Date.now() })
-        if (e.reason === 'limit') get().toast('warn', 'Step limit reached', 'Increase Agent steps in Settings to continue.')
+        if (e.reason === 'limit') get().toast('warn', tr('store.stepLimit'), tr('store.stepLimitHint'))
         break
       }
       default:
@@ -566,7 +567,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   restoreCheckpoint: async (id) => {
     const res = (await window.comb.checkpoints.restore(id)) as { ok: boolean; restored: string[] }
     if (res.ok) {
-      get().toast('ok', `Restored ${res.restored.length} file(s)`)
+      get().toast('ok', tr('rp.restored', { n: res.restored.length }))
       await get().refreshTree()
       for (const t of get().tabs) {
         try {
@@ -576,7 +577,7 @@ export const useStore = create<State & Actions>((set, get) => ({
           /* skip */
         }
       }
-    } else get().toast('err', 'Nothing to restore')
+    } else get().toast('err', tr('store.nothingToRestore'))
   },
 
   undoLastRun: async () => {

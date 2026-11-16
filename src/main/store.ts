@@ -39,9 +39,18 @@ const listeners = new Set<(s: Settings) => void>()
 export async function getSettings(): Promise<Settings> {
   if (settingsCache) return settingsCache
   const file = path.join(dataDir(), 'settings.json')
+  const existed = await fs
+    .access(file)
+    .then(() => true)
+    .catch(() => false)
   const stored = await readJson<Settings>(file, DEFAULTS)
   // merge defaults for keys added in later versions
   settingsCache = { ...DEFAULTS, ...stored }
+  // First run: follow the OS language so a Russian system opens in Russian.
+  if (!existed) {
+    const lang = (app.getLocale?.() || process.env.LANG || 'en').toLowerCase()
+    if (lang.startsWith('ru')) settingsCache = { ...settingsCache, locale: 'ru' }
+  }
   return settingsCache
 }
 

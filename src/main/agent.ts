@@ -61,6 +61,7 @@ function systemPrompt(opts: {
   approvalPolicy: string
   custom: string
   contextFiles: string[]
+  locale: string
 }): string {
   const toolsGuide = opts.workspace
     ? `
@@ -79,6 +80,7 @@ The user has not opened a folder. You cannot read or write files. Answer questio
 
 # Environment
 - Platform: ${opts.platform}
+- Interface language: ${opts.locale === 'ru' ? 'Russian (respond in Russian unless the user writes in another language)' : 'English'}
 - Shell: ${opts.shell}
 - Date: ${opts.now}
 - Approval policy: ${opts.approvalPolicy}${opts.workspace ? `\n- Workspace: ${opts.workspace}` : ''}
@@ -233,7 +235,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     now: new Date().toISOString(),
     approvalPolicy: req.approvalPolicy,
     custom: req.customInstructions || settings.customInstructions || '',
-    contextFiles: (req.openFiles || []).map((f) => f.rel)
+    contextFiles: (req.openFiles || []).map((f) => f.rel),
+    locale: settings.locale || 'en'
   })
 
   const history: LlmMessage[] = [{ role: 'system', content: sys }]

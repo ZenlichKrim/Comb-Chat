@@ -6,6 +6,8 @@
 export type ApprovalPolicy = 'ask' | 'auto-edit' | 'yolo'
 export type ThemeId = 'comb' | 'midnight' | 'graphite' | 'amber' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
+/** UI language. 'auto' follows the OS locale on first run. */
+export type Locale = 'en' | 'ru'
 
 export interface ModelInfo {
   id: string
@@ -76,6 +78,7 @@ export interface Settings {
   recentWorkspaces: string[]
   alphaFeatures: boolean
   allowedTools: string[]
+  locale: Locale
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -105,7 +108,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lastWorkspace: null,
   recentWorkspaces: [],
   alphaFeatures: false,
-  allowedTools: []
+  allowedTools: [],
+  locale: 'en'
 }
 
 /* ------------------------------------------------------------------ */

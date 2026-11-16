@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, timeAgo, uid } from '../store'
+import { useT } from '../lib/i18n'
 import type { DirEntry, SearchHit, GitFile } from '../../../shared/types'
 
 export function Sidebar(): React.ReactElement {
+  const t = useT()
   const section = useStore((s) => s.sidebarSection)
   const setSection = (v: 'files' | 'search' | 'git' | 'threads'): void => useStore.setState({ sidebarSection: v })
   const git = useStore((s) => s.git)
@@ -13,17 +15,17 @@ export function Sidebar(): React.ReactElement {
   return (
     <aside className="sidebar">
       <div className="sb-tabs">
-        <button className="sb-tab" data-active={section === 'files'} onClick={() => setSection('files')} data-tip="Explorer">
+        <button className="sb-tab" data-active={section === 'files'} onClick={() => setSection('files')} data-tip={t('side.explorer')}>
           <Icon name="file" size={13} />
         </button>
-        <button className="sb-tab" data-active={section === 'search'} onClick={() => setSection('search')} data-tip="Search (Ctrl+Shift+F)">
+        <button className="sb-tab" data-active={section === 'search'} onClick={() => setSection('search')} data-tip={t('side.searchTip')}>
           <Icon name="search" size={13} />
         </button>
-        <button className="sb-tab" data-active={section === 'git'} onClick={() => { setSection('git'); void refreshGit() }} data-tip="Source control">
+        <button className="sb-tab" data-active={section === 'git'} onClick={() => { setSection('git'); void refreshGit() }} data-tip={t('side.sourceControl')}>
           <Icon name="git" size={13} />
           {changes > 0 && <span className="sb-badge">{changes > 99 ? '99+' : changes}</span>}
         </button>
-        <button className="sb-tab" data-active={section === 'threads'} onClick={() => setSection('threads')} data-tip="Sessions">
+        <button className="sb-tab" data-active={section === 'threads'} onClick={() => setSection('threads')} data-tip={t('side.sessionsTip')}>
           <Icon name="chat" size={13} />
         </button>
         <span className="spacer" />
@@ -43,6 +45,7 @@ export function Sidebar(): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 function FileTree(): React.ReactElement {
+  const t = useT()
   const workspace = useStore((s) => s.workspace)
   const openWorkspace = useStore((s) => s.openWorkspace)
   const expanded = useStore((s) => s.expandedDirs)
@@ -70,15 +73,10 @@ function FileTree(): React.ReactElement {
       <div className="sb-empty">
         <div className="col gap-4" style={{ alignItems: 'center', textAlign: 'center', padding: '28px 16px' }}>
           <Icon name="folder" size={26} className="ghost" />
-          <div className="t-sm dim">No folder open</div>
+          <div className="t-sm dim">{t('side.noFolder')}</div>
           <button className="btn primary sm" onClick={() => void openWorkspace()}>
-            <Icon name="folder" size={12} /> Open folder
+            <Icon name="folder" size={12} /> {t('common.openFolder')}
           </button>
-          <div className="t-xs ghost" style={{ lineHeight: 1.6 }}>
-            Comb reads and edits files directly
-            <br />
-            in the folder you pick.
-          </div>
         </div>
       </div>
     )
@@ -104,7 +102,7 @@ function FileTree(): React.ReactElement {
     try {
       if (action === 'new-file' || action === 'new-folder') {
         const base = entry ? (entry.isDir ? entry.path : entry.path.replace(/[\\/][^\\/]*$/, '')) : workspace
-        const name = window.prompt(action === 'new-file' ? 'New file name' : 'New folder name')
+        const name = window.prompt(action === 'new-file' ? t('side.newFileName') : t('side.newFolderName'))
         if (!name) return
         await window.comb.fs.create(`${base}/${name}`, action === 'new-folder')
         await refreshTree(base)
@@ -113,17 +111,17 @@ function FileTree(): React.ReactElement {
         setRenaming(entry.path)
         setNewName(entry.name)
       } else if (action === 'delete' && entry) {
-        if (!window.confirm(`Delete "${entry.name}"? This cannot be undone.`)) return
+        if (!window.confirm(t('side.deleteConfirm', { name: entry.name }))) return
         await window.comb.fs.remove(entry.path)
         await refreshTree(entry.path.replace(/[\\/][^\\/]*$/, ''))
       } else if (action === 'reveal' && entry) {
         window.comb.app.showItemInFolder(entry.path)
       } else if (action === 'copy-path' && entry) {
         window.comb.clipboard.write(entry.path)
-        toast('ok', 'Path copied')
+        toast('ok', t('side.pathCopied'))
       }
     } catch (e: any) {
-      toast('err', 'Action failed', e?.message)
+      toast('err', t('side.actionFailed'), e?.message)
     }
   }
 
@@ -136,7 +134,7 @@ function FileTree(): React.ReactElement {
       await window.comb.fs.rename(entry.path, `${dir}/${next}`)
       await refreshTree(dir)
     } catch (e: any) {
-      toast('err', 'Rename failed', e?.message)
+      toast('err', t('side.renameFailed'), e?.message)
     }
   }
 
@@ -195,13 +193,13 @@ function FileTree(): React.ReactElement {
           {workspace.split(/[\\/]/).filter(Boolean).pop()}
         </span>
         <span className="spacer" />
-        <button className="icon-btn" data-tip="New file" onClick={() => void doAction('new-file', null)} style={{ width: 20, height: 20 }}>
+        <button className="icon-btn" data-tip={t('side.newFile')} onClick={() => void doAction('new-file', null)} style={{ width: 20, height: 20 }}>
           <Icon name="file-plus" size={12} />
         </button>
-        <button className="icon-btn" data-tip="New folder" onClick={() => void doAction('new-folder', null)} style={{ width: 20, height: 20 }}>
+        <button className="icon-btn" data-tip={t('side.newFolder')} onClick={() => void doAction('new-folder', null)} style={{ width: 20, height: 20 }}>
           <Icon name="folder" size={12} />
         </button>
-        <button className="icon-btn" data-tip="Refresh" onClick={() => void refreshTree()} style={{ width: 20, height: 20 }}>
+        <button className="icon-btn" data-tip={t('common.refresh')} onClick={() => void refreshTree()} style={{ width: 20, height: 20 }}>
           <Icon name="refresh" size={11} />
         </button>
       </div>
@@ -210,7 +208,7 @@ function FileTree(): React.ReactElement {
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="filter files…"
+          placeholder={t('side.filterFiles')}
           spellCheck={false}
         />
         {filter && (
@@ -237,33 +235,33 @@ function FileTree(): React.ReactElement {
               </div>
             ))
           : rootEntries.map((e) => renderEntry(e, 0))}
-        {!filter && !rootEntries.length && <div className="t-xs ghost" style={{ padding: 12 }}>Empty folder</div>}
+        {!filter && !rootEntries.length && <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.emptyFolder')}</div>}
       </div>
       {ctxMenu && (
         <>
           <div className="backdrop" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
           <div className="menu ctx" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
             <button className="menu-item" onClick={() => void doAction('new-file', ctxMenu.entry)}>
-              <Icon name="file-plus" size={12} /> New file
+              <Icon name="file-plus" size={12} /> {t('side.newFile')}
             </button>
             <button className="menu-item" onClick={() => void doAction('new-folder', ctxMenu.entry)}>
-              <Icon name="folder" size={12} /> New folder
+              <Icon name="folder" size={12} /> {t('side.newFolder')}
             </button>
             {ctxMenu.entry && (
               <>
                 <div className="divider" />
                 <button className="menu-item" onClick={() => void doAction('rename', ctxMenu.entry)}>
-                  <Icon name="edit" size={12} /> Rename
+                  <Icon name="edit" size={12} /> {t('common.rename')}
                 </button>
                 <button className="menu-item" onClick={() => void doAction('copy-path', ctxMenu.entry)}>
-                  <Icon name="copy" size={12} /> Copy path
+                  <Icon name="copy" size={12} /> {t('common.copy')} path
                 </button>
                 <button className="menu-item" onClick={() => void doAction('reveal', ctxMenu.entry)}>
-                  <Icon name="external" size={12} /> Reveal in file manager
+                  <Icon name="external" size={12} /> {t('side.revealInFolder')}
                 </button>
                 <div className="divider" />
                 <button className="menu-item danger" onClick={() => void doAction('delete', ctxMenu.entry)}>
-                  <Icon name="trash" size={12} /> Delete
+                  <Icon name="trash" size={12} /> {t('common.delete')}
                 </button>
               </>
             )}
@@ -322,6 +320,7 @@ function FolderIcon({ open }: { open: boolean }): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 function SearchPanel(): React.ReactElement {
+  const t = useT()
   const workspace = useStore((s) => s.workspace)
   const openFile = useStore((s) => s.openFile)
   const [query, setQuery] = useState('')
@@ -366,7 +365,7 @@ function SearchPanel(): React.ReactElement {
   return (
     <div className="col grow" style={{ minHeight: 0 }}>
       <div className="sb-section-head">
-        <span className="cap">Search</span>
+        <span className="cap">{t('side.searchTitle')}</span>
         <span className="spacer" />
         {busy && <span className="spinner" />}
         <span className="t-xs faint">{hits.length ? `${hits.length} hits` : ''}</span>
@@ -379,12 +378,12 @@ function SearchPanel(): React.ReactElement {
             value={query}
             spellCheck={false}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="search in files…"
+            placeholder={t('side.searchPlaceholder')}
           />
-          <button className="search-toggle" data-active={caseSensitive} onClick={() => setCase((v) => !v)} data-tip="Match case">
+          <button className="search-toggle" data-active={caseSensitive} onClick={() => setCase((v) => !v)} data-tip={t('side.matchCase')}>
             Aa
           </button>
-          <button className="search-toggle" data-active={regex} onClick={() => setRegex((v) => !v)} data-tip="Regex">
+          <button className="search-toggle" data-active={regex} onClick={() => setRegex((v) => !v)} data-tip={t('side.regex')}>
             .*
           </button>
         </div>
@@ -405,7 +404,7 @@ function SearchPanel(): React.ReactElement {
             ))}
           </div>
         ))}
-        {query && !busy && !hits.length && <div className="t-xs ghost" style={{ padding: 12 }}>No results</div>}
+        {query && !busy && !hits.length && <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.noResults')}</div>}
         {!workspace && <div className="t-xs ghost" style={{ padding: 12 }}>Open a folder first</div>}
       </div>
     </div>
@@ -417,6 +416,7 @@ function SearchPanel(): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 function GitPanel(): React.ReactElement {
+  const t = useT()
   const git = useStore((s) => s.git)
   const workspace = useStore((s) => s.workspace)
   const refresh = useStore((s) => s.refreshGit)
@@ -425,20 +425,20 @@ function GitPanel(): React.ReactElement {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (!workspace) return <div className="t-xs ghost" style={{ padding: 12 }}>Open a folder first</div>
+  if (!workspace) return <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.openFolderFirst')}</div>
   if (!git?.isRepo) {
     return (
       <div className="col gap-4" style={{ padding: 14, alignItems: 'flex-start' }}>
-        <div className="t-sm dim">Not a git repository</div>
+        <div className="t-sm dim">{t('side.notGitRepo')}</div>
         <button
           className="btn sm"
           onClick={async () => {
             const res = await window.comb.git.init(workspace)
-            toast(res.ok ? 'ok' : 'err', res.ok ? 'Repository initialised' : 'git init failed')
+            toast(res.ok ? 'ok' : 'err', res.ok ? t('side.repoInitialised') : t('side.gitInitFailed'))
             await refresh()
           }}
         >
-          <Icon name="git" size={12} /> git init
+          <Icon name="git" size={12} /> {t('side.gitInit')}
         </button>
       </div>
     )
@@ -459,7 +459,7 @@ function GitPanel(): React.ReactElement {
       <button
         className="icon-btn"
         style={{ width: 18, height: 18 }}
-        data-tip={isStaged ? 'Unstage' : 'Stage'}
+        data-tip={isStaged ? t('side.unstage') : t('side.stage')}
         onClick={async (e) => {
           e.stopPropagation()
           if (isStaged) await window.comb.git.unstage(workspace, [f.path])
@@ -480,7 +480,7 @@ function GitPanel(): React.ReactElement {
         {git.ahead > 0 && <span className="pill" data-tip="ahead">↑{git.ahead}</span>}
         {git.behind > 0 && <span className="pill" data-tip="behind">↓{git.behind}</span>}
         <span className="spacer" />
-        <button className="icon-btn" style={{ width: 20, height: 20 }} data-tip="Refresh" onClick={() => void refresh()}>
+        <button className="icon-btn" style={{ width: 20, height: 20 }} data-tip={t('common.refresh')} onClick={() => void refresh()}>
           <Icon name="refresh" size={11} />
         </button>
       </div>
@@ -489,7 +489,7 @@ function GitPanel(): React.ReactElement {
           <textarea
             className="textarea commit-input"
             rows={2}
-            placeholder="commit message…"
+            placeholder={t('side.commitPlaceholder')}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
           />
@@ -500,7 +500,7 @@ function GitPanel(): React.ReactElement {
               setBusy(true)
               try {
                 const res = await window.comb.git.commit(workspace, message)
-                toast(res.ok ? 'ok' : 'err', res.ok ? 'Committed' : 'Commit failed', res.out.split('\n')[0])
+                toast(res.ok ? 'ok' : 'err', res.ok ? t('side.committed') : t('side.commitFailed'), res.out.split('\n')[0])
                 if (res.ok) setMessage('')
                 await refresh()
               } finally {
@@ -508,25 +508,25 @@ function GitPanel(): React.ReactElement {
               }
             }}
           >
-            {busy ? <span className="spinner" /> : <Icon name="check" size={11} />} commit {git.files.length ? `(${git.files.length})` : ''}
+            {busy ? <span className="spinner" /> : <Icon name="check" size={11} />} {t('side.commit', { n: git.files.length })}
           </button>
         </div>
         {!!staged.length && (
           <>
-            <div className="git-group">Staged · {staged.length}</div>
+            <div className="git-group">{t('side.staged')} · {staged.length}</div>
             {staged.map((f) => fileRow(f, true))}
           </>
         )}
         {!!unstaged.length && (
           <>
-            <div className="git-group">Changes · {unstaged.length}</div>
+            <div className="git-group">{t('side.changes')} · {unstaged.length}</div>
             {unstaged.map((f) => fileRow(f, false))}
           </>
         )}
-        {!git.files.length && <div className="t-xs ghost" style={{ padding: '8px 12px' }}>Working tree clean</div>}
+        {!git.files.length && <div className="t-xs ghost" style={{ padding: '8px 12px' }}>{t('side.workingTreeClean')}</div>}
         {!!git.log.length && (
           <>
-            <div className="git-group" style={{ marginTop: 8 }}>Recent commits</div>
+            <div className="git-group" style={{ marginTop: 8 }}>{t('side.recentCommits')}</div>
             {git.log.map((l) => (
               <div key={l.hash} className="commit-row" title={l.subject}>
                 <span className="mono t-xs acc">{l.hash}</span>
@@ -546,6 +546,7 @@ function GitPanel(): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 function ThreadsPanel(): React.ReactElement {
+  const t = useT()
   const threads = useStore((s) => s.threads)
   const activeId = useStore((s) => s.activeThreadId)
   const select = useStore((s) => s.selectThread)
@@ -557,24 +558,24 @@ function ThreadsPanel(): React.ReactElement {
   return (
     <div className="col grow" style={{ minHeight: 0 }}>
       <div className="sb-section-head">
-        <span className="cap">Sessions</span>
+        <span className="cap">{t('side.sessions')}</span>
         <span className="spacer" />
-        <button className="icon-btn" style={{ width: 20, height: 20 }} data-tip="New session (Ctrl+N)" onClick={() => newThread()}>
+        <button className="icon-btn" style={{ width: 20, height: 20 }} data-tip={t('side.newSession')} onClick={() => newThread()}>
           <Icon name="plus" size={12} />
         </button>
       </div>
       <div className="tree-filter">
         <Icon name="search" size={11} className="faint" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="search sessions…" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
       </div>
       <div className="tree-scroll">
-        {filtered.map((t) => (
-          <div key={t.id} className="thread-row" data-active={t.id === activeId} onClick={() => select(t.id)}>
-            <Icon name="chat" size={12} className={t.id === activeId ? 'acc' : 'faint'} />
+        {filtered.map((thread) => (
+          <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>
+            <Icon name="chat" size={12} className={thread.id === activeId ? 'acc' : 'faint'} />
             <div className="col grow" style={{ gap: 1, minWidth: 0 }}>
-              <span className="ellipsis t-sm">{t.title}</span>
+              <span className="ellipsis t-sm">{thread.title}</span>
               <span className="t-xs ghost">
-                {t.messages.filter((m) => m.role === 'user').length} msgs · {timeAgo(t.updatedAt)}
+                {t('side.msgs', { n: thread.messages.filter((m) => m.role === 'user').length })} · {timeAgo(thread.updatedAt)}
               </span>
             </div>
             <button
@@ -582,14 +583,14 @@ function ThreadsPanel(): React.ReactElement {
               style={{ width: 18, height: 18 }}
               onClick={(e) => {
                 e.stopPropagation()
-                if (window.confirm('Delete this session?')) void remove(t.id)
+                if (window.confirm(t('side.deleteSession'))) void remove(thread.id)
               }}
             >
               <Icon name="trash" size={11} />
             </button>
           </div>
         ))}
-        {!filtered.length && <div className="t-xs ghost" style={{ padding: 12 }}>No sessions yet</div>}
+        {!filtered.length && <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.noSessions')}</div>}
       </div>
     </div>
   )

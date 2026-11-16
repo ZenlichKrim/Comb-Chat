@@ -10,6 +10,7 @@ import { SettingsDialog } from './components/Settings'
 import { CommandPalette, Toasts, DiffModal, AboutDialog } from './components/Palette'
 import { useStore } from './store'
 import { Icon } from './components/Icon'
+import { useT } from './lib/i18n'
 
 export function App(): React.ReactElement {
   const ready = useStore((s) => s.ready)
@@ -154,6 +155,7 @@ export function App(): React.ReactElement {
 }
 
 function OnboardingOverlay(): React.ReactElement {
+  const t = useT()
   const settings = useStore((s) => s.settings)
   const [dismissed, setDismissed] = useState<boolean>(() => !!useStore.getState().settings.apiKey)
   const setSettings = useStore((s) => s.setSettings)
@@ -184,9 +186,9 @@ function OnboardingOverlay(): React.ReactElement {
           <div className="onb-mark lg"><Icon name="bee" size={26} strokeWidth={1.2} /></div>
           <div className="col" style={{ gap: 3 }}>
             <h1 className="t-lg" style={{ margin: 0, fontWeight: 700, color: 'var(--fg-0)' }}>
-              Welcome to Comb<span className="acc">.</span>
+              {t('welcome.title')}<span className="acc">.</span>
             </h1>
-            <span className="t-xs faint">A desktop coding agent — no subscription, your own API key.</span>
+            <span className="t-xs faint">{t('welcome.sub')}</span>
           </div>
         </div>
 
@@ -194,9 +196,9 @@ function OnboardingOverlay(): React.ReactElement {
           <>
             <div className="onb-steps">
               {[
-                ['key', 'Paste your DeepSeek API key', 'Stored locally, sent only to api.deepseek.com'],
-                ['folder', 'Open a project folder', 'Comb reads, edits and runs things inside it'],
-                ['shield', 'You stay in control', 'Every write asks first — until you say otherwise']
+                ['key', t('welcome.step1'), t('welcome.step1Body')],
+                ['folder', t('welcome.step2'), t('welcome.step2Body')],
+                ['shield', t('welcome.step3'), t('welcome.step3Body')]
               ].map(([icon, title, desc], i) => (
                 <div key={title} className="onb-step">
                   <span className="onb-step-num">{i + 1}</span>
@@ -209,7 +211,7 @@ function OnboardingOverlay(): React.ReactElement {
               ))}
             </div>
             <div className="onb-field">
-              <label className="cap">deepseek api key</label>
+              <label className="cap">{t('welcome.keyLabel')}</label>
               <div className="row gap-2">
                 <input
                   className="input"
@@ -224,7 +226,7 @@ function OnboardingOverlay(): React.ReactElement {
                   }}
                 />
                 <button className="btn primary" onClick={() => void connect()} disabled={!key || testing}>
-                  {testing ? <span className="spinner" /> : <Icon name="arrow-right" size={12} />} connect
+                  {testing ? <span className="spinner" /> : <Icon name="arrow-right" size={12} />} {testing ? t('welcome.connecting') : t('welcome.connect')}
                 </button>
               </div>
               {result && (
@@ -235,13 +237,13 @@ function OnboardingOverlay(): React.ReactElement {
               )}
               <div className="row gap-2" style={{ marginTop: 4 }}>
                 <button className="link t-xs" onClick={() => window.comb.app.openExternal('https://platform.deepseek.com/api_keys')}>
-                  get a key →
+                  {t('welcome.getKey')}
                 </button>
                 <span className="ghost">·</span>
-                <button className="link t-xs" onClick={setSettingsOpen}>configure endpoint</button>
+                <button className="link t-xs" onClick={setSettingsOpen}>{t('welcome.configureEndpoint')}</button>
                 <span className="spacer" />
                 <button className="link t-xs faint" onClick={() => setDismissed(true)}>
-                  skip for now
+                  {t('welcome.skip')}
                 </button>
               </div>
             </div>
@@ -251,16 +253,16 @@ function OnboardingOverlay(): React.ReactElement {
         {step === 2 && (
           <div className="onb-done">
             <Icon name="check-circle" size={22} className="ok" />
-            <span className="t-sm" style={{ color: 'var(--fg-0)' }}>Connected. Your key works.</span>
+            <span className="t-sm" style={{ color: 'var(--fg-0)' }}>{t('welcome.connected')}</span>
             <span className="t-xs faint" style={{ textAlign: 'center' }}>
-              Open a folder to give Comb hands — or just start chatting.
+              {t('welcome.connectedBody')}
             </span>
             <div className="row gap-3">
               <button className="btn primary" onClick={() => setDismissed(true)}>
-                <Icon name="folder" size={12} /> open a folder
+                <Icon name="folder" size={12} /> {t('common.openFolder')}
               </button>
               <button className="btn" onClick={() => setDismissed(true)}>
-                later
+                {t('welcome.later')}
               </button>
             </div>
           </div>

@@ -2114,6 +2114,9 @@ button.sb-item:hover {
   color: var(--fg-0);
   font-size: var(--fs-md);
 }
+.settings-tab::first-letter {
+  text-transform: uppercase;
+}
 .settings-tab {
   display: flex;
   align-items: center;

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, type IconName } from './Icon'
 import { useStore } from '../store'
+import { useT } from '../lib/i18n'
 import type { SearchHit } from '../../../shared/types'
 
 interface Command {
@@ -13,6 +14,7 @@ interface Command {
 }
 
 export function CommandPalette(): React.ReactElement {
+  const t = useT()
   const palette = useStore((s) => s.palette)
   const setPalette = useStore((s) => s.setPalette)
   const [query, setQuery] = useState('')
@@ -40,34 +42,34 @@ export function CommandPalette(): React.ReactElement {
   const commands = useMemo<Command[]>(() => {
     const st = useStore.getState()
     const base: Command[] = [
-      { id: 'new', label: 'New session', icon: 'plus', keys: 'Ctrl N', run: () => st.newThread() },
-      { id: 'open', label: 'Open folder…', icon: 'folder', keys: 'Ctrl O', run: () => void st.openWorkspace() },
-      { id: 'settings', label: 'Open settings', icon: 'settings', keys: 'Ctrl ,', run: () => useStore.setState({ settingsOpen: true }) },
-      { id: 'save', label: 'Save file', icon: 'save', keys: 'Ctrl S', run: () => void st.saveTab() },
-      { id: 'saveall', label: 'Save all files', icon: 'save', run: () => void st.saveAllTabs() },
-      { id: 'terminal', label: 'Toggle terminal', icon: 'terminal', keys: 'Ctrl `', run: () => st.setBottomPanel(st.bottomPanel === 'terminal' ? 'none' : 'terminal') },
-      { id: 'output', label: 'Show agent activity', icon: 'zap', run: () => st.setBottomPanel('output') },
-      { id: 'plan', label: 'Toggle plan panel', icon: 'check-circle', keys: 'Ctrl J', run: () => st.setRightPanel(st.rightPanel === 'none' ? 'plan' : 'none') },
-      { id: 'history', label: 'Show checkpoints', icon: 'history', run: () => st.setRightPanel('history') },
-      { id: 'context', label: 'Show context panel', icon: 'layers', run: () => st.setRightPanel('context') },
-      { id: 'undo-run', label: 'Undo last agent run', icon: 'undo', run: () => void st.undoLastRun() },
-      { id: 'approve', label: 'Approval policy: ask first', icon: 'shield', run: () => void st.setSettings({ approvalPolicy: 'ask' }) },
-      { id: 'autoedit', label: 'Approval policy: auto-edit', icon: 'edit', run: () => void st.setSettings({ approvalPolicy: 'auto-edit' }) },
-      { id: 'yolo', label: 'Approval policy: yolo', icon: 'zap', run: () => void st.setSettings({ approvalPolicy: 'yolo' }) },
-      { id: 'git', label: 'Refresh source control', icon: 'git', run: () => void st.refreshGit() },
-      { id: 'theme', label: 'Cycle theme', icon: 'sun', run: () => {
+      { id: 'new', label: t('cmd.new'), icon: 'plus', keys: 'Ctrl N', run: () => st.newThread() },
+      { id: 'open', label: t('cmd.open'), icon: 'folder', keys: 'Ctrl O', run: () => void st.openWorkspace() },
+      { id: 'settings', label: t('cmd.settings'), icon: 'settings', keys: 'Ctrl ,', run: () => useStore.setState({ settingsOpen: true }) },
+      { id: 'save', label: t('cmd.save'), icon: 'save', keys: 'Ctrl S', run: () => void st.saveTab() },
+      { id: 'saveall', label: t('cmd.saveAll'), icon: 'save', run: () => void st.saveAllTabs() },
+      { id: 'terminal', label: t('cmd.terminal'), icon: 'terminal', keys: 'Ctrl `', run: () => st.setBottomPanel(st.bottomPanel === 'terminal' ? 'none' : 'terminal') },
+      { id: 'output', label: t('cmd.output'), icon: 'zap', run: () => st.setBottomPanel('output') },
+      { id: 'plan', label: t('cmd.plan'), icon: 'check-circle', keys: 'Ctrl J', run: () => st.setRightPanel(st.rightPanel === 'none' ? 'plan' : 'none') },
+      { id: 'history', label: t('cmd.history'), icon: 'history', run: () => st.setRightPanel('history') },
+      { id: 'context', label: t('cmd.context'), icon: 'layers', run: () => st.setRightPanel('context') },
+      { id: 'undo-run', label: t('cmd.undoRun'), icon: 'undo', run: () => void st.undoLastRun() },
+      { id: 'approve', label: t('cmd.policyAsk'), icon: 'shield', run: () => void st.setSettings({ approvalPolicy: 'ask' }) },
+      { id: 'autoedit', label: t('cmd.policyAuto'), icon: 'edit', run: () => void st.setSettings({ approvalPolicy: 'auto-edit' }) },
+      { id: 'yolo', label: t('cmd.policyYolo'), icon: 'zap', run: () => void st.setSettings({ approvalPolicy: 'yolo' }) },
+      { id: 'git', label: t('cmd.git'), icon: 'git', run: () => void st.refreshGit() },
+      { id: 'theme', label: t('cmd.theme'), icon: 'sun', run: () => {
         const order = ['comb', 'midnight', 'graphite', 'amber', 'nord', 'paper'] as const
         const idx = order.indexOf(st.settings.theme as any)
         void st.setSettings({ theme: order[(idx + 1) % order.length] })
       } },
-      { id: 'stop', label: 'Stop the agent', icon: 'stop', run: () => void st.stopRun() }
+      { id: 'stop', label: t('cmd.stop'), icon: 'stop', run: () => void st.stopRun() }
     ]
-    for (const t of st.tabs) {
-      base.push({ id: `tab-${t.path}`, label: `Switch to ${t.rel}`, icon: 'file', run: () => st.setActiveTab(t.path) })
+    for (const tab of st.tabs) {
+      base.push({ id: `tab-${tab.path}`, label: t('cmd.switchTo', { file: tab.rel }), icon: 'file', run: () => st.setActiveTab(tab.path) })
     }
-    for (const p of searchShortcuts()) base.push(p)
+    for (const p of searchShortcuts(t)) base.push(p)
     return base
-  }, [])
+  }, [t, workspace, palette.mode])
 
   const results = useMemo(() => {
     const q = query.toLowerCase().trim()
@@ -149,7 +151,7 @@ export function CommandPalette(): React.ReactElement {
               setQuery(e.target.value)
               setIndex(0)
             }}
-            placeholder={palette.mode === 'files' ? 'Go to file…' : 'Type a command or search…'}
+            placeholder={palette.mode === 'files' ? t('pal.goToFile') : t('pal.placeholder')}
           />
           <kbd>esc</kbd>
         </div>
@@ -174,26 +176,26 @@ export function CommandPalette(): React.ReactElement {
               )}
             </button>
           ))}
-          {palette.mode === 'files' && !flat.length && query && <div className="palette-empty">No files match</div>}
-          {!flat.length && !query && <div className="palette-empty">Start typing…</div>}
+          {palette.mode === 'files' && !flat.length && query && <div className="palette-empty">{t('pal.noFiles')}</div>}
+          {!flat.length && !query && <div className="palette-empty">{t('pal.startTyping')}</div>}
         </div>
         <div className="palette-foot">
-          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-          <span><kbd>↵</kbd> run</span>
-          <span><kbd>esc</kbd> close</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> {t('pal.navigate')}</span>
+          <span><kbd>↵</kbd> {t('pal.run')}</span>
+          <span><kbd>esc</kbd> {t('pal.close')}</span>
           <span className="spacer" />
-          <span>{flat.length} results</span>
+          <span>{t('pal.results', { n: flat.length })}</span>
         </div>
       </div>
     </div>
   )
 }
 
-function searchShortcuts(): Command[] {
+function searchShortcuts(t: (k: any, v?: Record<string, string | number>) => string): Command[] {
   const st = useStore.getState()
   return [
-    { id: 'search-files', label: 'Search in files', icon: 'search', keys: 'Ctrl Shift F', run: () => useStore.setState({ sidebarSection: 'search', sidebarOpen: true }) },
-    { id: 'new-file', label: 'New file in workspace', icon: 'file-plus', run: () => st.toast('info', 'Right-click in the explorer to create files') }
+    { id: 'search-files', label: t('cmd.searchFiles'), icon: 'search', keys: 'Ctrl Shift F', run: () => useStore.setState({ sidebarSection: 'search', sidebarOpen: true }) },
+    { id: 'new-file', label: t('cmd.newFile'), icon: 'file-plus', run: () => st.toast('info', t('cmd.newFileHint')) }
   ]
 }
 
@@ -243,6 +245,7 @@ export function Toasts(): React.ReactElement {
 }
 
 export function AboutDialog(): React.ReactElement {
+  const t = useT()
   const open = useStore((s) => s.aboutOpen)
   if (!open) return <></>
   return (
@@ -251,9 +254,9 @@ export function AboutDialog(): React.ReactElement {
         <div className="about-mark"><Icon name="bee" size={34} strokeWidth={1.1} /></div>
         <h1 className="about-title">Comb<span className="acc">.</span></h1>
         <p className="t-sm faint" style={{ textAlign: 'center', lineHeight: 1.7 }}>
-          A desktop coding agent with hands.
+          {t('about.blurb1')}
           <br />
-          Reads your repo, edits files, runs your tests.
+          {t('about.blurb2')}
         </p>
         <div className="about-meta">
           <span>v{window.comb.app.version || '1.0.0'}</span>
@@ -264,10 +267,10 @@ export function AboutDialog(): React.ReactElement {
         </div>
         <div className="row gap-3" style={{ marginTop: 18 }}>
           <button className="btn" onClick={() => window.comb.app.openExternal('https://github.com/ZenlichKrim/Comb-Chat')}>
-            <Icon name="external" size={11} /> source
+            <Icon name="external" size={11} /> {t('about.source')}
           </button>
           <button className="btn primary" onClick={() => useStore.setState({ aboutOpen: false, settingsOpen: true })}>
-            settings
+            {t('set.title')}
           </button>
         </div>
       </div>
