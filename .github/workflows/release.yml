@@ -42,6 +42,14 @@ jobs:
           git commit -m "ci: windows build log" || true
           git push -f origin ci-logs || true
 
+      - name: Verify packaged app
+        if: success()
+        shell: bash
+        run: |
+          ls -la release
+          node -e "const {execSync}=require('child_process');const out=execSync('npx asar list release/win-unpacked/resources/app.asar',{maxBuffer:1e9}).toString();console.log('asar entries:', out.split('\n').length);console.log('node-pty in asar:', /node-pty/.test(out));"
+        continue-on-error: true
+
       - name: Upload artifacts
         if: success()
         uses: actions/upload-artifact@v4

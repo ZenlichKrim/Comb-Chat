@@ -32,6 +32,9 @@ win:
   executableName: CombChat
   fileAssociations: []
 
+portable:
+  artifactName: Comb-Chat-${version}-portable-${arch}.${ext}
+
 nsis:
   oneClick: false
   perMachine: false
