@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -57,36 +61,7 @@ jobs:
           name: comb-chat-windows
           path: |
             release/*.exe
-            release/latest.yml
           retention-days: 30
-
-      - name: Publish release
-        if: success()
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ github.run_number }}
-          name: Comb Chat v1.0.0 (build ${{ github.run_number }})
-          draft: false
-          prerelease: false
-          generate_release_notes: false
-          body: |
-            **Comb Chat** — a desktop AI coding agent that runs on your own DeepSeek key.
-
-            ### Windows x64
-            - `Comb-Chat-1.0.0-x64.exe` — installer (choose install folder, desktop shortcut)
-            - `Comb-Chat-1.0.0-portable.exe` — single-file portable, no install
-
-            ### First run
-            1. Paste a DeepSeek API key ([get one](https://platform.deepseek.com/api_keys)).
-            2. Open a project folder (`Ctrl O`).
-            3. Describe a task. Comb reads, edits, runs tests — and asks before anything destructive.
-
-            Unsigned build: SmartScreen may warn on first launch → *More info → Run anyway*.
-          files: |
-            release/*.exe
-            release/latest.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   linux:
     runs-on: ubuntu-latest
@@ -107,8 +82,22 @@ jobs:
             release/*.AppImage
             release/*.deb
           retention-days: 30
+
+  release:
+    needs: [windows, linux]
+    if: ${{ always() && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gather installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List files
+        run: ls -la dist
+
       - name: Publish release
-        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
@@ -119,11 +108,23 @@ jobs:
           body: |
             **Comb Chat** — a desktop AI coding agent that runs on your own DeepSeek key.
 
+            ### Windows x64
+            - `Comb-Chat-1.0.0-x64.exe` — installer (choose install folder, Start-menu + desktop shortcut)
+            - `Comb-Chat-1.0.0-portable-x64.exe` — single-file portable, nothing to install
+
             ### Linux x64
-            - `Comb-Chat-1.0.0-x64.AppImage` — `chmod +x` and run
+            - `Comb-Chat-1.0.0-x86_64.AppImage` — `chmod +x` and run
             - `Comb-Chat-1.0.0-amd64.deb` — `sudo dpkg -i`
+
+            ### First run
+            1. Paste a DeepSeek API key ([get one](https://platform.deepseek.com/api_keys)).
+            2. Open a project folder (`Ctrl O`).
+            3. Describe a task. Comb reads, edits and runs tests — and asks before anything destructive.
+
+            Unsigned build: SmartScreen may warn on first launch → *More info → Run anyway*.
           files: |
-            release/*.AppImage
-            release/*.deb
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
