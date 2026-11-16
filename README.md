@@ -37,6 +37,7 @@ your machine and sent only to the endpoint you configure.
 - Multi-step loop with a visible plan (`todo_write` → plan panel), tool-call cards with inline diffs,
   token/cost accounting per message, and a hard step limit you control.
 - Streaming responses incl. `deepseek-reasoner` chain-of-thought (collapsible "thought" block).
+- Drop files straight onto the transcript to attach them to the next prompt (up to 12 at a time).
 - Context is built automatically: folder tree, manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, …),
   git HEAD and the files you have open in the editor.
 - Every mutating step is checkpointed. **Undo run** restores the previous file contents.
@@ -45,7 +46,9 @@ your machine and sent only to the endpoint you configure.
 
 - Three approval policies: `ask first` (every write/edit/delete/command), `auto-edit` (edits apply, commands ask),
   `yolo` (nothing asks). Switch from the composer, the palette, or Settings.
-- Approvals show the exact command or file, with `Allow`, `Always allow <tool>`, `Deny` (`Enter` / `Esc`).
+- Approvals show the exact command or file, a **diff preview** of the pending edit, and `Review diff`,
+  `Allow`, `Always allow <tool>`, `Deny` (`Enter` / `Esc`). Grants made with *Always* are remembered in
+  Settings → Agent, where you can revoke them one by one or clear them all.
 - Path sandboxing: the agent can't touch anything outside the opened folder.
 
 **IDE-grade surfaces**
