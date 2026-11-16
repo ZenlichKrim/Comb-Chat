@@ -87,8 +87,14 @@ export function App(): React.ReactElement {
       } else if (mod && e.key === ',') {
         e.preventDefault()
         useStore.setState({ settingsOpen: true })
+      } else if (e.key === 'Escape' && st.pendingApproval) {
+        e.preventDefault()
+        void st.approve('deny')
       } else if (e.key === 'Escape' && st.running) {
         st.stopRun()
+      } else if (e.key === 'Enter' && st.pendingApproval && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault()
+        void st.approve(e.shiftKey ? 'allow-always' : 'allow')
       }
     }
     window.addEventListener('keydown', onKey)

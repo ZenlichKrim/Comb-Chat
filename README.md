@@ -78,7 +78,8 @@ You'd need ~14 000 such sessions to spend $100.
 | `Ctrl S`, `Ctrl W` | save, close tab |
 | `Ctrl Shift A` | attach editor selection to prompt |
 | `Enter` / `Shift Enter` | send / newline |
-| `Esc` | stop the agent, deny an approval |
+| `Enter` / `Shift Enter` on a prompt | allow / always allow |
+| `Esc` | deny the pending approval, then stop the agent |
 
 ## Development
 

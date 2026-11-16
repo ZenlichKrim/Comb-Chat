@@ -448,7 +448,7 @@ function Toggle({ label, hint, value, onChange }: { label: string; hint?: string
 
 function Shortcuts(): React.ReactElement {
   const groups: [string, [string, string][]][] = [
-    ['Chat', [['Ctrl N', 'New session'], ['Enter', 'Send message'], ['Shift Enter', 'Newline'], ['Esc', 'Stop / deny approval'], ['Up', 'Edit last message']]],
+    ['Chat', [['Ctrl N', 'New session'], ['Enter', 'Send message'], ['Shift Enter', 'Newline'], ['Enter', 'Allow pending approval'], ['Shift Enter', 'Always allow'], ['Esc', 'Deny approval, then stop'], ['Up', 'Edit last message']]],
     ['Navigation', [['Ctrl K', 'Command palette'], ['Ctrl P', 'Quick open file'], ['Ctrl Shift F', 'Search in files'], ['Ctrl B', 'Toggle sidebar'], ['Ctrl `', 'Toggle terminal'], ['Ctrl J', 'Toggle right panel']]],
     ['Files', [['Ctrl O', 'Open folder'], ['Ctrl S', 'Save file'], ['Ctrl W', 'Close tab'], ['Ctrl Shift A', 'Attach selection to chat']]],
     ['App', [['Ctrl ,', 'Settings'], ['Ctrl R', 'Reload'], ['F11', 'Fullscreen'], ['Ctrl +/-', 'Zoom']]]
