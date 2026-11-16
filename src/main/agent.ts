@@ -12,7 +12,7 @@ import type {
   TodoItem
 } from '../shared/types'
 import { streamChat, toApiHistory, type LlmMessage } from './llm'
-import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, type ToolContext } from './tools'
+import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, type ToolContext } from './tools'
 import { IGNORED_DIRS, toRel } from './fsops'
 import { getSettings, saveCheckpoint } from './store'
 
@@ -331,6 +331,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         const needsApproval = req.workspace && toolNeedsApproval(call.name, approvalPolicy)
         if (needsApproval) {
           view.status = 'awaiting-approval'
+          if (req.workspace && (call.name === 'write_file' || call.name === 'edit_file' || call.name === 'multi_edit')) {
+            view.diff = await previewTool(call.name, args, req.workspace)
+          }
           deps.emit({ type: 'tool-call', runId: req.runId, call: view })
           const decision = await ctx.requestApproval(view)
           if (decision === 'deny' || signal.aborted) {

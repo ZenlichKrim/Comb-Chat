@@ -48,7 +48,7 @@ function clamp(s: string, n = MAX_OUTPUT): string {
   return s.slice(0, n) + `\n… [truncated ${s.length - n} chars]`
 }
 
-function makeDiff(ctx: ToolContext, abs: string, before: string | null, after: string | null): FileDiff {
+function makeDiff(ctx: { workspace: string }, abs: string, before: string | null, after: string | null): FileDiff {
   const rel = toRel(ctx.workspace, abs)
   const a = before ?? ''
   const b = after ?? ''
@@ -411,6 +411,63 @@ function toolTodo(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
     output: `Plan updated: ${counts.done}/${todos.length} done, ${counts.in_progress} in progress`,
     meta: { todos }
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Dry-run previews (no writes) — used for approval prompts            */
+/* ------------------------------------------------------------------ */
+
+export async function previewTool(
+  name: string,
+  args: Record<string, any>,
+  workspace: string
+): Promise<FileDiff[] | undefined> {
+  const readCurrent = async (abs: string): Promise<string | null> => {
+    try {
+      return norm(await fs.readFile(abs, 'utf8'))
+    } catch {
+      return null
+    }
+  }
+  try {
+    if (name === 'write_file') {
+      const abs = safeJoin(workspace, String(args.path || ''))
+      const before = await readCurrent(abs)
+      const after = String(args.content ?? '')
+      if (before === after) return undefined
+      return [makeDiff({ workspace } as ToolContext, abs, before, after)]
+    }
+    if (name === 'edit_file' || name === 'multi_edit') {
+      const edits: { path: string; oldStr: string; newStr: string; all?: boolean }[] =
+        name === 'edit_file'
+          ? [{ path: String(args.path || ''), oldStr: String(args.old_string ?? ''), newStr: String(args.new_string ?? ''), all: !!args.replace_all }]
+          : (Array.isArray(args.edits) ? args.edits : []).map((e: any) => ({
+              path: String(e.path || ''),
+              oldStr: String(e.old_string ?? ''),
+              newStr: String(e.new_string ?? ''),
+              all: !!e.replace_all
+            }))
+      const byFile = new Map<string, { before: string | null; after: string }>()
+      for (const e of edits) {
+        const abs = safeJoin(workspace, e.path)
+        const current = byFile.has(abs) ? byFile.get(abs)!.after : await readCurrent(abs)
+        if (current === null) continue
+        const target = norm(e.oldStr)
+        if (!target || !current.includes(target)) continue
+        const after = e.all ? current.split(target).join(norm(e.newStr)) : current.replace(target, norm(e.newStr))
+        byFile.set(abs, { before: byFile.get(abs)?.before ?? current, after })
+      }
+      const diffs: FileDiff[] = []
+      for (const [abs, { before, after }] of byFile) {
+        if (before === after) continue
+        diffs.push(makeDiff({ workspace } as ToolContext, abs, before, after))
+      }
+      return diffs.length ? diffs : undefined
+    }
+  } catch {
+    /* preview is best-effort */
+  }
+  return undefined
 }
 
 /* ------------------------------------------------------------------ */

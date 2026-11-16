@@ -448,6 +448,22 @@ function Onboarding({ workspace, onOpen }: { workspace: string | null; onOpen: (
           </button>
         ))}
       </div>
+      <button
+        className="onb-new"
+        onClick={async () => {
+          const folder = await window.comb.fs.pickFolder()
+          if (!folder) return
+          await useStore.getState().openWorkspace(folder)
+          void sendMessage(
+            'Scaffold this empty folder into a working project. First inspect what is already there (list_dir). If it is essentially empty, ask me one question about the stack only if my message did not say — otherwise pick a sensible stack, create the project skeleton, install dependencies, add a README and one passing test, then run the test suite and report the result.'
+          )
+        }}
+      >
+        <Icon name="sparkles" size={12} className="acc" />
+        <span className="t-sm">Start a project from an empty folder</span>
+        <span className="spacer" />
+        <Icon name="arrow-right" size={12} className="faint" />
+      </button>
       <div className="onb-foot t-xs faint">
         comb edits files in place, runs your tests, and asks before anything destructive.
         <br />
