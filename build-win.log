@@ -1,0 +1,161 @@
+
+> comb-chat@1.0.0 dist:win
+> electron-vite build && electron-builder --win nsis portable --publish never
+
+[36mvite v8.3.8 [32mbuilding ssr environment for production...[36m[39m
+transforming...
+✓ 9 modules transformed.
+rendering chunks...
+out/main/index.js  75.52 kB
+
+[32m✓ built in 26ms[39m
+[36mvite v8.3.8 [32mbuilding ssr environment for production...[36m[39m
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  4.58 kB
+
+[32m✓ built in 16ms[39m
+[36mvite v8.3.8 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 87 modules transformed.
+rendering chunks...
+out/renderer/index.html                                                     0.69 kB
+out/renderer/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2     12.10 kB
+out/renderer/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2        40.40 kB
+out/renderer/assets/jetbrains-mono-latin-wght-italic-B2M6KQje.woff2        42.96 kB
+out/renderer/assets/index-BMvvv0mk.css                                     84.39 kB
+out/renderer/assets/index-BKTgaHQi.js                                   2,834.55 kB
+
+[32m✓ built in 205ms[39m
+  • electron-builder  version=26.18.0 os=10.0.26100
+  • loaded configuration  file=D:\a\Comb-Chat\Comb-Chat\electron-builder.yml
+  • executing @electron/rebuild  electronVersion=45.3.3 arch=x64 buildFromSource=false workspaceRoot=D:\a\Comb-Chat\Comb-Chat projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • preparing       moduleName=node-pty arch=x64
+  • finished        moduleName=node-pty arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=45.3.3 appOutDir=release\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=D:\a\Comb-Chat\Comb-Chat\release\win-unpacked
+  • searching for node modules  pm=npm searchDir=D:\a\Comb-Chat\Comb-Chat
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\CombChat.exe
+  • downloaded      label=icons-bundle.tar.gz progress=100%
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\CombChat.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\third_party\conpty\1.23.251008001\win10-x64\OpenConsole.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\third_party\conpty\1.23.251008001\win10-arm64\OpenConsole.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-x64\winpty-agent.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-x64\conpty\OpenConsole.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-arm64\winpty-agent.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\prebuilds\win32-arm64\conpty\OpenConsole.exe
+  • no code signing certificate configured, signing is skipped  path=release\win-unpacked\resources\app.asar.unpacked\node_modules\node-pty\build\Release\winpty-agent.exe
+  • building        target=nsis file=release\Comb-Chat-1.0.0-x64.exe archs=x64 oneClick=false perMachine=false
+  • downloaded      label=7zip-win-x64.tar.gz progress=100%
+  • downloaded      label=nsis-3.0.4.1.7z progress=100%
+  • no code signing certificate configured, signing is skipped  path=C:\Users\RUNNER~1\AppData\Local\Temp\t-pVQnCq\elevate-staging-1\resources\elevate.exe
+  • downloaded      label=nsis-resources-3.4.1.7z progress=100%
+  ⨯ C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\Bin\makensis.exe process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE
+Exit code:
+1
+Output:
+Command line defined: "APP_ID=com.zenlichkrim.comb"
+Command line defined: "APP_GUID=d5f5ab31-d95d-52fd-ade8-d825fc6d1989"
+Command line defined: "UNINSTALL_APP_KEY=d5f5ab31-d95d-52fd-ade8-d825fc6d1989"
+Command line defined: "PRODUCT_NAME=Comb Chat"
+Command line defined: "PRODUCT_FILENAME=CombChat"
+Command line defined: "APP_FILENAME=CombChat"
+Command line defined: "APP_DESCRIPTION=Comb Chat � a desktop AI coding agent for Windows, macOS and Linux, powered by DeepSeek."
+Command line defined: "VERSION=1.0.0"
+Command line defined: "PROJECT_DIR=D:\a\Comb-Chat\Comb-Chat"
+Command line defined: "BUILD_RESOURCES_DIR=D:\a\Comb-Chat\Comb-Chat\resources"
+Command line defined: "APP_PACKAGE_NAME=comb-chat"
+Command line defined: "UNINSTALL_URL_HELP=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_INFO_ABOUT=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_UPDATE_INFO=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_README=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "MUI_ICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "MUI_UNICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "APP_64=D:\a\Comb-Chat\Comb-Chat\release\comb-chat-1.0.0-x64.nsis.7z"
+Command line defined: "APP_64_NAME=comb-chat-1.0.0-x64.nsis.7z"
+Command line defined: "APP_64_HASH=44C1401636B27F6B98B2AD4456C5297725B8CF262A8B25EDABC2BD0CDB983FDB11E1E3BFFC902178D7493CC0535C39628C43A1B02DFB47F56266BEC4E9958E11"
+Command line defined: "APP_64_UNPACKED_SIZE=405188"
+Command line defined: "COMPANY_NAME=ZenlichKrim"
+Command line defined: "APP_INSTALLER_STORE_FILE=comb-chat-updater\installer.exe"
+Command line defined: "COMPRESSION_METHOD=7z"
+Command line defined: "MULTIUSER_INSTALLMODE_ALLOW_ELEVATION"
+Command line defined: "INSTALL_MODE_PER_ALL_USERS_REQUIRED"
+Command line defined: "allowToChangeInstallationDirectory"
+Command line defined: "SHORTCUT_NAME=Comb Chat"
+Command line defined: "UNINSTALL_DISPLAY_NAME=Comb Chat 1.0.0"
+Command line defined: "MUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "MUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "UNINSTALLER_ICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "ESTIMATED_SIZE=405187"
+Command line defined: "COMPRESS=auto"
+Command line defined: "BUILD_UNINSTALLER"
+Command line defined: "UNINSTALLER_OUT_FILE=D:\a\Comb-Chat\Comb-Chat\release\Comb-Chat-1.0.0-x64.__uninstaller.exe"
+Processing config: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\nsisconf.nsh
+Processing script file: "<stdin>" (UTF8)
+
+Error output:
+Error while loading icon from "D:\a\Comb-Chat\Comb-Chat\resources\icon.png": invalid icon file
+Error in macro MUI_INTERFACE on macroline 87
+Error in macro MUI_UNPAGE_INIT on macroline 7
+Error in macro MUI_UNPAGE_WELCOME on macroline 5
+!include: error in script: "assistedInstaller.nsh" on line 70
+Error in script "<stdin>" on line 117 -- aborting creation process
+  failedTask=build stackTrace=Error: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\Bin\makensis.exe process failed ERR_ELECTRON_BUILDER_CANNOT_EXECUTE
+Exit code:
+1
+Output:
+Command line defined: "APP_ID=com.zenlichkrim.comb"
+Command line defined: "APP_GUID=d5f5ab31-d95d-52fd-ade8-d825fc6d1989"
+Command line defined: "UNINSTALL_APP_KEY=d5f5ab31-d95d-52fd-ade8-d825fc6d1989"
+Command line defined: "PRODUCT_NAME=Comb Chat"
+Command line defined: "PRODUCT_FILENAME=CombChat"
+Command line defined: "APP_FILENAME=CombChat"
+Command line defined: "APP_DESCRIPTION=Comb Chat � a desktop AI coding agent for Windows, macOS and Linux, powered by DeepSeek."
+Command line defined: "VERSION=1.0.0"
+Command line defined: "PROJECT_DIR=D:\a\Comb-Chat\Comb-Chat"
+Command line defined: "BUILD_RESOURCES_DIR=D:\a\Comb-Chat\Comb-Chat\resources"
+Command line defined: "APP_PACKAGE_NAME=comb-chat"
+Command line defined: "UNINSTALL_URL_HELP=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_INFO_ABOUT=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_UPDATE_INFO=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "UNINSTALL_URL_README=https://github.com/ZenlichKrim/Comb-Chat"
+Command line defined: "MUI_ICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "MUI_UNICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "APP_64=D:\a\Comb-Chat\Comb-Chat\release\comb-chat-1.0.0-x64.nsis.7z"
+Command line defined: "APP_64_NAME=comb-chat-1.0.0-x64.nsis.7z"
+Command line defined: "APP_64_HASH=44C1401636B27F6B98B2AD4456C5297725B8CF262A8B25EDABC2BD0CDB983FDB11E1E3BFFC902178D7493CC0535C39628C43A1B02DFB47F56266BEC4E9958E11"
+Command line defined: "APP_64_UNPACKED_SIZE=405188"
+Command line defined: "COMPANY_NAME=ZenlichKrim"
+Command line defined: "APP_INSTALLER_STORE_FILE=comb-chat-updater\installer.exe"
+Command line defined: "COMPRESSION_METHOD=7z"
+Command line defined: "MULTIUSER_INSTALLMODE_ALLOW_ELEVATION"
+Command line defined: "INSTALL_MODE_PER_ALL_USERS_REQUIRED"
+Command line defined: "allowToChangeInstallationDirectory"
+Command line defined: "SHORTCUT_NAME=Comb Chat"
+Command line defined: "UNINSTALL_DISPLAY_NAME=Comb Chat 1.0.0"
+Command line defined: "MUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "MUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "UNINSTALLER_ICON=D:\a\Comb-Chat\Comb-Chat\resources\icon.png"
+Command line defined: "ESTIMATED_SIZE=405187"
+Command line defined: "COMPRESS=auto"
+Command line defined: "BUILD_UNINSTALLER"
+Command line defined: "UNINSTALLER_OUT_FILE=D:\a\Comb-Chat\Comb-Chat\release\Comb-Chat-1.0.0-x64.__uninstaller.exe"
+Processing config: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\nsisconf.nsh
+Processing script file: "<stdin>" (UTF8)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                Error output:
+Error while loading icon from "D:\a\Comb-Chat\Comb-Chat\resources\icon.png": invalid icon file
+Error in macro MUI_INTERFACE on macroline 87
+Error in macro MUI_UNPAGE_INIT on macroline 7
+Error in macro MUI_UNPAGE_WELCOME on macroline 5
+!include: error in script: "assistedInstaller.nsh" on line 70
+Error in script "<stdin>" on line 117 -- aborting creation process
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    at ChildProcess.<anonymous> (D:\a\Comb-Chat\Comb-Chat\node_modules\builder-util\src\util.ts:313:16)
+    at Object.onceWrapper (node:events:634:26)
+    at ChildProcess.emit (node:events:519:28)
+    at ChildProcess.cp.emit (D:\a\Comb-Chat\Comb-Chat\node_modules\cross-spawn\lib\enoent.js:34:29)
+    at maybeClose (node:internal/child_process:1101:16)
+    at Process.ChildProcess._handle.onexit (node:internal/child_process:304:5)
