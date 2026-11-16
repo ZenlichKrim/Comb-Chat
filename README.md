@@ -13,6 +13,16 @@ Built for programmers: monospace everywhere, dense information, keyboard-first, 
  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝
 ```
 
+## Screenshots
+
+| | |
+| --- | --- |
+| **Session** — transcript, tool cards, plan panel, run stats<br>![](docs/screenshots/02-session.png) | **Approval prompt** — diff preview, allow / always / deny<br>![](docs/screenshots/03-approval.png) |
+| **Review diff** — unified or split, full file context<br>![](docs/screenshots/13-diff-review.png) | **Editor** — CodeMirror 6, TS highlighting, tree, status bar<br>![](docs/screenshots/06-editor.png) |
+| **Command palette** — Ctrl+K, every action<br>![](docs/screenshots/04-command-palette.png) | **Source control** — stage, commit, recent log<br>![](docs/screenshots/07-source-control.png) |
+| **Sessions & terminal** — a real shell in the workspace<br>![](docs/screenshots/11-sessions-and-terminal.png) | **Settings** — 6 themes, accents, scale, font<br>![](docs/screenshots/09-settings-appearance.png) |
+| **Agent settings** — policies, remembered grants, instructions<br>![](docs/screenshots/08-settings-agent.png) | **First run** — bring your own key<br>![](docs/screenshots/01-onboarding.png) |
+
 ## Download
 
 | Platform | Artifact |
