@@ -25,7 +25,8 @@ Built for programmers: monospace everywhere, dense information, keyboard-first, 
 
 ### In Russian / По-русски
 
-**[→ Открыть галерею скриншотов](https://zenlichkrim.github.io/Comb-Chat/screenshots/)** — все экраны в полном размере, открывается с телефона.
+Comb speaks DeepSeek V4.1: `deepseek-flash` with a 1M context window, vision input (drop or Ctrl+V a screenshot)
+and an optional thinking mode. **[→ Открыть галерею скриншотов](https://zenlichkrim.github.io/Comb-Chat/screenshots/)** — все экраны в полном размере, открывается с телефона.
 
 The whole interface is localised — Settings → Appearance → **Language** (`English` / `Русский`), applied live and
 persisted. A Russian-locale system starts in Russian automatically. The agent also replies in the language you write in.
