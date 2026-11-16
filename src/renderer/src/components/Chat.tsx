@@ -7,6 +7,57 @@ import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/ty
 import { MODELS } from '../../../shared/types'
 
 export function ChatPane(): React.ReactElement {
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
+
+  const onDragEnter = (e: React.DragEvent): void => {
+    if (!e.dataTransfer?.types.includes('Files')) return
+    e.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+  const onDragOver = (e: React.DragEvent): void => {
+    if (!e.dataTransfer?.types.includes('Files')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const onDragLeave = (): void => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+  const onDrop = async (e: React.DragEvent): Promise<void> => {
+    if (!e.dataTransfer?.files?.length) return
+    e.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    const st = useStore.getState()
+    let attached = 0
+    for (const file of Array.from(e.dataTransfer.files).slice(0, 12)) {
+      const full = (file as File & { path?: string }).path
+      if (!full) continue
+      const rel = workspace && full.startsWith(workspace) ? full.slice(workspace.length + 1).replace(/\\/g, '/') : full.split(/[\\/]/).pop() || full
+      const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(full)
+      let content = ''
+      try {
+        content = isImage ? '' : (await window.comb.fs.read(full)).content
+      } catch {
+        st.toast('err', `Could not read ${rel}`)
+        continue
+      }
+      if (!isImage && content.length > 200_000) content = content.slice(0, 200_000) + '\n… [truncated]'
+      st.addContextFile({
+        id: `drop_${Date.now()}_${attached}`,
+        kind: isImage ? 'image' : 'file',
+        path: full,
+        rel,
+        name: rel.split('/').pop() || rel,
+        content
+      })
+      attached += 1
+    }
+    if (attached) st.toast('ok', `${attached} file${attached > 1 ? 's' : ''} attached to context`)
+  }
+
   const thread = useActiveThread()
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
@@ -135,7 +186,21 @@ export function ChatPane(): React.ReactElement {
   const changed = useStore.getState().changedFiles
 
   return (
-    <div className="chat-pane">
+    <div
+      className="chat-pane"
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={(e) => void onDrop(e)}
+    >
+      {dragging && (
+        <div className="drop-veil">
+          <div className="drop-card">
+            <Icon name="file-plus" size={16} className="acc" />
+            <span className="t-sm">Drop files to add them to the agent context</span>
+          </div>
+        </div>
+      )}
       <div className="chat-head">
         <div className="col" style={{ minWidth: 0, gap: 1 }}>
           <span className="t-sm ellipsis" style={{ fontWeight: 600, color: 'var(--fg-0)' }}>
