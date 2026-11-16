@@ -17,12 +17,15 @@ Built for programmers: monospace everywhere, dense information, keyboard-first, 
 
 | Platform | Artifact |
 | --- | --- |
-| Windows x64 | `Comb-Chat-1.0.0-x64.exe` (installer) or `Comb-Chat-1.0.0-portable.exe` |
-| Linux x64 | `Comb-Chat-1.0.0-x64.AppImage` / `.deb` |
+| Windows x64 | `Comb-Chat-1.0.0-x64.exe` (installer) or `Comb-Chat-1.0.0-portable-x64.exe` (no install) |
+| Linux x64 | `Comb-Chat-1.0.0-x86_64.AppImage` or `Comb-Chat-1.0.0-amd64.deb` |
 | macOS | build from source (`npm run dist:mac`) |
 
-Artifacts are produced by GitHub Actions on real Windows/Linux runners:
-**Actions → build → latest run → Artifacts**, or on the **Releases** page for tagged versions.
+**[Download the latest build →](https://github.com/ZenlichKrim/Comb-Chat/releases/latest)**
+
+Every push builds on real Windows and Linux runners. Both jobs upload their installers as artifacts, and a single
+`release` job assembles them into one GitHub Release, so the installer, the portable exe and the Linux packages
+always land in the same tag.
 
 On first launch Comb asks for a DeepSeek API key —
 [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys). The key is stored in the app-data folder of
