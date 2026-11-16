@@ -165,11 +165,10 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     return { ok: false, error: 'missing-api-key' }
   }
 
-  const persisted = await getSettings().catch(() => null)
   const run: ActiveRun = {
     controller: new AbortController(),
     approvals: new Map(),
-    autoApproved: new Set(persisted?.allowedTools || [])
+    autoApproved: new Set(settings.allowedTools || [])
   }
   active.set(req.runId, run)
   const { signal } = run.controller
@@ -207,7 +206,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           clearTimeout(timer)
           if (d === 'allow-always') {
             run.autoApproved.add(call.name)
-            const tools = Array.from(new Set([...(persisted?.allowedTools || []), call.name]))
+            const tools = Array.from(new Set([...(settings.allowedTools || []), call.name]))
             void setSettings({ allowedTools: tools }).catch(() => undefined)
           }
           resolve(d)
