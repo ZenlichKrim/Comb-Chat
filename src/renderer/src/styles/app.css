@@ -1229,12 +1229,22 @@
   background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
   animation: fade-in-up 160ms var(--ease-out);
 }
-.approval-bar .t-sm {
+.approval-bar > .btn {
+  flex: none;
+  padding: 3px 8px;
+}
+.approval-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 auto;
   min-width: 0;
+  line-height: 1.35;
+}
+.approval-label > * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg-1);
 }
 
 /* composer */

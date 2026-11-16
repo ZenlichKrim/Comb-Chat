@@ -66,6 +66,7 @@ export function ChatPane(): React.ReactElement {
   const sendMessage = useStore((s) => s.sendMessage)
   const pendingApproval = useStore((s) => s.pendingApproval)
   const approve = useStore((s) => s.approve)
+  const setDiffPreview = useStore((s) => s.setDiffPreview)
   const contextFiles = useStore((s) => s.contextFiles)
   const removeContextFile = useStore((s) => s.removeContextFile)
   const workspace = useStore((s) => s.workspace)
@@ -240,10 +241,32 @@ export function ChatPane(): React.ReactElement {
       {pendingApproval && (
         <div className="approval-bar">
           <Icon name="shield" size={13} className="warn" />
-          <span className="t-sm">
-            <strong>{pendingApproval.name}</strong> {pendingApproval.args?.command ? `· ${String(pendingApproval.args.command).slice(0, 60)}` : pendingApproval.args?.path ? `· ${pendingApproval.args.path}` : ''}
+          <span className="approval-label">
+            <span className="t-sm" style={{ fontWeight: 600 }}>{pendingApproval.name}</span>
+            <span className="t-xs dim ellipsis">
+              {pendingApproval.args?.command
+                ? String(pendingApproval.args.command).slice(0, 90)
+                : pendingApproval.args?.path || 'no arguments'}
+            </span>
           </span>
           <span className="spacer" />
+          {!!pendingApproval.diff?.length && (
+            <button
+              className="btn ghost sm"
+              data-tip="Review the full diff"
+              onClick={() =>
+                setDiffPreview({
+                  path: pendingApproval.diff![0].path,
+                  rel: pendingApproval.diff![0].rel,
+                  before: pendingApproval.diff![0].before ?? '',
+                  after: pendingApproval.diff![0].after ?? '',
+                  kind: pendingApproval.diff![0].kind
+                })
+              }
+            >
+              <Icon name="diff" size={11} /> review
+            </button>
+          )}
           <button className="btn primary sm" onClick={() => void approve('allow')}>
             <Icon name="check" size={11} /> allow
           </button>
