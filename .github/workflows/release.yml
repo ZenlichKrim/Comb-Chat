@@ -85,7 +85,9 @@ jobs:
 
   release:
     needs: [windows, linux]
-    if: ${{ always() && (needs.windows.result == 'success' || needs.linux.result == 'success') }}
+    # never publish a release from a cancelled or half-finished pipeline: the Windows
+    # installer is the primary artifact, so require it, and let Linux ride along when ok.
+    if: ${{ !cancelled() && needs.windows.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Gather installers
