@@ -52,14 +52,31 @@ jobs:
             release/latest.yml
           retention-days: 30
 
-      - name: Attach to release
-        if: success() && startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ github.run_number }}
+          name: Comb Chat v1.0.0 (build ${{ github.run_number }})
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            **Comb Chat** — a desktop AI coding agent that runs on your own DeepSeek key.
+
+            ### Windows x64
+            - `Comb-Chat-1.0.0-x64.exe` — installer (choose install folder, desktop shortcut)
+            - `Comb-Chat-1.0.0-portable.exe` — single-file portable, no install
+
+            ### First run
+            1. Paste a DeepSeek API key ([get one](https://platform.deepseek.com/api_keys)).
+            2. Open a project folder (`Ctrl O`).
+            3. Describe a task. Comb reads, edits, runs tests — and asks before anything destructive.
+
+            Unsigned build: SmartScreen may warn on first launch → *More info → Run anyway*.
           files: |
             release/*.exe
             release/latest.yml
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -82,10 +99,21 @@ jobs:
             release/*.AppImage
             release/*.deb
           retention-days: 30
-      - name: Attach to release
-        if: success() && startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ github.run_number }}
+          name: Comb Chat v1.0.0 (build ${{ github.run_number }})
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          body: |
+            **Comb Chat** — a desktop AI coding agent that runs on your own DeepSeek key.
+
+            ### Linux x64
+            - `Comb-Chat-1.0.0-x64.AppImage` — `chmod +x` and run
+            - `Comb-Chat-1.0.0-amd64.deb` — `sudo dpkg -i`
           files: |
             release/*.AppImage
             release/*.deb
