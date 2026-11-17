@@ -220,6 +220,24 @@ async function toolAttachFile(args: Record<string, any>, ctx: ToolContext): Prom
 }
 
 async function toolReadFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  // Several files in one call: exploration is where runs bleed time, and one call
+  // per file costs a whole round trip each.
+  if (Array.isArray(args.paths) && args.paths.length) {
+    const paths = (args.paths as unknown[]).map((p) => String(p)).filter(Boolean).slice(0, 8)
+    if (!paths.length) return { ok: false, error: 'paths is empty' }
+    const parts: string[] = []
+    let anyOk = false
+    for (const p of paths) {
+      try {
+        const one = await toolReadFile({ ...args, paths: undefined, path: p }, ctx)
+        anyOk = anyOk || one.ok
+        parts.push(`===== ${p} =====\n${one.ok ? one.output : `ERROR: ${one.error}`}`)
+      } catch (e: any) {
+        parts.push(`===== ${p} =====\nERROR: ${e?.message || 'failed'}`)
+      }
+    }
+    return { ok: anyOk, output: clamp(parts.join('\n\n')), error: anyOk ? undefined : 'no file could be read' }
+  }
   const rel = String(args.path || '')
   if (!rel) return { ok: false, error: 'path is required' }
   const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
@@ -674,9 +692,14 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
           },
           start_line: { type: 'integer', description: '1-based first line (optional)' },
           end_line: { type: 'integer', description: 'last line inclusive (optional)' },
-          line_numbers: { type: 'boolean', description: 'prefix each line with its number (default true)' }
+          line_numbers: { type: 'boolean', description: 'prefix each line with its number (default true)' },
+          paths: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Read several files in one call instead of one call per file (max 8). Paths only — no ranges.'
+          }
         },
-        required: ['path']
+        required: []
       }
     }
   },

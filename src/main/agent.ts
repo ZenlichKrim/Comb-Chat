@@ -13,7 +13,7 @@ import type {
   TodoItem
 } from '../shared/types'
 import { streamChat, toApiHistory, type LlmContentPart, type LlmMessage } from './llm'
-import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, type ToolContext } from './tools'
+import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, READ_ONLY_TOOLS, type ToolContext } from './tools'
 import { describeInBackground } from './describe'
 
 /** never spend a request describing media, bundles or lockfiles */
@@ -128,6 +128,7 @@ You have access to the WHOLE machine, not just the open project${opts.workspace 
 # Tools
 ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from extra folders come prefixed with the folder name.' : ''}
 - Explore before you edit: \`list_dir\`, \`glob\`, \`grep\`, \`read_file\`. Never guess file contents.
+- Explore fast, then work. Read several files at once with \`read_file({paths:[...]})\` instead of one call per file, never read the same file twice, and after about a dozen reads stop and start editing: a run that only reads is a run that did nothing.
 - Change code with \`edit_file\` (exact string replacement). Include enough context lines so the match is unique. Use \`write_file\` only for new files or full rewrites.
 - Verify your work: run the project's type checker, tests or linter with \`run_command\` when they exist. Read package.json / Makefile / pyproject.toml first to learn the right commands.
 - \`run_command\` is non-interactive: no vim, no prompts, no servers that never exit (background them or skip).
@@ -394,6 +395,10 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // Stability is the baseline of this build, not a switch at the bottom of the
   // composer: the guards below run unless someone explicitly opts out.
   const stableMode = req.mode ? req.mode === 'stable' : settings.stableMode !== false
+  /** rounds of pure reading allowed before the agent is told to act */
+  const MAX_IDLE_READS = 14
+  /** consecutive idle rounds before the "stop researching, do something" nudge */
+  const MAX_IDLE_ROUNDS = 4
   const costCap = stableMode ? Math.max(0, req.costCap ?? 0) : 0
   // "make sure the first steps are solid": collect what went wrong before deciding
   const errorsSoFar: { step: number; name: string; error: string }[] = []
@@ -408,6 +413,16 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const noNewCallsThisRound = (calls: { name: string; arguments: string }[]): boolean =>
     calls.every((c) => seenCallSignatures.has(`${c.name}:${c.arguments}`))
   let silentRounds = 0
+  // Exploration is free but not endless. Rounds that change something (an edit, a
+  // write, a command) are work; plain reading gets its own, smaller allowance.
+  // This is what stops the "47 steps of reading, zero edits" runs.
+  let readOnlySteps = 0
+  /** consecutive rounds that changed nothing — the "stuck in one place" smell */
+  let idleRounds = 0
+  /** set inside a round when something real happened; reset at the top of each */
+  let roundProgressed = false
+  /** last step at which the "stop reading" nudge was sent */
+  let lastIdlePrompt = 0
   let ranAnyCommand = false
   let finishRefused = 0
   let loopHits = 0
@@ -485,6 +500,29 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   }
 
   try {
+    /**
+     * Speed, straight up: every round re-sends the whole history, so a run with
+     * forty file reads pays for those reads on every single step — the model sits
+     * there re-reading a project it already knows while the user watches a spinner.
+     * Old read results are replaced with a one-line stub (the content stays in the
+     * transcript), and only the last few reads are kept in full.
+     */
+    const compactHistory = (h: LlmMessage[]): void => {
+      let keep = 6
+      for (let i = h.length - 1; i >= 0; i--) {
+        const m = h[i]
+        if (m.role !== 'tool' || !m.name || !READ_ONLY_TOOLS.has(m.name)) continue
+        if (keep > 0) {
+          keep--
+          continue
+        }
+        const text = typeof m.content === 'string' ? m.content : ''
+        if (!text || text.startsWith('[read earlier]')) continue
+        const first = text.slice(0, 160).replace(/\s+/g, ' ')
+        m.content = `[read earlier] ${first}${text.length > 160 ? ' …' : ''}\n(the full text was shown to you earlier; ask for a specific range if you need it again)`
+      }
+    }
+
     while (step < Math.max(1, req.maxSteps)) {
       step++
       deps.emit({ type: 'step', runId: req.runId, step })
@@ -492,6 +530,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         finalReason = 'stopped'
         break
       }
+
+      compactHistory(history)
 
       const result = await streamChat({
         apiKey: settings.apiKey.trim(),
@@ -614,7 +654,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           parseError = `Invalid JSON arguments: ${e.message}`
         }
 
-        seenCallSignatures.add(`${call.name}:${call.arguments}`)
+        const callSig = `${call.name}:${call.arguments}`
+        const repeated = seenCallSignatures.has(callSig)
+        seenCallSignatures.add(callSig)
 
         const view: ToolResultView = {
           id: call.id,
@@ -743,6 +785,26 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
 
         if (call.name === 'run_command' && outcome.ok) ranAnyCommand = true
+        if (repeated && READ_ONLY_TOOLS.has(call.name) && outcome.ok) {
+          // Re-reading the same file with the same arguments: it is already in the
+          // history and in the transcript. Say so once so it stops orbiting.
+          readOnlySteps++
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'steer',
+            title: `Повторное чтение: ${call.name}`,
+            detail: 'Этот вызов уже был — тратит время. Прошу перейти к правке.'
+          })
+        }
+        // Reading is progress in understanding, not in the work: it counts
+        // separately so it can be capped without cutting real edits short.
+        if (READ_ONLY_TOOLS.has(call.name)) {
+          readOnlySteps++
+        } else {
+          roundProgressed = true
+          idleRounds = 0
+        }
         const toolContent = outcome.ok
           ? String(outcome.output ?? 'ok')
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
@@ -888,7 +950,52 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       }
 
       if (stableMode) {
-        // money ceiling: a run you walk away from must not surprise you
+          // A round that only read files and changed nothing: fine for a while, then
+        // it becomes the "slowly treading water" the user sees. Count it and push.
+        if (!roundProgressed) {
+          idleRounds++
+          if (idleRounds >= MAX_IDLE_ROUNDS && step - lastIdlePrompt >= MAX_IDLE_ROUNDS) {
+            lastIdlePrompt = step
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'steer',
+              title: `Хватит читать — ${idleRounds} раунда без изменений`,
+              detail: 'Прошу сделать первый конкретный шаг: правку или команду.'
+            })
+            history.push({
+              role: 'user',
+              content:
+                `[no changes for ${idleRounds} rounds] You keep reading and nothing in the workspace has changed. ` +
+                'Stop gathering context: you almost certainly know enough to make the first real change. ' +
+                'Make it now — edit the file, run the command. Read only what that specific step requires, one file at a time. ' +
+                'If the task genuinely cannot proceed, say in one line what blocks it and call finish with work_done=false.'
+            })
+          }
+        }
+        roundProgressed = false
+
+        // Exploration budget: reading is not work, so it does not get the whole
+        // step budget. When it runs out the agent is told to act with what it has.
+        if (readOnlySteps > MAX_IDLE_READS && !touched.size && idleRounds > 0) {
+          readOnlySteps = 0
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'steer',
+            title: 'Бюджет на изучение закончился',
+            detail: 'Дальше — только правки и команды по тому, что уже прочитано.'
+          })
+          history.push({
+            role: 'user',
+            content:
+              `[exploration budget spent] You have made ${MAX_IDLE_READS}+ read-only calls and changed nothing yet. ` +
+              'From now on act on what you already read: make the edits, run the build. Do not open more files unless a ' +
+              'change you are making right now fails and needs one specific file to fix.'
+          })
+        }
+
+      // money ceiling: a run you walk away from must not surprise you
         if (costCap > 0 && usage.cost >= costCap && !notifiedCost) {
           notifiedCost = true
           deps.emit({
