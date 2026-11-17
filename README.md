@@ -37,7 +37,7 @@ persisted. A Russian-locale system starts in Russian automatically. The agent al
 | **Appearance** — language switch, themes, accents<br>![](docs/screenshots/ru-04-settings-appearance.png) | **Command palette** — every command translated<br>![](docs/screenshots/ru-08-palette.png) |
 | **Agent settings** — policies and grants<br>![](docs/screenshots/ru-03-settings-agent.png) | **Keys** — the full shortcut sheet in Russian<br>![](docs/screenshots/ru-05-settings-keys.png) |
 | **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
-| **File preview** — blurred backdrop, AI description, actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
+| **File preview** — "Reading file · name.ext", why it exists, wide actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
 
 ## Download
 
@@ -89,10 +89,10 @@ your machine and sent only to the endpoint you configure.
 - CodeMirror 6 editor with 20+ languages, custom Comb theme, search, folding, bracket matching, multi-cursor,
   selection → *attach to prompt*.
 - Explorer with search, file operations, rename/delete context menu, filter, auto-reload when the agent writes.
-- **AI file descriptions.** After a run the model looks at every file it created or rewrote and decides whether it
-  is worth a line at all — lockfiles, generated bundles and empty stubs are skipped, files that matter get one plain
-  sentence ("sliding-window rate limit, no dependencies"). Those arrive live in the explorer and at the top of the
-  file preview. You can also ask on demand: right-click a file or a whole folder → *describe*. Descriptions are
+- **AI file descriptions — purpose, not contents.** After a run the model looks at every file it created or rewrote,
+  together with the request that caused it, and writes why the file exists ("the limiter POST /auth/login now goes
+  through — without it the endpoint would not stop brute force") plus a short line for the explorer. Lockfiles,
+  generated bundles and empty stubs are skipped instead of getting filler. Lines arrive live in the tree. You can also ask on demand: right-click a file or a whole folder → *describe*. Descriptions are
   cached in `file-summaries.json` in user-data, keyed by path and invalidated by mtime + size, so untouched files
   never cost a request. Text files only; nothing leaves the machine except to your own API key.
   Settings → Agent → *Let the AI sign the files it writes* turns the background pass off.

@@ -271,6 +271,8 @@ export interface TokenUsage {
 
 /** One-line description of a file, written by the model and cached on disk. */
 export interface FileSummary {
+  /** why the file exists: the intent behind writing it (set when the agent wrote it) */
+  purpose?: string
   path: string
   description: string
   mtime: number
@@ -415,7 +417,7 @@ export interface CombApi {
     openPath(path: string): Promise<string>
   }
   files: {
-    readonly describe: (abs: string) => Promise<{ ok: boolean; summary?: FileSummary | null; error?: string }>
+    readonly describe: (abs: string, ctx?: { task?: string }) => Promise<{ ok: boolean; summary?: FileSummary | null; error?: string }>
     readonly summaries: (paths: string[]) => Promise<FileSummary[]>
   }
   settings: {

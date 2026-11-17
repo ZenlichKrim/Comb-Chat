@@ -85,6 +85,8 @@ interface State {
   filePreview: { path: string; rel: string; note?: string } | null
   /** model-written one-liners, by absolute path */
   fileSummaries: Record<string, string>
+  /** why each file exists, when the agent wrote it and explained itself */
+  filePurposes: Record<string, string>
   changedFiles: string[]
   sidebarSection: 'files' | 'search' | 'git' | 'threads'
   commandHistory: string[]
@@ -173,6 +175,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   diffPreview: null,
   filePreview: null,
   fileSummaries: {},
+  filePurposes: {},
   changedFiles: [],
   sidebarSection: 'files',
   commandHistory: [],
@@ -572,8 +575,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         // the agent labelled the files it wrote: the explorer picks these up live
         set((s) => {
           const next = { ...s.fileSummaries }
-          for (const f of e.summaries) if (f.description) next[f.path] = f.description
-          return { fileSummaries: next }
+          const purposes = { ...s.filePurposes }
+          for (const f of e.summaries) {
+            if (f.description) next[f.path] = f.description
+            if (f.purpose) purposes[f.path] = f.purpose
+          }
+          return { fileSummaries: next, filePurposes: purposes }
         })
         break
       }
@@ -674,19 +681,30 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   loadSummaries: async (paths) => {
     if (!paths.length) return
-    const rows = (await window.comb.files.summaries(paths).catch(() => [])) as { path: string; description: string }[]
+    const rows = (await window.comb.files.summaries(paths).catch(() => [])) as { path: string; description: string; purpose?: string }[]
     if (!rows.length) return
     set((s) => {
       const next = { ...s.fileSummaries }
-      for (const r of rows) next[r.path] = r.description
-      return { fileSummaries: next }
+      const purposes = { ...s.filePurposes }
+      for (const r of rows) {
+        next[r.path] = r.description
+        if (r.purpose) purposes[r.path] = r.purpose
+      }
+      return { fileSummaries: next, filePurposes: purposes }
     })
   },
 
   describeFileNow: async (abs) => {
-    const res = await window.comb.files.describe(abs)
+    // give the model the same context the background pass gets, so the line says
+    // what the file is FOR, not what it contains
+    const thread = get().threads.find((t) => t.id === get().activeThreadId)
+    const task = (thread?.messages.filter((m) => m.role === 'user').slice(-1)[0]?.content || '').slice(0, 600)
+    const res = await window.comb.files.describe(abs, task ? { task } : undefined)
     if (res.ok && res.summary) {
-      set((s) => ({ fileSummaries: { ...s.fileSummaries, [abs]: res.summary!.description } }))
+      set((s) => ({
+        fileSummaries: { ...s.fileSummaries, [abs]: res.summary!.description },
+        filePurposes: res.summary!.purpose ? { ...s.filePurposes, [abs]: res.summary!.purpose } : s.filePurposes
+      }))
       get().toast('ok', tr('store.described'), res.summary.description)
     } else {
       get().toast('err', tr('fp.describeFailed'), res.error)

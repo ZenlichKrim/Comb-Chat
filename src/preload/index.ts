@@ -71,7 +71,7 @@ const api = {
     testKey: (key: string, baseUrl: string) => ipcRenderer.invoke('agent:testKey', key, baseUrl)
   },
   files: {
-    describe: (abs: string) => ipcRenderer.invoke('files:describe', abs),
+    describe: (abs: string, ctx?: { task?: string }) => ipcRenderer.invoke('files:describe', abs, ctx),
     summaries: (paths: string[]) => ipcRenderer.invoke('files:summaries', paths)
   },
   terminal: {

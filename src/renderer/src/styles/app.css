@@ -986,6 +986,22 @@
   min-height: 0;
   border-top: 1px solid var(--line-2);
 }
+.file-modal-why {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0 16px 10px;
+  padding: 0 2px;
+  color: var(--fg-1);
+  line-height: 1.5;
+}
+.file-modal-why-label {
+  flex: none;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-3);
+}
 .file-modal-note {
   padding: 8px 16px 0;
 }
@@ -1513,6 +1529,16 @@ a.code-ref code {
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: right;
+}
+.composer-estimate {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 0 12px 4px;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  pointer-events: none;
 }
 .composer-wrap {
   flex: none;

@@ -186,6 +186,12 @@ export function ChatPane(): React.ReactElement {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
     const mod = e.ctrlKey || e.metaKey
+    if (e.key === 'Escape' && running) {
+      // panic stop: Esc in the composer aborts the run instead of doing nothing
+      e.preventDefault()
+      void stopRun()
+      return
+    }
     if (e.key === 'Enter') {
       if (settings.sendOnEnter ? !e.shiftKey && !mod : mod) {
         e.preventDefault()
@@ -388,6 +394,16 @@ export function ChatPane(): React.ReactElement {
             spellCheck={false}
             disabled={running}
           />
+          {input.trim().length > 0 && (
+            <div className="composer-estimate" title={t('chat.estimateHint')}>
+              <span className="mono">~{Math.max(1, Math.round(input.trim().length / 3.6))} {t('chat.tokens')}</span>
+              <span className="ghost">·</span>
+              <span className="mono acc">{(() => {
+                const cost = (Math.max(1, Math.round(input.trim().length / 3.6)) / 1_000_000) * 0.3
+                return cost < 0.0001 ? '<$0.0001' : `$${cost.toFixed(4)}`
+              })()}</span>
+            </div>
+          )}
           <div className="composer-bar">
             <button
               className="composer-chip"

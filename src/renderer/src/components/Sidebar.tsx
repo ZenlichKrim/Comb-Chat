@@ -62,6 +62,7 @@ function FileTree(): React.ReactElement {
   const fileSummaries = useStore((s) => s.fileSummaries)
   const loadSummaries = useStore((s) => s.loadSummaries)
   const describeFileNow = useStore((s) => s.describeFileNow)
+  const setFilePreview = useStore((s) => s.setFilePreview)
   const extraRoots = useStore((s) => s.extraRoots)
   const addRoot = useStore((s) => s.addRoot)
   const removeRoot = useStore((s) => s.removeRoot)
@@ -203,6 +204,10 @@ function FileTree(): React.ReactElement {
             ev.preventDefault()
             setCtxMenu({ x: ev.clientX, y: ev.clientY, entry: e })
           }}
+          onDoubleClick={() => {
+            // double click = full file card, single click just opens the editor tab
+            if (!e.isDir) setFilePreview({ path: e.path, rel: e.rel })
+          }}
           title={fileSummaries[e.path] ? `${e.rel} — ${fileSummaries[e.path]}` : e.rel}
         >
           {e.isDir ? (
@@ -334,9 +339,21 @@ function FileTree(): React.ReactElement {
                   <Icon name="edit" size={12} /> {t('common.rename')}
                 </button>
                 {!ctxMenu.entry.isDir && (
-                  <button className="menu-item" onClick={() => void describeFileNow(ctxMenu.entry!.path)}>
-                    <Icon name="zap" size={12} /> {t('side.describeFile')}
-                  </button>
+                  <>
+                    <button
+                      className="menu-item"
+                      onClick={() => {
+                        const f = ctxMenu.entry!
+                        setCtxMenu(null)
+                        setFilePreview({ path: f.path, rel: f.rel })
+                      }}
+                    >
+                      <Icon name="eye" size={12} /> {t('side.previewFile')}
+                    </button>
+                    <button className="menu-item" onClick={() => void describeFileNow(ctxMenu.entry!.path)}>
+                      <Icon name="zap" size={12} /> {t('side.describeFile')}
+                    </button>
+                  </>
                 )}
                 {ctxMenu.entry.isDir && (
                   <button className="menu-item" onClick={() => void describeDir(ctxMenu.entry!.path)}>

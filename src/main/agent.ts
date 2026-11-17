@@ -470,10 +470,13 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     // Label the files this run created or rewrote, in the background: by the time
     // the user opens the explorer they already read like known things.
     if (touched.size && req.describeFiles !== false) {
-      const hint = `the agent just wrote this file while working on: ${(req.userMessage?.content || '').slice(0, 140)}`
+      const task = (req.userMessage?.content || '').slice(0, 600)
       describeInBackground(
-        [...touched].filter((p) => !SKIP_DESCRIBE.test(p)).map((p) => ({ path: p, note: hint })),
-        { onEach: (summary) => deps.emit({ type: 'file-summaries', runId: req.runId, summaries: [summary] }) }
+        [...touched].filter((p) => !SKIP_DESCRIBE.test(p)).map((p) => ({ path: p, note: 'the agent created or rewrote this file during the task above' })),
+        {
+          task,
+          onEach: (summary) => deps.emit({ type: 'file-summaries', runId: req.runId, summaries: [summary] })
+        }
       )
     }
   } catch (e: any) {

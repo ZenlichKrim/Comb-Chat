@@ -283,6 +283,7 @@ export function FilePreviewModal(): React.ReactElement {
   const [lines, setLines] = React.useState<number>(0)
   const [err, setErr] = React.useState('')
   const [summary, setSummary] = React.useState('')
+  const [purpose, setPurpose] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const [wrap, setWrap] = React.useState(true)
 
@@ -291,12 +292,14 @@ export function FilePreviewModal(): React.ReactElement {
     setBody('')
     setErr('')
     setSummary('')
+    setPurpose('')
     setSize(undefined)
     setLines(0)
     const meta = fileMeta(preview.path)
     const img = meta.kind === 'img'
     void window.comb.files.summaries([preview.path]).then((rows) => {
       if (rows[0]?.description) setSummary(rows[0].description)
+      if (rows[0]?.purpose) setPurpose(rows[0].purpose)
     })
     if (img) {
       void window.comb.fs.readImage(preview.path).then((r) => {
@@ -334,7 +337,10 @@ export function FilePreviewModal(): React.ReactElement {
     setBusy(true)
     const res = await window.comb.files.describe(preview.path)
     setBusy(false)
-    if (res.ok && res.summary) setSummary(res.summary.description)
+    if (res.ok && res.summary) {
+      setSummary(res.summary.description)
+      setPurpose(res.summary.purpose || '')
+    }
     else if (res.ok) toast('warn', t('fp.notWorth'))
     else toast('err', t('fp.describeFailed'), res.error)
   }
@@ -379,6 +385,12 @@ export function FilePreviewModal(): React.ReactElement {
           <div className="file-modal-summary">
             <Icon name="sparkles" size={11} className="acc" />
             <span className="t-xs dim">{busy ? t('fp.describing') : summary}</span>
+          </div>
+        )}
+        {purpose && (
+          <div className="file-modal-why">
+            <span className="file-modal-why-label">{t('fp.why')}</span>
+            <span className="t-xs">{purpose}</span>
           </div>
         )}
         {preview.note && <div className="file-modal-note t-xs faint">{preview.note}</div>}

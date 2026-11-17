@@ -221,9 +221,9 @@ function registerIpc(): void {
     return res.canceled ? [] : res.filePaths
   })
   ipcMain.handle('fs:list', (_e, dir: string) => fsops.listDir(dir))
-  ipcMain.handle('files:describe', async (_e, abs: string) => {
+  ipcMain.handle('files:describe', async (_e, abs: string, ctx?: { task?: string }) => {
     try {
-      return { ok: true, summary: await describeFile(abs) }
+      return { ok: true, summary: await describeFile(abs, ctx || {}) }
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) }
     }
