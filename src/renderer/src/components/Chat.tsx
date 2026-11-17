@@ -99,6 +99,9 @@ export function ChatPane(): React.ReactElement {
   const [elapsed, setElapsed] = useState(0)
   const [approvalAge, setApprovalAge] = useState(0)
   const [input, setInput] = useState('')
+  const [menu, setMenu] = useState(false)
+  const queued = useStore((s) => s.queued)
+  const dropQueued = useStore((s) => s.dropQueued)
   const [historyIdx, setHistoryIdx] = useState(-1)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -159,7 +162,7 @@ export function ChatPane(): React.ReactElement {
     pinnedBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90
   }
 
-  const submit = async (opts?: { fromHistory?: boolean }): Promise<void> => {
+  const submit = async (opts?: { fromHistory?: boolean; queueInstead?: boolean }): Promise<void> => {
     // Recalled from history with ↑ and sent: it has been sent before, so it is
     // in the transcript already — do not leave a copy in the box.
     const text = input.trim()
@@ -170,10 +173,18 @@ export function ChatPane(): React.ReactElement {
     setInput('')
     setHistoryIdx(-1)
     pinnedBottom.current = true
+    const queueInstead = opts?.queueInstead === true
     if (running) {
       // talking to a running agent: the note is injected into the live run, so a
-      // correction lands in the middle of the work instead of queueing behind it
-      if ((await steer(text)) === false) setInput(text)
+      // correction lands in the middle of the work instead of queueing behind it.
+      // `+` in the menu (or Shift on the chip) puts it in the queue instead.
+      if (queueInstead) {
+        useStore.getState().queueMessage(text)
+        return
+      }
+      if ((await steer(text)) === false) {
+        useStore.getState().queueMessage(text)
+      }
       return
     }
     try {
@@ -223,9 +234,17 @@ export function ChatPane(): React.ReactElement {
       return
     }
     if (e.key === 'Enter') {
-      if (settings.sendOnEnter ? !e.shiftKey && !mod : mod) {
+      const willSend = settings.sendOnEnter ? !e.shiftKey && !mod : mod
+      // Shift+Enter while the agent is busy: do not interrupt the run, queue the
+      // message for the moment it finishes.
+      if (!willSend && running && (e.shiftKey || mod)) {
         e.preventDefault()
-        void submit({ fromHistory: historyIdx >= 0 })
+        void submit({ fromHistory: historyIdx >= 0, queueInstead: true })
+        return
+      }
+      if (willSend) {
+        e.preventDefault()
+        void submit({ fromHistory: historyIdx >= 0, queueInstead: mod && running })
       }
     }
     if (mod && e.key.toLowerCase() === 'k') {
@@ -425,6 +444,22 @@ export function ChatPane(): React.ReactElement {
       <NotesPanel />
 
       <div className="composer-wrap">
+        {queued.length > 0 && (
+          <div className="composer-queue">
+            {queued.map((q, i) => (
+              <div className="queued" key={`${i}-${q.slice(0, 12)}`}>
+                <Icon name="clock" size={10} className="faint" />
+                <span className="queued-text" title={q}>
+                  {q}
+                </span>
+                <span className="t-xs ghost">{t('chat.queuedHint')}</span>
+                <button className="queued-x" onClick={() => dropQueued(i)} data-tip={t('common.delete')}>
+                  <Icon name="close" size={9} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="composer" data-running={running}>
           {contextFiles.length > 0 && (
             <div className="composer-context">
@@ -467,39 +502,132 @@ export function ChatPane(): React.ReactElement {
             </div>
           )}
           <div className="composer-bar">
-            <button
-              className="composer-chip"
-              data-tip={t('chat.approvalPolicy')}
-              onClick={() => {
-                const order: ApprovalPolicy[] = ['ask', 'auto-edit', 'yolo']
-                const next = order[(order.indexOf(settings.approvalPolicy) + 1) % order.length]
-                void setSettings({ approvalPolicy: next })
-              }}
-            >
-              <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : settings.approvalPolicy === 'auto-edit' ? 'edit' : 'shield'} size={11} className={settings.approvalPolicy === 'yolo' ? 'err' : settings.approvalPolicy === 'auto-edit' ? 'warn' : 'ok'} />
-              {settings.approvalPolicy === 'ask' ? t('chat.policyAsk') : settings.approvalPolicy === 'auto-edit' ? t('chat.policyAuto') : t('chat.policyYolo')}
-            </button>
-            <button
-              className="composer-chip"
-              data-tip={t('chat.stableTip')}
-              data-on={settings.stableMode}
-              onClick={() => void setSettings({ stableMode: !settings.stableMode })}
-            >
-              <Icon name={settings.stableMode ? 'shield' : 'zap'} size={11} className={settings.stableMode ? 'ok' : 'faint'} />
-              {settings.stableMode ? t('chat.stableOn') : t('chat.stableOff')}
-            </button>
-            <button className="composer-chip" data-tip={t('chat.contextTip')} onClick={() => void setSettings({ autoContext: !settings.autoContext })}>
-              <Icon name="layers" size={11} className={settings.autoContext ? 'acc' : 'faint'} />
-              {settings.autoContext ? t('chat.contextOn') : t('chat.contextOff')}
-            </button>
-            <button className="composer-chip" data-tip={t('note.chipTip')} data-on={notesCount > 0} onClick={() => setNotesOpen(true)}>
-              <Icon name="sticky" size={11} className={notesCount > 0 ? 'acc' : 'faint'} />
-              {notesCount > 0 ? t('note.chipCount', { n: notesCount }) : t('note.chip')}
-            </button>
-            <button className="composer-chip" onClick={() => setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')} data-tip={t('chat.terminalTip')}>
-              <Icon name="terminal" size={11} />
-              {t('chat.terminal')}
-            </button>
+            {/* One "+" instead of five chips shouting at once: the composer should
+                read as a text box, not a control panel. */}
+            <div className="composer-menu-wrap">
+              <button
+                className="composer-plus"
+                data-on={menu}
+                data-tip={t('chat.attachTip')}
+                aria-label={t('chat.attachTip')}
+                onClick={() => setMenu((v) => !v)}
+              >
+                <Icon name={menu ? 'close' : 'plus'} size={12} strokeWidth={2} />
+              </button>
+              {menu && (
+                <>
+                  <div className="composer-menu-sheet" onClick={() => setMenu(false)} />
+                  <div className="composer-menu" role="menu">
+                    <button
+                      className="composer-menu-item"
+                      onClick={async () => {
+                        setMenu(false)
+                        const st = useStore.getState()
+                        const picked = await window.comb.fs.pickFiles()
+                        for (const full of (picked || []).slice(0, 12)) {
+                          const rel = workspace && full.startsWith(workspace) ? full.slice(workspace.length + 1).replace(/\\/g, '/') : full.split(/[\\/]/).pop() || full
+                          try {
+                            const fc = await window.comb.fs.read(full)
+                            st.addContextFile({ id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, kind: 'file', name: rel, rel, path: full, content: fc.content })
+                          } catch {
+                            st.toast('err', t('chat.couldNotRead', { rel }))
+                          }
+                        }
+                      }}
+                    >
+                      <Icon name="file" size={12} /> {t('chat.menuFile')}
+                      <span className="kbd">Ctrl V</span>
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      onClick={async () => {
+                        setMenu(false)
+                        const st = useStore.getState()
+                        try {
+                          const img = await navigator.clipboard.readText()
+                          if (!img) return
+                          st.addContextFile({ id: `t_${Date.now()}`, kind: 'selection', name: t('chat.menuTextPaste'), content: img })
+                        } catch {
+                          st.toast('warn', t('chat.cloudUnreachable'))
+                        }
+                      }}
+                    >
+                      <Icon name="copy" size={12} /> {t('chat.menuPasteText')}
+                    </button>
+                    <div className="composer-menu-sep" />
+                    <button
+                      className="composer-menu-item"
+                      data-on={settings.autoContext}
+                      onClick={() => {
+                        setMenu(false)
+                        void setSettings({ autoContext: !settings.autoContext })
+                      }}
+                    >
+                      <Icon name="layers" size={12} className={settings.autoContext ? 'acc' : 'faint'} />
+                      {t('chat.menuContext')}
+                      <span className="composer-menu-state">{settings.autoContext ? t('common.on') : t('common.off')}</span>
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      data-on={notesCount > 0}
+                      onClick={() => {
+                        setMenu(false)
+                        setNotesOpen(true)
+                      }}
+                    >
+                      <Icon name="sticky" size={12} className={notesCount > 0 ? 'acc' : 'faint'} />
+                      {t('note.chip')}
+                      {notesCount > 0 && <span className="composer-menu-state acc">{notesCount}</span>}
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      onClick={() => {
+                        setMenu(false)
+                        setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')
+                      }}
+                    >
+                      <Icon name="terminal" size={12} /> {t('chat.terminal')}
+                    </button>
+                    <div className="composer-menu-sep" />
+                    <button
+                      className="composer-menu-item"
+                      onClick={() => {
+                        setMenu(false)
+                        const order: ApprovalPolicy[] = ['ask', 'auto-edit', 'yolo']
+                        const next = order[(order.indexOf(settings.approvalPolicy) + 1) % order.length]
+                        void setSettings({ approvalPolicy: next })
+                      }}
+                    >
+                      <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : settings.approvalPolicy === 'auto-edit' ? 'edit' : 'shield'} size={12} className={settings.approvalPolicy === 'yolo' ? 'err' : settings.approvalPolicy === 'auto-edit' ? 'warn' : 'ok'} />
+                      {t('chat.approvalPolicy')}
+                      <span className="composer-menu-state">
+                        {settings.approvalPolicy === 'ask' ? t('chat.policyAsk') : settings.approvalPolicy === 'auto-edit' ? t('chat.policyAuto') : t('chat.policyYolo')}
+                      </span>
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      data-on={settings.stableMode}
+                      onClick={() => {
+                        setMenu(false)
+                        void setSettings({ stableMode: !settings.stableMode })
+                      }}
+                    >
+                      <Icon name="shield" size={12} className={settings.stableMode ? 'ok' : 'faint'} />
+                      {t('chat.stableTip')}
+                      <span className="composer-menu-state">{settings.stableMode ? t('common.on') : t('common.off')}</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+            {/* what is switched on stays visible, quietly: two tiny dots, not a row of pills */}
+            <span className="composer-state" data-tip={t('chat.stateTip')}>
+              {settings.stableMode && <Icon name="shield" size={10} className="ok" />}
+              {settings.approvalPolicy !== 'ask' && (
+                <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : 'edit'} size={10} className={settings.approvalPolicy === 'yolo' ? 'err' : 'warn'} />
+              )}
+              {notesCount > 0 && <span className="composer-state-badge">{notesCount}</span>}
+            </span>
             <span className="spacer" />
             {usage && usage.promptTokens > 0 && (
               <span className="ctx-meter" data-tip={`${formatTokens(usage.promptTokens)} / ${formatTokens(model.contextWindow)} context`}>
@@ -560,32 +688,73 @@ export function ChatPane(): React.ReactElement {
 /* ------------------------------------------------------------------ */
 
 /**
- * What the agent said while it worked, one line per turn, right where the tools
- * are. Without this the transcript reads "user asked → five file diffs", which is
- * exactly the black box the user complained about.
+ * The agent's own commentary, one line per action, folded into a nested timeline
+ * instead of scattered paragraphs. Each row is "what I am doing" with the tool
+ * that did it underneath — the shape of the work, not a wall of text.
  */
 function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean }): React.ReactElement | null {
-  const groups = useMemo(() => {
-    const out: { key: string; text: string; tools: number }[] = []
+  const rows = useMemo(() => {
+    const out: { key: string; text: string; tool?: ChatMessage['tools'] extends (infer T)[] | undefined ? T : never }[] = []
     for (const tool of tools || []) {
       const line = typeof tool.args?.note === 'string' ? tool.args.note.trim() : ''
-      if (line) out.push({ key: tool.id, text: line, tools: 0 })
-      else if (out.length) out[out.length - 1].tools++
-      else out.push({ key: `${tool.id}-quiet`, text: '', tools: 1 })
+      if (!line) continue
+      out.push({ key: tool.id, text: line, tool })
     }
     return out
   }, [tools])
-  const spoken = groups.filter((g) => g.text)
-  if (!spoken.length) return null
+  const [open, setOpen] = useState(true)
+  if (!rows.length) return null
+  // which tools have no line at all: those get one quiet row so the timeline never
+  // hides work the agent did silently
+  const quiet = (tools || []).filter((t) => !rows.some((r) => r.key === t.id))
   return (
-    <div className="step-notes">
-      {spoken.map((g, i) => (
-        <div className="step-note" key={g.key} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
-          <span className="step-note-dot" />
-          <span className="step-note-text chat-text">{g.text}</span>
+    <div className="steps" data-open={open}>
+      <button className="steps-head" onClick={() => setOpen((v) => !v)}>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
+        <Icon name="sparkles" size={10} className="acc" />
+        <span>шаги работы · {rows.length}</span>
+      </button>
+      {open && (
+        <div className="steps-body">
+          {rows.map((r, i) => (
+            <div className="step" key={r.key} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}>
+              <span className="step-rail">
+                <span className="step-node" />
+              </span>
+              <div className="step-main">
+                <span className="step-text chat-text">{r.text}</span>
+                {r.tool && (
+                  <div className="step-tool">
+                    <ToolCard call={r.tool as ChatMessage['tools'] extends (infer T)[] | undefined ? T : never} compact />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {quiet.map((t) => (
+            <div className="step step-quiet" key={t.id}>
+              <span className="step-rail">
+                <span className="step-node" data-quiet="true" />
+              </span>
+              <div className="step-main">
+                <div className="step-tool">
+                  <ToolCard call={t} />
+                </div>
+              </div>
+            </div>
+          ))}
+          {live && (
+            <div className="step step-live">
+              <span className="step-rail">
+                <span className="spinner" />
+              </span>
+              <div className="step-main">
+                <span className="step-caret" />
+              </div>
+            </div>
+          )}
         </div>
-      ))}
-      {live && <span className="step-note-caret" />}
+      )}
     </div>
   )
 }
@@ -656,8 +825,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
         )}
 
         <StepNotes tools={msg.tools} live={!!msg.streaming} />
-
-        {tools.map((t) => (t.name === 'ask_user' && msg.vote?.id !== t.id ? <ToolCard key={t.id} call={t} /> : t.name === 'ask_user' ? null : <ToolCard key={t.id} call={t} />))}
+        {!tools.length && null}
 
         {(msg.guards || []).map((g) => (
           <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />

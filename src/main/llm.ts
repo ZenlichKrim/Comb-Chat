@@ -50,7 +50,7 @@ export interface LlmToolSchema {
 
 export class LlmError extends Error {
   status?: number
-  kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted'
+  kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted' | 'truncated'
   /** what the server told us to wait, in ms */
   retryAfterMs?: number
   constructor(message: string, kind: LlmError['kind'], status?: number, retryAfterMs?: number) {
@@ -176,6 +176,13 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
       // Anything else (network, 5xx, DNS, reset socket, dropped stream, 429) is
       // worth waiting out: that is the difference between losing a night of work
       // on step two and a run that just carries on.
+      if (e instanceof LlmError && e.kind === 'truncated') {
+        // no point waiting — same limit, same cut. Retry at once, on a shorter
+        // leash, so the agent gets a complete turn to work with.
+        body.max_tokens = Math.max(1024, Math.floor((body.max_tokens || 4096) * 0.75))
+        args.onRetry?.({ attempt, max: MAX_ATTEMPTS, waitMs: 0, reason: 'ответ обрезался по лимиту токенов — прошу короче' })
+        continue
+      }
       const wait = retryDelay(e, attempt)
       args.onRetry?.({ attempt, max: MAX_ATTEMPTS, waitMs: wait, reason: describeRetry(e) })
       await sleepAbortable(wait, signal)
@@ -393,6 +400,13 @@ async function runOnce(opts: {
     } catch {
       /* noop */
     }
+  }
+
+  // A reply cut off by the token limit is not an answer: half a tool call, or a
+  // sentence with no end, which the agent then acts on. Ask again for a compact
+  // version instead of pretending the turn was fine.
+  if (finishReason === 'length' && (opts.attempt || 1) < 3) {
+    throw new LlmError('Ответ оборвался по лимиту токенов', 'truncated')
   }
 
   const toolCalls: LlmToolCall[] = [...toolAcc.entries()]

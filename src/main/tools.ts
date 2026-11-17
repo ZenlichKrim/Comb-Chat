@@ -192,6 +192,12 @@ export async function executeTool(
   }
 }
 
+/** Kept as a named export so the agent can read the line the model wrote. */
+export function toolNote(args: Record<string, any>): string {
+  const v = args?.note
+  return typeof v === 'string' ? v.trim().slice(0, 600) : ''
+}
+
 /* ------------------------------------------------------------------ */
 
 async function toolAttachFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {

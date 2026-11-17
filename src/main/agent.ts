@@ -152,8 +152,9 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 
 # How you talk
 - You are a colleague working next to the user, not a mute tool. Talk as you work: what you noticed in the code, what you think of the approach, what you are about to do and why. The user wants your head, not just your hands.
-- Never go silent in the same turn as a tool call. This is about the transcript: the assistant message that carries tool calls must also carry your text, in the same message, before the calls. An assistant turn with tool calls and no words is silently dropped by the interface — the user sees your file diffs and nothing else.
+- Every tool accepts an optional note field: one line, in the interface language, about what this call is for — "смотрю, как устроен потребитель события", "грепаю, где ещё используется это имя". Put it on the calls that need context; skip it on obvious ones. It is cheap (it rides on the call you were already making), it shows up right above the tool row, and it is the main way the user follows your thinking.
 - The very first turn of a task is words only: what you understood, what you are about to do, and any question. No tool call in that message at all.
+- A tool call is a promise. Never say "сейчас сделаю X" and then end the turn without calling the tool that does X. Plan-then-stop is the single most useless failure mode: the user reads the plan, waits, and nothing happens.
 - There is no length budget on your prose. A thought that needs three paragraphs gets three paragraphs; a mechanical step gets one line. Say what is worth saying and stop — do not pad, do not trim a real thought to fit.
 - Do not write status reports. "Сейчас я прочитаю файл, затем внесу правку, затем запущу тесты" is noise — the transcript already shows every call. Say the part that is only in your head: why, what you expect, what surprised you, what you would do differently.
 - If the user wrote you a message, answer it in words before you touch anything — even when the task looks obvious. No headings, no bullet lists of steps.
@@ -351,7 +352,34 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   }
 
   const disabled = new Set(req.disabledTools || [])
-  const tools = req.workspace || fullDisk ? TOOL_SCHEMAS.filter((t) => !disabled.has(t.function.name)) : []
+  // Every tool accepts an optional `note`: one line, in the user's language, about
+  // what this call is for. It is not a tool result — it is the agent talking while
+  // it works, attached to the call so the interface can show it above the card and
+  // the model is not paying for a separate round trip to say one sentence.
+  const NO_NOTE = new Set(['leave_note', 'finish', 'suggest'])
+  const tools = req.workspace || fullDisk
+    ? TOOL_SCHEMAS.filter((t) => !disabled.has(t.function.name)).map((t) =>
+        NO_NOTE.has(t.function.name)
+          ? t
+          : {
+              ...t,
+              function: {
+                ...t.function,
+                parameters: {
+                  ...t.function.parameters,
+                  properties: {
+                    ...t.function.parameters.properties,
+                    note: {
+                      type: 'string',
+                      description:
+                        'Optional, one line: what this call is for and what you expect, in the user\'s language. Shown to them as you work.'
+                    }
+                  }
+                }
+              }
+            }
+      )
+    : []
 
   deps.emit({ type: 'run-start', runId: req.runId, threadId: req.threadId, messageId: req.messageId })
 
@@ -366,6 +394,14 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // "make sure the first steps are solid": collect what went wrong before deciding
   const errorsSoFar: { step: number; name: string; error: string }[] = []
   const callCounts = new Map<string, number>()
+  // Loop detector that looks at the shape of the round, not one call at a time.
+  // The failure the user hit is not a single failing command: it is the agent
+  // retrying variations of it dozens of times while narrating plans. Two rounds
+  // that fail the same tools with the same arguments are one attempt, repeated.
+  const roundSignatures = new Map<string, number>()
+  let silentRounds = 0
+  let loopHits = 0
+  let loopNote = '', loopTool = ''
   let verifyStage: 'pending' | 'running' | 'done' | 'failed' = 'pending'
   let notifiedCost = false
   let notifiedStuck = false
@@ -518,6 +554,25 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       }
 
       if (!result.toolCalls.length) {
+        // A run that narrated a plan and touched nothing is a wasted run: the
+        // user reads "принято, делаю шаг 1" and no file changes. Push it to act.
+        // Only when the reply is a promise of work ("принято, делаю…", "now I'll…"):
+        // a plain answer to a plain question must not be pushed into acting.
+        const promisesWork =
+          /(сделаю|добавлю|провер[юи]|сейчас|начну|приступаю|исправ|перепиш|установл|создам|I'?ll|let me|now I|starting|going to)/i.test(
+            result.content.slice(0, 600)
+          )
+        if (stableMode && promisesWork && !touched.size && step < 8 && silentRounds < 2) {
+          silentRounds++
+          history.push({
+            role: 'user',
+            content:
+              '[nothing done yet] You have described what you are going to do, but no file has changed and no command has run. ' +
+              'Stop planning out loud and do the first concrete thing now: read the file, run the command, make the edit. ' +
+              'If something truly blocks you, say it in one line and call finish.'
+          })
+          continue
+        }
         // no more tools: if the message is empty and we have budget, nudge once
         if (!result.content.trim() && step < 3) {
           history.push({ role: 'user', content: 'Continue — and call finish when the task is complete.' })
@@ -685,6 +740,27 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
         history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: toolContent.slice(0, 30000) })
 
+        if (stableMode) {
+          const sig = `${call.name}:${JSON.stringify(args).slice(0, 240)}`
+          const key = `${outcome.ok ? 'ok' : 'fail'}|${sig}`
+          const seen = (roundSignatures.get(key) || 0) + 1
+          roundSignatures.set(key, seen)
+          // three identical rounds in a row and nothing changed: stop the run and
+          // hand the user a card instead of burning steps on variations
+          if (!outcome.ok && seen >= 3 && !loopHits) {
+            loopHits = seen
+            loopNote = (outcome.error || outcome.output || 'вызов не прошёл').split('\n')[0].slice(0, 240)
+            loopTool = call.name
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'stuck',
+              title: 'Остановился: одна и та же попытка повторяется',
+              detail: `${call.name} · ${loopNote}`
+            })
+          }
+        }
+
         if (call.name === 'ask_user' && outcome.ok) {
           notifiedVote = true
           const preferred = String((args as any).__default || '')
@@ -781,7 +857,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           finalReason = 'guard'
           break
         }
-        if (notifiedStuck) {
+        if (notifiedStuck || loopHits) {
           finalReason = 'guard'
           break
         }

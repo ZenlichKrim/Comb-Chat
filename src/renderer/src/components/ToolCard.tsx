@@ -91,13 +91,14 @@ function statusPill(
   }
 }
 
-export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement {
+export function ToolCard({ call, compact }: { call: ToolResultView; compact?: boolean }): React.ReactElement {
   const t = useT()
   const meta = TOOL_META[call.name] || { icon: 'zap' as IconName, label: call.name as DictKey, verb: call.name as DictKey }
   const [open, setOpen] = useState(false)
   const hasDiff = !!call.diff?.length
   const wantsOpen = call.status === 'error' || call.status === 'awaiting-approval'
   const expanded = open || wantsOpen
+  if (call.name === 'ask_user') return <></>
   const settings = useStore((s) => s.settings)
   const openFile = useStore((s) => s.openFile)
   const workspace = useStore((s) => s.workspace)
@@ -110,7 +111,7 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
   }
 
   return (
-    <div className="tool-card" data-status={call.status}>
+    <div className="tool-card" data-status={call.status} data-compact={compact ? 'true' : undefined}>
       <button className="tool-head" onClick={() => setOpen((v) => !v)}>
         <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={9} className="tool-caret" />
         <Icon name={meta.icon} size={11} className="tool-icon" />

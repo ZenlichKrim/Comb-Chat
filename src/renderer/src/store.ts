@@ -53,6 +53,8 @@ export type BottomPanel = 'terminal' | 'problems' | 'output' | 'git'
 export type RightPanel = 'plan' | 'context' | 'history' | 'none'
 
 interface State {
+  /** what the user typed while the agent was busy: sent, not lost */
+  queued: string[]
   ready: boolean
   settings: Settings
   threads: Thread[]
@@ -132,6 +134,9 @@ interface Actions {
   selectThread: (id: string) => void
   deleteThread: (id: string) => Promise<void>
   renameThread: (id: string, title: string) => void
+  queueMessage: (text: string) => void
+  dropQueued: (index: number) => void
+  flushQueue: () => Promise<void>
   sendMessage: (text: string, attachments?: Attachment[], opts?: { auto?: boolean }) => Promise<boolean>
   stopRun: () => Promise<void>
   /** answer an agent question: records the pick and starts the next turn */
@@ -192,6 +197,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   runId: null,
   streamingMessageId: null,
   pendingApproval: null,
+  queued: [],
   activity: null,
   approvalRunId: null,
   toasts: [],
@@ -563,6 +569,16 @@ export const useStore = create<State & Actions>((set, get) => ({
     return true
   },
 
+  queueMessage: (text) => set((s) => ({ queued: [...s.queued, text] })),
+  dropQueued: (index) => set((s) => ({ queued: s.queued.filter((_, i) => i !== index) })),
+  flushQueue: async () => {
+    const q = get().queued
+    if (!q.length || get().running) return
+    set({ queued: [] })
+    await get().sendMessage(q[0])
+    if (q.length > 1) set({ queued: q.slice(1) })
+  },
+
   steer: async (text: string) => {
     const runId = get().runId
     const threadId = get().activeThreadId
@@ -808,6 +824,16 @@ export const useStore = create<State & Actions>((set, get) => ({
         if (e.reason === 'guard') get().toast('warn', tr('store.guardStopped'), tr('store.guardStoppedHint'))
         // "walk away for two hours": hitting the step budget mid-task is a pause,
         // not a failure — pick the run back up by itself, a bounded number of times.
+        // What the user typed while the agent was busy goes out now, in order.
+        const queuedNow = get().queued
+        if (queuedNow.length) {
+          set({ queued: [] })
+          const next = queuedNow[0]
+          setTimeout(() => {
+            if (!get().running) void get().sendMessage(next)
+          }, 400)
+          if (queuedNow.length > 1) set({ queued: queuedNow.slice(1) })
+        }
         const runs = get().autoContinues || 0
         // A run that died on a network/server error after all retries is also a
         // pause, not the end: pick it back up once or twice before giving up.
