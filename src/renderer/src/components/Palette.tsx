@@ -434,6 +434,44 @@ export function FilePreviewModal(): React.ReactElement {
   )
 }
 
+/**
+ * A ping you can hear and see while you are doing something else: when a run
+ * finishes, fails or needs you, and the window is not focused, a card slides in
+ * at the top of the screen with the agent's own words. Sound comes from a tiny
+ * synthesised chime — no asset to ship, no file to fail loading.
+ */
+export function AttentionOverlay(): React.ReactElement | null {
+  const t = useT()
+  const attention = useStore((s) => s.attention)
+  const dismiss = useStore((s) => s.dismissAttention)
+  const showChat = (): void => {
+    dismiss()
+    window.dispatchEvent(new CustomEvent('comb:focus-chat'))
+  }
+  if (!attention) return null
+  return (
+    <div className="attention" data-kind={attention.kind} onClick={showChat} role="status">
+      <span className="attention-mark">
+        <Icon name={attention.kind === 'error' ? 'alert' : attention.kind === 'question' ? 'chat' : 'check-circle'} size={14} />
+      </span>
+      <div className="attention-body">
+        <span className="attention-title">{attention.title}</span>
+        {attention.body && <span className="attention-text">{attention.body}</span>}
+      </div>
+      <button
+        className="attention-x"
+        onClick={(e) => {
+          e.stopPropagation()
+          dismiss()
+        }}
+        aria-label={t('common.close')}
+      >
+        <Icon name="close" size={11} />
+      </button>
+    </div>
+  )
+}
+
 export function Toasts(): React.ReactElement {
   const toasts = useStore((s) => s.toasts)
   const dismiss = useStore((s) => s.dismissToast)

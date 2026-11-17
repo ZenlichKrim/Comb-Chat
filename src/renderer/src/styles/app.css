@@ -3860,38 +3860,49 @@ hr {
 }
 
 /* ---------------------------------------------------------------- */
-/* Step timeline: the agent's work as a nested tree, not paragraphs  */
+/* Steps: a readable list of what the agent did                      */
 /* ---------------------------------------------------------------- */
 .steps {
-  margin: 4px 0 10px;
-  border-left: 1px solid var(--line-1);
-  padding-left: 2px;
+  margin: 6px 0 12px;
+  padding: 2px 0 0;
 }
 .steps-head {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 20px;
-  margin-left: -3px;
-  padding: 0 6px;
-  border-radius: var(--r-sm);
+  height: 22px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border-radius: 999px;
   font-size: var(--fs-2xs);
-  font-weight: 600;
+  font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--fg-4);
-  text-transform: lowercase;
+  transition: all var(--dur-fast);
 }
 .steps-head:hover {
-  background: var(--bg-3);
+  background: var(--bg-2);
   color: var(--fg-2);
 }
 .steps-body {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 0 2px;
+  gap: 10px;
+  margin: 6px 0 0 3px;
+  padding-left: 14px;
 }
-.step {
+.steps-body::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 6px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(var(--line-2), transparent);
+}
+.step-row {
+  position: relative;
   display: flex;
   gap: 8px;
   animation: step-in 0.2s ease both;
@@ -3902,71 +3913,84 @@ hr {
     transform: translateY(2px);
   }
 }
-.step-rail {
-  position: relative;
-  flex: none;
-  width: 12px;
-  display: flex;
-  justify-content: center;
-  padding-top: 7px;
-}
-.step-node {
-  width: 5px;
-  height: 5px;
+.step-dot {
+  position: absolute;
+  left: -14px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   background: var(--accent);
-  opacity: 0.85;
+  box-shadow: 0 0 0 3px var(--bg-0);
 }
-.step-node[data-quiet='true'] {
+.step-dot[data-quiet='true'] {
   background: var(--fg-4);
-  opacity: 0.5;
+  width: 5px;
+  height: 5px;
+  left: -13px;
+  top: 8px;
 }
-.step-main {
+.step-dot[data-live='true'] {
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+}
+.step-content {
   min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding-bottom: 4px;
+  gap: 4px;
 }
-.step-text {
-  font-size: var(--fs-sm);
+.step-say {
+  font-size: var(--fs-md);
   line-height: 1.6;
-  color: var(--fg-2);
+  color: var(--fg-1);
 }
-.step-text p {
+.step-say p {
   margin: 0;
 }
-.step-tool {
-  min-width: 0;
+.step-quiet-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  color: var(--fg-4);
+  font-size: var(--fs-2xs);
 }
-.step-tool .tool-card {
-  margin: 0;
+.step-quiet-label {
+  margin-right: 2px;
 }
-.tool-card[data-compact='true'] {
-  background: transparent;
-  border-color: transparent;
-  padding: 2px 0;
-  opacity: 0.85;
-}
-.tool-card[data-compact='true']:hover {
+.step-more {
+  align-self: flex-start;
+  margin-left: -2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  color: var(--fg-3);
   background: var(--bg-2);
-  border-color: var(--line-1);
 }
-.step-quiet .step-main {
-  opacity: 0.9;
+.step-more:hover {
+  color: var(--fg-1);
+  background: var(--bg-3);
 }
 .step-caret {
   display: inline-block;
   width: 6px;
   height: 12px;
-  margin-top: 2px;
+  margin-top: 3px;
   border-radius: 2px;
   background: var(--accent);
   animation: caret-blink 1.1s steps(2, start) infinite;
 }
-.step-live .step-rail {
-  padding-top: 2px;
+.tool-card[data-compact='true'] {
+  background: var(--bg-1);
+  border-color: var(--line-1);
+  margin: 0;
 }
 
 /* ---------------------------------------------------------------- */
@@ -4211,4 +4235,106 @@ hr {
 }
 .read-card-ext {
   color: var(--fg-4);
+}
+
+/* ---------------------------------------------------------------- */
+/* Attention overlay: a card at the top when a run ends elsewhere    */
+/* ---------------------------------------------------------------- */
+.attention {
+  position: fixed;
+  top: calc(var(--titlebar-h) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(560px, calc(100vw - 40px));
+  padding: 12px 12px 12px 14px;
+  border-radius: 18px;
+  background: color-mix(in oklab, var(--bg-1) 92%, transparent);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--ok);
+  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  animation: attention-in 0.28s cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+@keyframes attention-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -14px) scale(0.97);
+  }
+}
+.attention[data-kind='error'] {
+  border-left-color: var(--err);
+}
+.attention[data-kind='question'] {
+  border-left-color: var(--accent);
+}
+.attention-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 9px;
+  background: var(--bg-3);
+  color: var(--ok);
+}
+.attention[data-kind='error'] .attention-mark {
+  color: var(--err);
+}
+.attention[data-kind='question'] .attention-mark {
+  color: var(--accent);
+}
+.attention-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.attention-title {
+  font-size: var(--fs-md);
+  font-weight: 650;
+}
+.attention-text {
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+  line-height: 1.45;
+}
+.attention-x {
+  flex: none;
+  color: var(--fg-4);
+}
+.attention-x:hover {
+  color: var(--fg-1);
+}
+
+/* the editor pane can go away entirely: the chat takes the room */
+.empty-hide {
+  margin-top: -2px;
+}
+.editor-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  width: 22px;
+  padding: 0;
+  overflow: hidden;
+  font-size: var(--fs-2xs);
+  color: var(--fg-4);
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-1);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transition: all var(--dur-fast);
+}
+.editor-ghost:hover {
+  width: 26px;
+  color: var(--accent);
+  background: var(--bg-2);
 }

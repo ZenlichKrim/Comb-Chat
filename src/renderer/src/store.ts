@@ -99,6 +99,9 @@ interface State {
   /** set while the API call is being retried */
   retryInfo: { attempt: number; max: number; reason: string; at: number; waitMs: number } | null
   /** desktop pings this session, shown in the bell menu */
+  /** a run finished / needs you while you were elsewhere: shown as an overlay */
+  attention: { id: string; kind: 'done' | 'error' | 'question'; title: string; body?: string; at: number } | null
+  dismissAttention: () => void
   notifications: { id: string; title: string; body: string; at: number }[]
   /** model-written one-liners, by absolute path */
   fileSummaries: Record<string, string>
@@ -176,6 +179,45 @@ function trimThread(t: Thread): Thread {
   return { ...t, messages: t.messages.slice(-MAX_HISTORY) }
 }
 
+/** Two short tones, synthesised: recognisable, quiet, and no asset to ship. */
+function chime(kind: 'done' | 'error' | 'question'): void {
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    const now = ctx.currentTime
+    const notes = kind === 'error' ? [392, 294] : kind === 'question' ? [523, 659] : [523, 784]
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const at = now + i * 0.12
+      gain.gain.setValueAtTime(0.0001, at)
+      gain.gain.exponentialRampToValueAtTime(kind === 'error' ? 0.12 : 0.09, at + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.28)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start(at)
+      osc.stop(at + 0.3)
+    })
+    setTimeout(() => void ctx.close().catch(() => undefined), 900)
+  } catch {
+    /* audio is a nicety, not a requirement */
+  }
+}
+
+/** Show the overlay only when the user is looking somewhere else. */
+export function showAttention(kind: 'done' | 'error' | 'question', title: string, body?: string): void {
+  const s = useStore.getState()
+  if (s.settings.attentionOverlay === false) return
+  if (document.hasFocus()) return
+  if (s.settings.attentionSound !== false) chime(kind)
+  useStore.setState({ attention: { id: `att_${Date.now()}`, kind, title, body, at: Date.now() } })
+  setTimeout(() => {
+    if (useStore.getState().attention?.title === title) useStore.setState({ attention: null })
+  }, 12000)
+}
+
 export const useStore = create<State & Actions>((set, get) => ({
   ready: false,
   settings: { ...DEFAULT_SETTINGS },
@@ -209,6 +251,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   filePreview: null,
   lastPrompt: '',
   guards: [],
+  attention: null,
   notifications: [],
   retryInfo: null,
   notes: [],
@@ -784,6 +827,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       case 'notify': {
         // the native toast is main's job; in-app we keep a quiet record
         set((s) => ({ notifications: [...s.notifications, { id: uid('note'), title: e.title, body: e.body, at: Date.now() }].slice(-20) }))
+        showAttention(e.urgent ? 'error' : 'done', e.title, e.body)
         break
       }
       case 'file-summaries': {
@@ -807,14 +851,22 @@ export const useStore = create<State & Actions>((set, get) => ({
         // An approval that never got answered must not vanish without a trace:
         // leave the card in the transcript marked as expired.
         const stale = get().pendingApproval
-        updateAssistant((m) => ({
+        updateAssistant((m) => {
+          // The finish tool carries the summary; if the model never wrote prose
+          // afterwards, that summary IS the answer — show it instead of a turn
+          // that just ends.
+          const fin = (m.tools || []).find((x) => x.name === 'finish' && typeof x.args?.summary === 'string')
+          const summary = fin && !m.content?.trim() ? String(fin.args.summary) : ''
+          return {
           ...m,
+          content: m.content?.trim() ? m.content : summary,
           streaming: false,
           stopped: e.reason === 'stopped',
           tools: stale
             ? (m.tools || []).map((t) => (t.id === stale.id && t.status === 'awaiting-approval' ? { ...t, status: 'expired' } : t))
             : m.tools
-        }))
+          }
+        })
         set({ running: false, pendingApproval: null, activity: null, retryInfo: null })
         void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
@@ -926,6 +978,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   setNotesOpen: (open) => set({ notesOpen: open }),
+
+  dismissAttention: () => set({ attention: null }),
 
   addContextFile: (a) => {
     if (a.kind === 'image') {

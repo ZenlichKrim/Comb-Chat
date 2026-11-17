@@ -7,7 +7,7 @@ import { RightPanel } from './components/RightPanel'
 import { BottomPanel } from './components/Terminal'
 import { StatusBar } from './components/StatusBar'
 import { SettingsDialog } from './components/Settings'
-import { CommandPalette, Toasts, DiffModal, AboutDialog, FilePreviewModal } from './components/Palette'
+import { CommandPalette, Toasts, DiffModal, AboutDialog, FilePreviewModal, AttentionOverlay } from './components/Palette'
 import { useStore } from './store'
 import { Icon } from './components/Icon'
 import { useT } from './lib/i18n'
@@ -23,6 +23,8 @@ export function App(): React.ReactElement {
   const [splitter, setSplitter] = useState(0.52)
   const [dragging, setDragging] = useState(false)
   const [chatCollapsed, setChatCollapsed] = useState(false)
+  // the welcome screen on the left is not something you need every minute
+  const [editorHidden, setEditorHidden] = useState(false)
 
   useEffect(() => {
     void boot()
@@ -138,11 +140,25 @@ export function App(): React.ReactElement {
         )}
         <div className="workspace-area">
           <div className="main-split">
-            <div className="editor-col" style={{ flex: chatCollapsed ? 1 : splitter }}>
-              <EditorPane />
-            </div>
+            {!editorHidden && (
+              <div className="editor-col" style={{ flex: chatCollapsed ? 1 : splitter }}>
+                <EditorPane onHide={() => setEditorHidden(true)} />
+              </div>
+            )}
+            {editorHidden && (
+              <button
+                className="editor-ghost"
+                onClick={() => setEditorHidden(false)}
+                data-tip={t('ed.showPane')}
+                aria-label={t('ed.showPane')}
+              >
+                <Icon name="chevron-right" size={10} />
+                <span>{t('ed.paneHidden')}</span>
+              </button>
+            )}
             {/* Dragging anywhere on the seam works; the toggle is a real button
                 with a hover background, not a mystery 4px strip. */}
+            {!editorHidden && (
             <div
               className="split-handle"
               onMouseDown={(e) => {
@@ -161,7 +177,8 @@ export function App(): React.ReactElement {
                 <Icon name={chatCollapsed ? 'chevron-left' : 'chevron-right'} size={10} />
               </button>
             </div>
-            <div className="chat-col" style={{ flex: chatCollapsed ? 0 : 1 - splitter, display: chatCollapsed ? 'none' : 'flex' }}>
+            )}
+            <div className="chat-col" style={{ flex: chatCollapsed ? 0 : editorHidden ? 1 : 1 - splitter, display: chatCollapsed ? 'none' : 'flex' }}>
               <ChatPane />
             </div>
             {rightPanel !== 'none' && <RightPanel />}
@@ -176,6 +193,7 @@ export function App(): React.ReactElement {
       <FilePreviewModal />
       <AboutDialog />
       <Toasts />
+      <AttentionOverlay />
       <OnboardingOverlay />
     </div>
   )

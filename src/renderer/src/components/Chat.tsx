@@ -791,70 +791,95 @@ function ReadCard({ call }: { call: NonNullable<ChatMessage['tools']>[number] })
   )
 }
 
+const QUIET_TOOLS = new Set(['read_file', 'grep', 'glob', 'list_dir'])
+
+/**
+ * The work, as a readable list.
+ *
+ * Each row is one step: the agent's own line about what it is doing, and the
+ * tool it used, one under the other. Silent rows are folded into a single
+ * "посмотрел: a, b, c" line instead of a card each — the point of this panel is
+ * to be understood at a glance, not to log every call.
+ */
 function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean }): React.ReactElement | null {
-  const rows = useMemo(() => {
-    const out: { key: string; text: string; tool?: ChatMessage['tools'] extends (infer T)[] | undefined ? T : never }[] = []
-    for (const tool of tools || []) {
-      const line = typeof tool.args?.note === 'string' ? tool.args.note.trim() : ''
-      if (!line) continue
-      out.push({ key: tool.id, text: line, tool })
-    }
-    return out
-  }, [tools])
+  const t = useT()
   const [open, setOpen] = useState(true)
-  if (!rows.length) return null
-  // which tools have no line at all: those get one quiet row so the timeline never
-  // hides work the agent did silently
-  const quiet = (tools || []).filter((t) => !rows.some((r) => r.key === t.id))
+  const [showAll, setShowAll] = useState(false)
+
+  const { rows, quietGroups, count } = useMemo(() => {
+    type Tool = NonNullable<ChatMessage['tools']>[number]
+    const steps: { key: string; text: string; tool?: Tool }[] = []
+    const quiet: Tool[] = []
+    for (const tool of tools || []) {
+      // ask_user renders as a vote card, finish as the answer itself
+      if (tool.name === 'ask_user' || tool.name === 'finish') continue
+      const line = typeof tool.args?.note === 'string' ? tool.args.note.trim() : ''
+      if (line) steps.push({ key: tool.id, text: line, tool })
+      else if (QUIET_TOOLS.has(tool.name)) quiet.push(tool)
+      else steps.push({ key: tool.id, text: '', tool })
+    }
+    return {
+      rows: steps,
+      quietGroups: quiet.length ? [quiet] : [],
+      count: steps.length + (quiet.length ? 1 : 0)
+    }
+  }, [tools])
+
+  if (!count) return null
+  const limit = showAll ? rows.length : 6
+  const hidden = rows.length - limit
+
   return (
-    <div className="steps" data-open={open}>
+    <div className="steps">
       <button className="steps-head" onClick={() => setOpen((v) => !v)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
-        <Icon name="sparkles" size={10} className="acc" />
-        <span>шаги работы · {rows.length}</span>
+        <span>{open ? t('steps.done', { n: count }) : t('steps.show', { n: count })}</span>
+        {!open && live && <span className="spinner" style={{ marginLeft: 2 }} />}
       </button>
       {open && (
         <div className="steps-body">
-          {rows.map((r, i) => (
-            <div className="step" key={r.key} style={{ animationDelay: `${Math.min(i, 8) * 25}ms` }}>
-              <span className="step-rail">
-                <span className="step-node" />
-              </span>
-              <div className="step-main">
-                <span className="step-text chat-text">{r.text}</span>
+          {rows.slice(0, limit).map((r, i) => (
+            <div className="step-row" key={r.key} style={{ animationDelay: `${Math.min(i, 8) * 22}ms` }}>
+              <span className="step-dot" data-quiet={r.text ? undefined : 'true'} />
+              <div className="step-content">
+                {r.text && <div className="step-say chat-text">{r.text}</div>}
                 {r.tool &&
-                  (r.tool.name === 'read_file' || r.tool.name === 'grep' || r.tool.name === 'glob' ? (
-                    <div className="step-tool">
-                      <ReadCard call={r.tool} />
-                    </div>
+                  (QUIET_TOOLS.has(r.tool.name) ? (
+                    <ReadCard call={r.tool} />
                   ) : (
-                    <div className="step-tool">
-                      <ToolCard call={r.tool as ChatMessage['tools'] extends (infer T)[] | undefined ? T : never} compact />
-                    </div>
+                    <ToolCard call={r.tool} compact />
                   ))}
               </div>
             </div>
           ))}
-          {quiet.map((t) => (
-            <div className="step step-quiet" key={t.id}>
-              <span className="step-rail">
-                <span className="step-node" data-quiet="true" />
-              </span>
-              <div className="step-main">
-                <div className="step-tool">
-                  {t.name === 'read_file' || t.name === 'grep' || t.name === 'glob' ? <ReadCard call={t} /> : <ToolCard call={t} />}
+          {quietGroups.map((group) => (
+            <div className="step-row" key={`q-${group[0].id}`}>
+              <span className="step-dot" data-quiet="true" />
+              <div className="step-content">
+                <div className="step-quiet-line">
+                  <span className="step-quiet-label">{t('steps.looked')}:</span>
+                  {group.slice(0, 8).map((c) => (
+                    <ReadCard key={c.id} call={c} />
+                  ))}
+                  {group.length > 8 && <span className="t-xs faint">+{group.length - 8}</span>}
                 </div>
               </div>
             </div>
           ))}
+          {hidden > 0 && (
+            <button className="step-more" onClick={() => setShowAll(true)}>
+              {t('steps.more', { n: hidden })}
+            </button>
+          )}
+          {showAll && hidden > 0 && (
+            <button className="step-more" onClick={() => setShowAll(false)}>
+              {t('steps.less')}
+            </button>
+          )}
           {live && (
-            <div className="step step-live">
-              <span className="step-rail">
-                <span className="spinner" />
-              </span>
-              <div className="step-main">
-                <span className="step-caret" />
-              </div>
+            <div className="step-row step-live">
+              <span className="step-dot" data-live="true" />
+              <span className="step-caret" />
             </div>
           )}
         </div>

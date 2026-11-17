@@ -123,6 +123,10 @@ export interface Settings {
   autoContinue: boolean
   /** desktop notifications for finished tasks, blockers and decisions */
   notifyDesktop: boolean
+  /** slide a card over the screen when a run ends while the window is in the background */
+  attentionOverlay: boolean
+  /** a short chime with the overlay */
+  attentionSound: boolean
   /** let the agent offer a vote when a decision really matters (at most once per run) */
   proposeVotes: boolean
   allowedTools: string[]
@@ -165,6 +169,8 @@ export const DEFAULT_SETTINGS: Settings = {
   verifyCommand: '',
   autoContinue: true,
   notifyDesktop: true,
+  attentionOverlay: true,
+  attentionSound: true,
   proposeVotes: true,
   allowedTools: [],
   locale: 'en'

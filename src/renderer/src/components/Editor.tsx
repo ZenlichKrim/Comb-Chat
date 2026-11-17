@@ -391,7 +391,7 @@ export function CodeEditor({
 /* Editor tab strip + empty state                                      */
 /* ------------------------------------------------------------------ */
 
-export function EditorPane(): React.ReactElement {
+export function EditorPane({ onHide }: { onHide?: () => void } = {}): React.ReactElement {
   const t = useT()
   const tabs = useStore((s) => s.tabs)
   const activePath = useStore((s) => s.activeTabPath)
@@ -562,13 +562,13 @@ export function EditorPane(): React.ReactElement {
           handleRef={handleRef}
         />
       ) : (
-        <EmptyEditor workspace={workspace} onOpen={() => void openWorkspace()} />
+        <EmptyEditor workspace={workspace} onOpen={() => void openWorkspace()} onHide={onHide} />
       )}
     </div>
   )
 }
 
-function EmptyEditor({ workspace, onOpen }: { workspace: string | null; onOpen: () => void }): React.ReactElement {
+function EmptyEditor({ workspace, onOpen, onHide }: { workspace: string | null; onOpen: () => void; onHide?: () => void }): React.ReactElement {
   const t = useT()
   const shortcuts = [
     ['Ctrl O', t('keys.openFolder')],
@@ -603,6 +603,11 @@ function EmptyEditor({ workspace, onOpen }: { workspace: string | null; onOpen: 
             </>
           )}
         </p>
+        {onHide && (
+          <button className="empty-hide link t-xs" onClick={onHide}>
+            {t('ed.hidePane')}
+          </button>
+        )}
         <button className="btn primary" onClick={onOpen} style={{ height: 32, padding: '0 16px' }}>
           <Icon name="folder" size={13} /> {workspace ? t('common.changeFolder') : t('common.openFolder')} <kbd style={{ marginLeft: 4 }}>Ctrl O</kbd>
         </button>
