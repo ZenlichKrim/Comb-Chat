@@ -152,7 +152,8 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 
 # How you talk
 - You are a colleague working next to the user, not a mute tool. Talk as you work: what you noticed in the code, what you think of the approach, what you are about to do and why. The user wants your head, not just your hands.
-- Never go silent in the same turn as a tool call. Silence is the most common complaint about agents: a wall of file diffs and no idea what you were thinking.
+- Never go silent in the same turn as a tool call. This is about the transcript: the assistant message that carries tool calls must also carry your text, in the same message, before the calls. An assistant turn with tool calls and no words is silently dropped by the interface — the user sees your file diffs and nothing else.
+- The very first turn of a task is words only: what you understood, what you are about to do, and any question. No tool call in that message at all.
 - There is no length budget on your prose. A thought that needs three paragraphs gets three paragraphs; a mechanical step gets one line. Say what is worth saying and stop — do not pad, do not trim a real thought to fit.
 - Do not write status reports. "Сейчас я прочитаю файл, затем внесу правку, затем запущу тесты" is noise — the transcript already shows every call. Say the part that is only in your head: why, what you expect, what surprised you, what you would do differently.
 - If the user wrote you a message, answer it in words before you touch anything — even when the task looks obvious. No headings, no bullet lists of steps.
@@ -410,16 +411,23 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
    */
   let nudges = 0
   const MAX_NUDGES = 3
-  const narrate = (): void => {
-    history.push({
-      role: 'user',
-      content:
-        `[no words, step ${step}] You went straight to tool calls and said nothing to the user. ` +
-        'They are watching the transcript and cannot read your mind.\n' +
-        'Say whatever is on your mind — your read on the code you just saw, what you think of the approach, what surprised you, where this could go — and then continue. ' +
-        'Your own words, whatever length the thought needs: a line if it is a line, a paragraph if there is something to say. ' +
-        'Do not write a status report of the plan; nobody needs the steps repeated back.'
-    })
+  const narratePrompt = (): string =>
+    `[no words, step ${step}] You went straight to tool calls and said nothing to the user. ` +
+    'They are watching the transcript and cannot read your mind.\n' +
+    'Say whatever is on your mind — your read on the code you just saw, what you think of the approach, what surprised you, where this could go — and then continue. ' +
+    'Your own words, whatever length the thought needs: a line if it is a line, a paragraph if there is something to say. ' +
+    'Do not write a status report of the plan; nobody needs the steps repeated back.'
+
+  /**
+   * Answer every tool call the model made, whatever we decide next. An assistant
+   * turn with `tool_calls` that is not followed by one tool message per id is a
+   * 400 from the API — and the error used to be shown to the user and retried,
+   * which is where the "Bad request … insufficient tool messages" spam came from.
+   */
+  const closeToolCalls = (calls: { id: string; name: string }[], note: string): void => {
+    for (const c of calls) {
+      history.push({ role: 'tool', tool_call_id: c.id, name: c.name, content: note })
+    }
   }
 
   /** desktop ping, rate-limited so a long run does not become a notification mill */
@@ -482,10 +490,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       // missing sentence instead of accepting the silence — a few times per run,
       // so the fix does not turn into a ping-pong of round trips.
       const bookkeeping = new Set(['todo_write', 'finish', 'suggest', 'notify_user', 'leave_note', 'attach_file'])
-      const realCalls = result.toolCalls.filter((c) => !bookkeeping.has(c.name)).length > 0
-      if (!result.content.trim() && realCalls && nudges < MAX_NUDGES) {
+      const realCalls = result.toolCalls.filter((c) => !bookkeeping.has(c.name))
+      // The first turn of a task must be words: a user who writes a message and
+      // gets five file diffs back has been ignored. Not for continuations
+      // (auto-resume after an outage has nothing new to answer).
+      const continuation = /^(continue|продолжай|продолжи|дальше)\b/i.test((req.userMessage?.content || '').trim())
+      const firstTurnOfTask = step === 1 && !continuation
+      if (firstTurnOfTask && !result.content.trim() && result.toolCalls.length) {
+        // Decline the calls, ask for the opening line, and let it work next turn.
+        closeToolCalls(result.toolCalls, 'Not executed: open a new task with a sentence to the user first, then call this again.')
+        history.push({
+          role: 'user',
+          content:
+            '[first turn] You went straight to tools. The user wrote you a message and expects an answer in words: what you understood, what you are about to do, and anything you already think about the code or the project. Say it, then work.'
+        })
+        continue
+      }
+      if (!firstTurnOfTask && !result.content.trim() && realCalls.length && nudges < MAX_NUDGES) {
         nudges++
-        narrate()
+        // The calls are declined, not abandoned: answer each id, then ask for the
+        // words. This turn is only about the missing sentence; the agent will
+        // call its tools again straight away.
+        closeToolCalls(realCalls, 'Not executed: you answered without a word to the user. Say what you are thinking and call this again.')
+        closeToolCalls(result.toolCalls.filter((c) => bookkeeping.has(c.name)), 'Not executed yet.')
+        history.push({ role: 'user', content: narratePrompt() })
         continue
       }
 
@@ -505,6 +533,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       }
 
       // Execute tools sequentially so approvals and file state stay coherent
+      const historyStart = history.length
       let halted: 'done' | 'error' | 'aborted' | undefined
       for (const call of result.toolCalls) {
         if (signal.aborted) {
@@ -687,6 +716,19 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
       }
 
+      // Stopped or halted in the middle of a round: the calls that never ran still
+      // need an answer, otherwise the next request is malformed and the user reads
+      // "insufficient tool messages" instead of a stopped run.
+      if (result.toolCalls.length) {
+        const answered = new Set<string>()
+        for (let i = historyStart; i < history.length; i++) {
+          const m = history[i]
+          if (m.role === 'tool' && m.tool_call_id) answered.add(m.tool_call_id)
+        }
+        const unanswered = result.toolCalls.filter((c) => !answered.has(c.id))
+        if (unanswered.length) closeToolCalls(unanswered, 'Not executed: the run was stopped before this call.')
+      }
+
       // checkpoint after each mutating round
       if (beforeState.size) {
         const files = [...beforeState.entries()].map(([abs, content]) => ({
@@ -804,7 +846,13 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       finalReason = 'stopped'
     } else {
       finalReason = 'error'
-      deps.emit({ type: 'error', runId: req.runId, message: e?.message || String(e) })
+      // Protocol-level 400s are ours, not the user's problem to read: say what
+      // happened in Russian instead of pasting the API's sentence.
+      const raw = String(e?.message || e)
+      const message = /must be followed by tool messages|insufficient tool messages|tool_call_id/i.test(raw)
+        ? 'Агент потерял связку «вызов инструмента → результат». Такое не должно повторяться: прогон перезапущен, история почищена.'
+        : raw
+      deps.emit({ type: 'error', runId: req.runId, message })
     }
   } finally {
     // How did it end, in one line the user can read from across the room.

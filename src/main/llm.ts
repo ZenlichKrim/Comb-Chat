@@ -482,24 +482,40 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
         content: msg.content || (toolCalls.length ? null : ''),
         tool_calls: toolCalls.length ? toolCalls : undefined
       } as LlmMessage)
+      // Every id in `tool_calls` must get exactly one tool message, or the API
+      // rejects the whole request with "insufficient tool messages following
+      // tool_calls". Denied, aborted and still-running calls are answered too —
+      // the model needs to hear that they did not happen, not nothing at all.
       for (const t of msg.tools || []) {
-        if (t.status === 'denied' || t.status === 'aborted') continue
         const resultText =
-          t.error && t.status === 'error'
-            ? `ERROR: ${t.error}`
-            : (t.output || (t.status === 'ok' ? 'ok' : t.status))
+          t.status === 'denied'
+            ? 'The user DENIED this action. Do not retry it.'
+            : t.status === 'aborted'
+              ? 'Not executed: the run was stopped before this call.'
+              : t.error && t.status === 'error'
+                ? `ERROR: ${t.error}`
+                : (t.output || (t.status === 'ok' ? 'ok' : t.status))
         out.push({ role: 'tool', tool_call_id: t.id, name: t.name, content: String(resultText).slice(0, 24000) })
       }
     }
   }
-  // Budget the history by dropping oldest entries (but never the last user turn)
+  // Budget the history by dropping the oldest whole turns. Cutting a single
+  // message out of the middle can orphan a tool call, which is what the API
+  // answered with "insufficient tool messages" — so a turn goes away as a unit,
+  // and the trailing turn (context block + the actual ask) is never touched.
   let total = estimateMessagesTokens(out)
-  if (total > budget) {
-    // drop from the front, keeping pairs, until we fit
-    while (out.length > 2 && total > budget) {
-      const removed = out.shift()
-      total -= estimateTokens(messageText(removed?.content)) + 8
+  while (out.length > 2 && total > budget) {
+    // find the second user message: everything before it is one droppable chunk
+    let cut = -1
+    for (let i = 1; i < out.length - 1; i++) {
+      if (out[i].role === 'user' && !String(messageText(out[i].content)).startsWith('<workspace_context>')) {
+        cut = i
+        break
+      }
     }
+    if (cut <= 0) break
+    const dropped = out.splice(0, cut)
+    total -= dropped.reduce((n, m) => n + estimateTokens(messageText(m.content)) + 8, 0)
   }
   return out
 }
