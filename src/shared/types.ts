@@ -341,20 +341,26 @@ export interface Attachment {
   note?: string
 }
 
-/** A note the user attaches to a project, a file or the whole session. */
+/**
+ * A note the user scribbles while the agent is thinking: "сделай ещё и тёмную
+ * тему", "не трогай Sidebar". It is delivered into the running conversation and
+ * the agent applies it if it is still relevant when it gets there.
+ */
 export interface StickyNote {
   id: string
   text: string
-  /** where it points: a file path (as shown in the app) or a folder */
+  /** the file it is about, if the user pinned it to one */
   target?: string
   /** short label shown on the tile, e.g. "sidebar.tsx" */
   targetLabel?: string
   /** palette slot, 0-5: the tile colour */
   tone: number
   createdAt: number
-  /** the agent or the user marked it handled */
-  done?: boolean
-  /** the agent wrote it (from a run) rather than the user */
+  /** waiting for the next round / already handed to the running agent */
+  status: 'pending' | 'sent' | 'done'
+  /** the run it was delivered to, for the "sent" label */
+  runId?: string
+  /** the agent wrote it (a loose end for the user) rather than the user */
   byAgent?: boolean
 }
 

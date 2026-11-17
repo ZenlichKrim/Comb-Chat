@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore } from '../store'
+import type { StickyNote } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 /** The six pastel slots a note can live in. Kept apart from the theme so a board
@@ -19,7 +20,7 @@ export function NotePin({ target, label }: { target?: string; label?: string }):
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const existing = notes.filter((n) => n.target && n.target === target && !n.done)
+  const existing = notes.filter((n) => n.target === target && n.status !== 'done')
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
@@ -84,7 +85,7 @@ export function NoteTile({
   onEdit,
   compact
 }: {
-  note: { id: string; text: string; target?: string; targetLabel?: string; tone: number; done?: boolean; byAgent?: boolean }
+  note: StickyNote
   onEdit?: () => void
   compact?: boolean
 }): React.ReactElement {
@@ -95,7 +96,11 @@ export function NoteTile({
   const workspace = useStore((s) => s.workspace)
 
   return (
-    <div className={`note-tile tone-${TONES[note.tone % TONES.length]}`} data-done={!!note.done} data-compact={!!compact}>
+    <div
+      className={`note-tile tone-${TONES[note.tone % TONES.length]}`}
+      data-status={note.status}
+      data-compact={!!compact}
+    >
       <div className="note-tile-head">
         <Icon name={note.byAgent ? 'bee' : 'sticky'} size={9} />
         {note.target && (
@@ -114,9 +119,15 @@ export function NoteTile({
           </button>
         )}
         <span className="spacer" />
-        <button className="note-mini" data-tip={t('note.doneTip')} onClick={() => updateNote(note.id, { done: !note.done })}>
-          <Icon name="check" size={9} />
-        </button>
+        {note.status !== 'sent' && (
+          <button
+            className="note-mini"
+            data-tip={t('note.doneTip')}
+            onClick={() => updateNote(note.id, { status: note.status === 'done' ? 'pending' : 'done' })}
+          >
+            <Icon name="check" size={9} />
+          </button>
+        )}
         <button className="note-mini" data-tip={t('note.editTip')} onClick={onEdit}>
           <Icon name="edit" size={9} />
         </button>
@@ -125,6 +136,12 @@ export function NoteTile({
         </button>
       </div>
       <div className="note-text selectable">{note.text}</div>
+      {!note.byAgent && (
+        <div className="note-state">
+          <Icon name={note.status === 'sent' ? 'arrow-right' : note.status === 'done' ? 'check' : 'clock'} size={8} />
+          {note.status === 'sent' ? t('note.stateSent') : note.status === 'done' ? t('note.stateDone') : t('note.statePending')}
+        </div>
+      )}
     </div>
   )
 }
@@ -137,13 +154,14 @@ export function NotesPanel(): React.ReactElement | null {
   const notes = useStore((s) => s.notes)
   const addNote = useStore((s) => s.addNote)
   const updateNote = useStore((s) => s.updateNote)
+  const running = useStore((s) => s.running)
   const [draft, setDraft] = useState('')
   const [tone, setTone] = useState(0)
   const [editing, setEditing] = useState<string | null>(null)
 
   if (!open) return null
-  const active = notes.filter((n) => !n.done)
-  const done = notes.filter((n) => n.done)
+  const active = notes.filter((n) => n.status !== 'done')
+  const done = notes.filter((n) => n.status === 'done')
 
   const submit = (): void => {
     if (!draft.trim()) return
@@ -163,7 +181,7 @@ export function NotesPanel(): React.ReactElement | null {
         <div className="notes-head">
           <Icon name="sticky" size={14} className="acc" />
           <span className="notes-title">{t('note.board')}</span>
-          <span className="t-xs faint">{t('note.boardHint')}</span>
+          <span className="t-xs faint">{running ? t('note.boardHintLive') : t('note.boardHint')}</span>
           <span className="spacer" />
           <button className="icon-btn" onClick={() => setOpen(false)}>
             <Icon name="close" size={11} />

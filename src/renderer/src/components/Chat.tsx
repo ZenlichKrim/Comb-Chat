@@ -150,7 +150,7 @@ export function ChatPane(): React.ReactElement {
 
   const steer = useStore((s) => s.steer)
   const setNotesOpen = useStore((s) => s.setNotesOpen)
-  const notesCount = useStore((s) => s.notes.filter((n) => !n.done).length)
+  const notesCount = useStore((s) => s.notes.filter((n) => n.status !== 'done').length)
 
   const onScroll = (): void => {
     const el = scrollRef.current

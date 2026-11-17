@@ -326,13 +326,13 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   history.push(...prior)
   history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) + langNote })
   if (req.notes?.length) {
-    // the board the user keeps: hard constraints for this task, not suggestions
+    // notes the user wrote while the agent was busy last time: guidance, not an order
     history.push({
       role: 'user',
       content:
-        `[notes from the user — respect them]\n` +
+        `[notes the user wrote while you were working]\n` +
         req.notes.map((n) => `- ${n.target ? `${n.target}: ` : ''}${n.text}`).join('\n') +
-        `\nTreat these as requirements. If one conflicts with the request, follow the note and say so in your summary.`
+        `\nApply them if they are still relevant to what you are doing; if a note is already handled, say so in one line instead of redoing it.`
     })
   }
   if (contextBlock) {
@@ -595,6 +595,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
               target: outcome.meta.note.target,
               tone: outcome.meta.note.tone ?? 2,
               createdAt: Date.now(),
+              status: 'pending',
               byAgent: true
             }
           })
@@ -703,10 +704,15 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       const notes = steerNotes.get(req.runId)
       if (notes?.length) {
         steerNotes.delete(req.runId)
-        deps.emit({ type: 'guard', runId: req.runId, kind: 'steer', title: notes.join(' · ').slice(0, 200) })
+        for (const n of notes) {
+          deps.emit({ type: 'guard', runId: req.runId, kind: 'steer', title: n.slice(0, 180) })
+        }
         history.push({
           role: 'user',
-          content: `[from the user, mid-run] ${notes.join('\n')}\nFollow this immediately — it overrides earlier instructions where they conflict.`
+          content:
+            `[the user sent you a clarification while you were working]\n` +
+            notes.map((n) => `- ${n}`).join('\n') +
+            `\nWork it in on your next steps. If it is already covered or no longer applies, say why in one line and move on.`
         })
       }
 

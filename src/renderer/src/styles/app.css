@@ -3565,12 +3565,6 @@ hr {
   transform: translateY(-1px);
   box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.7);
 }
-.note-tile[data-done='true'] {
-  opacity: 0.5;
-}
-.note-tile[data-done='true'] .note-text {
-  text-decoration: line-through;
-}
 .note-tile[data-compact='true'] {
   min-height: 0;
   padding: 7px 9px;
@@ -3659,4 +3653,25 @@ hr {
   width: 16px;
   height: 16px;
   border-radius: 6px;
+}
+
+.note-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 3px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--note-ink);
+  opacity: 0.85;
+}
+.note-tile[data-status='done'] {
+  opacity: 0.45;
+}
+.note-tile[data-status='done'] .note-text {
+  text-decoration: line-through;
+}
+.note-tile[data-status='sent'] {
+  border-style: dashed;
 }

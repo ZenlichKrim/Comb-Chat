@@ -108,16 +108,19 @@ Settings → Agent, every run behaves itself:
 - **Clickable next steps.** After an answer the agent can call `suggest` with 2-4 follow-ups; they appear as chips —
   one click is the next request.
 
-**Sticky notes**
+**Sticky notes — clarifications for a busy agent**
 
-A small board of notes that lives with the session and is read by the agent before every task.
+A board of notes for the thing you think of *while* it is working: "сделай ещё и тёмную тему", "не трогай sidebar",
+"кнопки круглые, 8px".
 
-- Press the little **+** on any file in the context row to hang a note on that exact file — "Сайдбар пока не
-  трогаем, там отдельная задача" — or open **Notes** in the composer to write one about the project.
-- Notes are rounded pastel tiles in six colours, so a board reads at a glance. Tick one done, edit, delete, click its
-  file label to open the file.
-- Open notes travel with every request as **requirements**, not suggestions: if a note conflicts with the prompt the
-  agent follows the note and says so.
+- While a run is going, a note is handed to the agent **immediately** and it works it in on the next step — the same
+  path as typing into the composer mid-run, just kept somewhere you can see.
+- Between runs, a note waits and goes with the next task instead of getting lost.
+- The agent applies a note **if it still fits**: if it is already covered or no longer relevant, it says so in one
+  line rather than redoing work. A note is guidance, not a rewrite order.
+- Press the little **+** on a file in the context row to attach the note to that exact file, or open **Notes** in the
+  composer for the board: rounded pastel tiles in six colours, status on each one (*handed to the agent*, *goes with
+  the next task*, *done*), tick / edit / delete, click the file label to open the file.
 - The agent has its own pen: `leave_note` drops a note for you — "моки в plans.json, заменить перед релизом" — into
   the same board, marked with the bee, so loose ends stop getting buried in prose.
 

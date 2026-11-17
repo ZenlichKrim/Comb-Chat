@@ -514,6 +514,13 @@ export const useStore = create<State & Actions>((set, get) => ({
     }))
     get().persistThread(updated)
 
+    // notes written between runs are on their way now
+    const pendingIds = get().notes.filter((n) => n.status === 'pending' && !n.byAgent).map((n) => n.id)
+    if (pendingIds.length) {
+      set((s) => ({
+        notes: s.notes.map((n) => (pendingIds.includes(n.id) ? { ...n, status: 'sent', runId: get().runId || undefined } : n))
+      }))
+    }
     void window.comb.app.attention(true, text.slice(0, 40))
     const runId = get().runId!
     const settings = get().settings
@@ -537,8 +544,9 @@ export const useStore = create<State & Actions>((set, get) => ({
       attachments,
       openFiles: get().tabs.map((t) => ({ rel: t.rel, path: t.path })),
       disabledTools: [],
+      // notes taken between runs: they were not delivered yet, so they go with this task
       notes: get()
-        .notes.filter((n) => !n.done && !n.byAgent)
+        .notes.filter((n) => n.status === 'pending' && !n.byAgent)
         .map((n) => ({ text: n.text, target: n.target })),
       mode: settings.stableMode ? 'stable' : 'normal',
       costCap: settings.costCap,
@@ -729,7 +737,7 @@ export const useStore = create<State & Actions>((set, get) => ({
         break
       }
       case 'note': {
-        set((s) => ({ notes: [...s.notes, e.note] }))
+        set((s) => ({ notes: [...s.notes, { ...e.note, byAgent: true }] }))
         const thread = get().threads.find((t) => t.id === threadId)
         if (thread) get().persistThread({ ...thread, notes: [...(thread.notes || []), e.note] })
         break
@@ -825,11 +833,21 @@ export const useStore = create<State & Actions>((set, get) => ({
       target: n.target,
       targetLabel: n.targetLabel,
       tone: n.tone ?? Math.floor(Math.random() * 6),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      status: 'pending'
     }
-    set((s) => ({ notes: [...s.notes, note] }))
+    const runId = get().runId
+    const live = get().running && runId
+    // a note taken mid-run is a clarification for the agent right now; one taken
+    // between runs waits for the next task instead of getting lost
+    const stored: StickyNote = live ? { ...note, status: 'sent', runId: runId! } : note
+    set((s) => ({ notes: [...s.notes, stored] }))
     const thread = get().threads.find((t) => t.id === get().activeThreadId)
-    if (thread) get().persistThread({ ...thread, notes: [...(thread.notes || []), note] })
+    if (thread) get().persistThread({ ...thread, notes: [...(thread.notes || []), stored] })
+    if (live) {
+      void window.comb.agent.steer(runId!, stored.target ? `${stored.targetLabel || stored.target}: ${text}` : text)
+      get().toast('ok', tr('note.delivered'), text.slice(0, 60))
+    }
   },
 
   updateNote: (id, patch) => {
