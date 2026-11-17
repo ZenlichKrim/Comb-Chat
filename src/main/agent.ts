@@ -403,14 +403,18 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // retrying variations of it dozens of times while narrating plans. Two rounds
   // that fail the same tools with the same arguments are one attempt, repeated.
   const roundSignatures = new Map<string, number>()
+  const seenCallSignatures = new Set<string>()
+  /** true when this round repeats calls already made — no new attempt at all */
+  const noNewCallsThisRound = (calls: { name: string; arguments: string }[]): boolean =>
+    calls.every((c) => seenCallSignatures.has(`${c.name}:${c.arguments}`))
   let silentRounds = 0
   let ranAnyCommand = false
   let finishRefused = 0
   let loopHits = 0
-  let loopNote = '', loopTool = ''
+  let loopNote = ''
   let verifyStage: 'pending' | 'running' | 'done' | 'failed' = 'pending'
   let notifiedCost = false
-  let notifiedStuck = false
+  let repeatWarnings = 0
   let notifiedVote = false
   let notifyCount = 0
 
@@ -610,6 +614,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           parseError = `Invalid JSON arguments: ${e.message}`
         }
 
+        seenCallSignatures.add(`${call.name}:${call.arguments}`)
+
         const view: ToolResultView = {
           id: call.id,
           name: call.name,
@@ -697,17 +703,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           if (!outcome.ok) {
             errorsSoFar.push({ step, name: call.name, error: (outcome.error || outcome.output || '').slice(0, 300) })
           }
-          // The same call failing twice means the model is guessing: stop before it
-          // burns the whole budget going in circles.
-          if (seen >= 3 && !outcome.ok && !notifiedStuck) {
-            notifiedStuck = true
-            deps.emit({
-              type: 'guard',
-              runId: req.runId,
-              kind: 'stuck',
-              title: 'Остановился: один и тот же вызов повторяется',
-              detail: `${call.name} · ${outcome.error || 'failed'}`
-            })
+          // The same call failing repeatedly is a warning, not a death sentence:
+          // the run stops only when the model stops trying anything new (see the
+          // round-signature check below). Warnings are counted, not fatal.
+          if (seen === 3 && !outcome.ok) {
+            repeatWarnings++
           }
         }
         const finished: ToolResultView = {
@@ -753,19 +753,33 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           const key = `${outcome.ok ? 'ok' : 'fail'}|${sig}`
           const seen = (roundSignatures.get(key) || 0) + 1
           roundSignatures.set(key, seen)
-          // three identical rounds in a row and nothing changed: stop the run and
-          // hand the user a card instead of burning steps on variations
-          if (!outcome.ok && seen >= 3 && !loopHits) {
+          // The same call failing the same way is only a loop if nothing else is
+          // happening. Exploring a project, probing a jar, retrying a flaky
+          // command with new arguments — that is work. Only a run where the model
+          // has stopped making any other progress is stopped here; otherwise the
+          // failed call is reported back and the agent moves on by itself.
+          if (!outcome.ok && seen >= 4 && !loopHits && !touched.size && noNewCallsThisRound(result.toolCalls)) {
             loopHits = seen
             loopNote = (outcome.error || outcome.output || 'вызов не прошёл').split('\n')[0].slice(0, 240)
-            loopTool = call.name
             deps.emit({
               type: 'guard',
               runId: req.runId,
               kind: 'stuck',
-              title: 'Остановился: одна и та же попытка повторяется',
+              title: 'Один вызов не проходит — меняю подход',
               detail: `${call.name} · ${loopNote}`
             })
+            // Make the run end on its own terms: the model is told, in its own
+            // words, that the same call keeps failing, and it may continue with a
+            // different approach or finish. A run you walked away from must not be
+            // left hanging on a guard card.
+            history.push({
+              role: 'user',
+              content:
+                `[same call keeps failing] \`${call.name}\` failed the same way ${seen} times and nothing has changed. ` +
+                'Do not call it again with the same arguments. Try a genuinely different approach, or if it is not possible, ' +
+                'explain the blocker in one line and call finish with work_done=false.'
+            })
+            loopHits = 0
           }
         }
 
@@ -887,10 +901,6 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           finalReason = 'guard'
           break
         }
-        if (notifiedStuck || loopHits) {
-          finalReason = 'guard'
-          break
-        }
       }
 
       // The user typed mid-run: their words arrive before the next round, so a
@@ -987,6 +997,16 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       notify('Прогон закончился без изменений', 'Агент описал план, но файлы не тронуты — откройте и продолжите.', true)
     } else if (finalReason === 'error') {
       notify('Прогон упал с ошибкой', 'Смотрите карточку в приложении.', true)
+    }
+    if (repeatWarnings >= 2) {
+      // the agent kept hitting the same wall: worth telling the user explicitly
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'errors',
+        title: 'Один и тот же вызов падал несколько раз',
+        detail: 'Прогон не остановлен: агент пробовал другие пути. Смотрите карточки инструментов выше.'
+      })
     }
     if (stableMode && errorsSoFar.length) {
       const uniq = [...new Map(errorsSoFar.map((e) => [e.name + e.error, e])).values()]
