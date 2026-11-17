@@ -266,6 +266,15 @@ export interface TokenUsage {
   cost: number
 }
 
+/** One-line description of a file, written by the model and cached on disk. */
+export interface FileSummary {
+  path: string
+  description: string
+  mtime: number
+  size: number
+  generatedAt: number
+}
+
 export interface Attachment {
   id: string
   kind: 'file' | 'selection' | 'image'
@@ -398,6 +407,10 @@ export interface CombApi {
     openExternal(url: string): void
     showItemInFolder(path: string): void
     openPath(path: string): Promise<string>
+  }
+  files: {
+    readonly describe: (abs: string) => Promise<{ ok: boolean; summary?: FileSummary | null; error?: string }>
+    readonly summaries: (paths: string[]) => Promise<FileSummary[]>
   }
   settings: {
     get(): Promise<Settings>

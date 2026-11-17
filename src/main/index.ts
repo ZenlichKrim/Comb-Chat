@@ -16,6 +16,7 @@ import type {
 import * as store from './store'
 import * as fsops from './fsops'
 import { runAgent, stopRun, resolveApproval } from './agent'
+import { describeFile, getSummaries } from './describe'
 import { testApiKey } from './llm'
 import { createTerminal, writeTerminal, resizeTerminal, killTerminal, killAllTerminals } from './terminal'
 
@@ -220,6 +221,14 @@ function registerIpc(): void {
     return res.canceled ? [] : res.filePaths
   })
   ipcMain.handle('fs:list', (_e, dir: string) => fsops.listDir(dir))
+  ipcMain.handle('files:describe', async (_e, abs: string) => {
+    try {
+      return { ok: true, summary: await describeFile(abs) }
+    } catch (e: any) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  })
+  ipcMain.handle('files:summaries', (_e, paths: string[]) => getSummaries(paths))
   ipcMain.handle('fs:readImage', async (_e, file: string) => {
     try {
       return { ok: true, dataUrl: await fsops.readImageDataUrl(file) }

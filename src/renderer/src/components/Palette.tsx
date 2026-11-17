@@ -215,7 +215,7 @@ export function DiffModal(): React.ReactElement {
             <Icon name="close" size={12} />
           </button>
         </div>
-        <DiffFull before={diff.before} after={diff.after} rel={diff.rel} />
+        <DiffView before={diff.before} after={diff.after} rel={diff.rel} maxHeight={window.innerHeight - 160} />
       </div>
     </div>
   )
@@ -224,24 +224,37 @@ export function DiffModal(): React.ReactElement {
 import { DiffView } from './CodeBlock'
 
 /**
- * Preview for a file the agent handed over. Reads it on demand so a large log or
- * asset does not bloat the transcript; images render, everything else as text.
+ * Preview for a file the agent handed over.
+ *
+ * Portrait panel with a blur veil: the file is the subject, everything else
+ * recedes. Actions live in a bar so the path is never a dead end — you can
+ * copy it, open it in the editor, reveal it in the OS, or ask the model what
+ * the file is for.
  */
 export function FilePreviewModal(): React.ReactElement {
   const t = useT()
   const preview = useStore((s) => s.filePreview)
-  const close = useStore((s) => s.setFilePreview)
+  const setPreview = useStore((s) => s.setFilePreview)
   const openFile = useStore((s) => s.openFile)
+  const toast = useStore((s) => s.toast)
   const [body, setBody] = React.useState<string>('')
   const [isImage, setIsImage] = React.useState(false)
   const [err, setErr] = React.useState('')
+  const [summary, setSummary] = React.useState('')
+  const [busy, setBusy] = React.useState(false)
+  const [wrap, setWrap] = React.useState(true)
 
   React.useEffect(() => {
     if (!preview) return
     setBody('')
     setErr('')
+    setSummary('')
     const img = /\.(png|jpe?g|gif|webp)$/i.test(preview.path)
     setIsImage(img)
+    // a cached description is free: show it before asking the model
+    void window.comb.files.summaries([preview.path]).then((rows) => {
+      if (rows[0]?.description) setSummary(rows[0].description)
+    })
     if (img) {
       void window.comb.fs.readImage(preview.path).then((r) => {
         if (r?.ok && r.dataUrl) setBody(r.dataUrl)
@@ -255,52 +268,97 @@ export function FilePreviewModal(): React.ReactElement {
       .catch((e: any) => setErr(e?.message || 'Cannot read file'))
   }, [preview])
 
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setPreview(null)
+    }
+    if (preview) window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [preview, setPreview])
+
   if (!preview) return <></>
+
+  const describe = async (): Promise<void> => {
+    setBusy(true)
+    const res = await window.comb.files.describe(preview.path)
+    setBusy(false)
+    if (res.ok && res.summary) setSummary(res.summary.description)
+    else toast('err', t('fp.describeFailed'), res.error)
+  }
+
+  const open = (): void => {
+    setPreview(null)
+    void openFile(preview.path, preview.rel)
+  }
+
   return (
-    <div className="modal-backdrop" onClick={() => close(null)}>
-      <div className="diff-modal file-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={() => setPreview(null)}>
+      <div className="file-modal" onClick={(e) => e.stopPropagation()}>
         <div className="diff-modal-head">
           <Icon name="file" size={12} className="acc" />
-          <span className="mono t-sm ellipsis">{preview.rel}</span>
+          <span className="mono t-sm ellipsis">{preview.rel.split('/').pop()}</span>
           <span className="spacer" />
-          <button
-            className="btn ghost sm"
-            title={preview.path}
-            onClick={() => window.comb.app.showItemInFolder(preview.path)}
-          >
-            <Icon name="folder" size={11} /> {t('fp.reveal')}
-          </button>
-          <button
-            className="btn ghost sm"
-            onClick={() => {
-              close(null)
-              const st = useStore.getState()
-              void openFile(preview.path, preview.rel)
-              void st.setSettings({})
-            }}
-          >
-            <Icon name="file" size={11} /> {t('fp.open')}
-          </button>
-          <button className="icon-btn" onClick={() => close(null)}>
+          <button className="icon-btn" onClick={() => setPreview(null)}>
             <Icon name="close" size={12} />
           </button>
         </div>
+
+        <div className="file-modal-path mono t-xs faint ellipsis" title={preview.path}>
+          {preview.rel}
+        </div>
+
+        {(summary || busy) && (
+          <div className="file-modal-summary">
+            <Icon name="zap" size={11} className="acc" />
+            <span className="t-xs dim">{busy ? t('fp.describing') : summary}</span>
+          </div>
+        )}
         {preview.note && <div className="file-modal-note t-xs faint">{preview.note}</div>}
+
         <div className="file-modal-body">
           {err ? (
             <div className="t-xs err" style={{ padding: 14 }}>{err}</div>
           ) : isImage ? (
             body && <img src={body} alt={preview.rel} className="file-modal-img" />
           ) : (
-            <pre className="file-modal-pre">{body || t('fp.loading')}</pre>
+            <pre className="file-modal-pre" data-wrap={wrap}>{body || t('fp.loading')}</pre>
           )}
+        </div>
+
+        <div className="file-modal-actions">
+          <button className="btn primary sm" onClick={open}>
+            <Icon name="file" size={11} /> {t('fp.open')}
+          </button>
+          <button className="btn ghost sm" onClick={() => window.comb.app.showItemInFolder(preview.path)}>
+            <Icon name="folder" size={11} /> {t('fp.reveal')}
+          </button>
+          <button
+            className="btn ghost sm"
+            onClick={() => {
+              window.comb.clipboard.write(preview.path)
+              toast('ok', t('fp.copied'))
+            }}
+          >
+            <Icon name="copy" size={11} /> {t('fp.copyPath')}
+          </button>
+          {!isImage && (
+            <>
+              <button className="btn ghost sm" onClick={() => setWrap((v) => !v)}>
+                {wrap ? t('fp.nowrap') : t('fp.wrap')}
+              </button>
+              <button className="btn ghost sm" onClick={() => window.comb.clipboard.write(body)} disabled={!body}>
+                <Icon name="copy" size={11} /> {t('fp.copyAll')}
+              </button>
+            </>
+          )}
+          <span className="spacer" />
+          <button className="btn ghost sm" onClick={() => void describe()} disabled={busy || isImage}>
+            <Icon name="zap" size={11} /> {summary ? t('fp.redescribe') : t('fp.describe')}
+          </button>
         </div>
       </div>
     </div>
   )
-}
-function DiffFull({ before, after, rel }: { before: string; after: string; rel: string }): React.ReactElement {
-  return <DiffView before={before} after={after} rel={rel} maxHeight={window.innerHeight - 160} />
 }
 
 export function Toasts(): React.ReactElement {

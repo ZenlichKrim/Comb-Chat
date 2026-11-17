@@ -83,6 +83,8 @@ interface State {
   diffPreview: { path: string; rel: string; before: string; after: string; kind: string } | null
   /** file the agent handed over, shown in a preview modal */
   filePreview: { path: string; rel: string; note?: string } | null
+  /** model-written one-liners, by absolute path */
+  fileSummaries: Record<string, string>
   changedFiles: string[]
   sidebarSection: 'files' | 'search' | 'git' | 'threads'
   commandHistory: string[]
@@ -128,6 +130,8 @@ interface Actions {
   undoLastRun: () => Promise<void>
   setDiffPreview: (d: State['diffPreview']) => void
   setFilePreview: (d: State['filePreview']) => void
+  loadSummaries: (paths: string[]) => Promise<void>
+  describeFileNow: (abs: string) => Promise<void>
   closeDiff: () => void
   persistThread: (t: Thread) => void
 }
@@ -168,6 +172,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   checkpoints: [],
   diffPreview: null,
   filePreview: null,
+  fileSummaries: {},
   changedFiles: [],
   sidebarSection: 'files',
   commandHistory: [],
@@ -656,6 +661,27 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   setDiffPreview: (d) => set({ diffPreview: d }),
   setFilePreview: (d) => set({ filePreview: d }),
+
+  loadSummaries: async (paths) => {
+    if (!paths.length) return
+    const rows = (await window.comb.files.summaries(paths).catch(() => [])) as { path: string; description: string }[]
+    if (!rows.length) return
+    set((s) => {
+      const next = { ...s.fileSummaries }
+      for (const r of rows) next[r.path] = r.description
+      return { fileSummaries: next }
+    })
+  },
+
+  describeFileNow: async (abs) => {
+    const res = await window.comb.files.describe(abs)
+    if (res.ok && res.summary) {
+      set((s) => ({ fileSummaries: { ...s.fileSummaries, [abs]: res.summary!.description } }))
+      get().toast('ok', tr('store.described'), res.summary.description)
+    } else {
+      get().toast('err', tr('fp.describeFailed'), res.error)
+    }
+  },
   closeDiff: () => set({ diffPreview: null })
 }))
 

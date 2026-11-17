@@ -70,6 +70,10 @@ const api = {
     onEvent: (cb: (e: unknown) => void) => on('agent:event', cb),
     testKey: (key: string, baseUrl: string) => ipcRenderer.invoke('agent:testKey', key, baseUrl)
   },
+  files: {
+    describe: (abs: string) => ipcRenderer.invoke('files:describe', abs),
+    summaries: (paths: string[]) => ipcRenderer.invoke('files:summaries', paths)
+  },
   terminal: {
     create: (opts: unknown) => ipcRenderer.invoke('terminal:create', opts),
     write: (id: string, data: string) => ipcRenderer.send('terminal:write', id, data),

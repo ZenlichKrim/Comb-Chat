@@ -429,3 +429,45 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
   }
   return out
 }
+
+/**
+ * One-shot, non-streaming completion. Used for side tasks where we want a
+ * short answer and no tool loop: file descriptions, commit messages.
+ */
+export async function completeOnce(opts: {
+  apiKey: string
+  baseUrl: string
+  model: string
+  system: string
+  user: string
+  maxTokens?: number
+  signal?: AbortSignal
+}): Promise<string> {
+  const endpoint = normalizeBase(opts.baseUrl)
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${opts.apiKey.trim()}`
+    },
+    body: JSON.stringify({
+      model: wireModel(opts.model),
+      messages: [
+        { role: 'system', content: opts.system },
+        { role: 'user', content: opts.user }
+      ],
+      stream: false,
+      max_tokens: opts.maxTokens ?? 256,
+      temperature: 0.2,
+      ...modelOptions(opts.model)
+    }),
+    signal: opts.signal ?? AbortSignal.timeout(45_000)
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
+  }
+  const json: any = await res.json()
+  const content = json?.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content.trim() : ''
+}

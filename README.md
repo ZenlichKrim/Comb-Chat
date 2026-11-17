@@ -37,6 +37,7 @@ persisted. A Russian-locale system starts in Russian automatically. The agent al
 | **Appearance** — language switch, themes, accents<br>![](docs/screenshots/ru-04-settings-appearance.png) | **Command palette** — every command translated<br>![](docs/screenshots/ru-08-palette.png) |
 | **Agent settings** — policies and grants<br>![](docs/screenshots/ru-03-settings-agent.png) | **Keys** — the full shortcut sheet in Russian<br>![](docs/screenshots/ru-05-settings-keys.png) |
 | **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
+| **File preview** — blurred backdrop, AI description, actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
 
 ## Download
 
@@ -61,7 +62,10 @@ your machine and sent only to the endpoint you configure.
 **Agent that actually touches your files**
 
 - Tools: `read_file`, `write_file`, `edit_file`, `multi_edit`, `list_dir`, `glob`, `grep`, `run_command`,
-  `delete_path`, `move_path`, `todo_write`, `ask_user`, `finish`.
+  `delete_path`, `move_path`, `todo_write`, `ask_user`, `attach_file`, `finish`.
+- `attach_file` hands a result back to you: the run can end with a real file — a report, a patch, a screenshot —
+  shown as a card in the transcript and openable in a preview (open in editor, reveal in folder, copy path or
+  contents, toggle wrapping).
 - Multi-step loop with a visible plan (`todo_write` → plan panel), tool-call cards with inline diffs,
   token/cost accounting per message, and a hard step limit you control.
 - Streaming responses incl. `deepseek-reasoner` chain-of-thought (collapsible "thought" block).
@@ -77,13 +81,18 @@ your machine and sent only to the endpoint you configure.
 - Approvals show the exact command or file, a **diff preview** of the pending edit, and `Review diff`,
   `Allow`, `Always allow <tool>`, `Deny` (`Enter` / `Esc`). Grants made with *Always* are remembered in
   Settings → Agent, where you can revoke them one by one or clear them all.
-- Path sandboxing: the agent can't touch anything outside the opened folder.
+- Path sandboxing by default: the agent stays inside the opened folder; **Settings → Agent → whole-disk access**
+  widens it to the entire machine on purpose (plus optional extra roots), so nothing surprising happens behind your back.
 
 **IDE-grade surfaces**
 
 - CodeMirror 6 editor with 20+ languages, custom Comb theme, search, folding, bracket matching, multi-cursor,
   selection → *attach to prompt*.
 - Explorer with search, file operations, rename/delete context menu, filter, auto-reload when the agent writes.
+- **AI file descriptions.** Right-click a file (or a whole folder) → *Describe this file* — the model writes one
+  line about what it is, shown under the name in the explorer and at the top of the preview. Descriptions are
+  cached in `file-summaries.json` in the app's user-data folder, keyed by path and invalidated by mtime + size,
+  so untouched files never cost a request. Text files only, nothing leaves the machine except to your own API key.
 - Source control panel (stage/commit/log/diff) with real `git` integration.
 - Real terminal (xterm.js + node-pty, pipe-shell fallback) in the workspace directory.
 - Command palette (`Ctrl K`), quick open (`Ctrl P`), search in files (`Ctrl Shift F`),
@@ -92,7 +101,7 @@ your machine and sent only to the endpoint you configure.
 
 ## Why it's cheap
 
-Comb talks straight to DeepSeek V3.2. Typical heavy agent session: 20k tokens in, 3k out ≈ **$0.007**.
+Comb talks straight to DeepSeek V4.1 Flash. Typical heavy agent session: 20k tokens in, 3k out ≈ **$0.007**.
 You'd need ~14 000 such sessions to spend $100.
 
 ## Keyboard

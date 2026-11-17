@@ -59,6 +59,9 @@ function FileTree(): React.ReactElement {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; entry: DirEntry | null } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
+  const fileSummaries = useStore((s) => s.fileSummaries)
+  const loadSummaries = useStore((s) => s.loadSummaries)
+  const describeFileNow = useStore((s) => s.describeFileNow)
   const extraRoots = useStore((s) => s.extraRoots)
   const addRoot = useStore((s) => s.addRoot)
   const removeRoot = useStore((s) => s.removeRoot)
@@ -86,6 +89,21 @@ function FileTree(): React.ReactElement {
   }
 
   const rootEntries = dirCache[workspace] || []
+
+  // pull any cached descriptions for files currently on screen (free: disk only)
+  useEffect(() => {
+    const paths: string[] = []
+    const collect = (dir: string): void => {
+      for (const e of dirCache[dir] || []) {
+        if (e.isDir) {
+          if (expanded.has(e.path)) collect(e.path)
+        } else paths.push(e.path)
+      }
+    }
+    collect(workspace)
+    for (const r of extraRoots) collect(r)
+    if (paths.length) void loadSummaries(paths)
+  }, [dirCache, expanded, workspace, extraRoots, loadSummaries])
   const filtered = filter
     ? (function flatten(): DirEntry[] {
         const out: DirEntry[] = []
@@ -128,6 +146,32 @@ function FileTree(): React.ReactElement {
     }
   }
 
+  /** Describe every loaded text file under a folder, sequentially to be gentle on the API. */
+  const describeDir = async (dir: string): Promise<void> => {
+    setCtxMenu(null)
+    const files: string[] = []
+    const walk = (d: string): void => {
+      for (const e of dirCache[d] || []) {
+        if (e.isDir) walk(e.path)
+        else files.push(e.path)
+      }
+    }
+    walk(dir)
+    const todo = files.slice(0, 40)
+    if (!todo.length) {
+      toast('warn', t('side.describeEmpty'))
+      return
+    }
+    toast('info', t('side.describeStarted', { n: todo.length }))
+    let done = 0
+    for (const abs of todo) {
+      if (fileSummaries[abs]) continue
+      await describeFileNow(abs)
+      done += 1
+    }
+    toast('ok', t('side.describeDone', { n: done }))
+  }
+
   const commitRename = async (entry: DirEntry): Promise<void> => {
     const next = newName.trim()
     setRenaming(null)
@@ -159,7 +203,7 @@ function FileTree(): React.ReactElement {
             ev.preventDefault()
             setCtxMenu({ x: ev.clientX, y: ev.clientY, entry: e })
           }}
-          title={e.rel}
+          title={fileSummaries[e.path] ? `${e.rel} — ${fileSummaries[e.path]}` : e.rel}
         >
           {e.isDir ? (
             <Icon name={isOpen ? 'chevron-down' : 'chevron-right'} size={10} className="tree-caret" />
@@ -181,7 +225,10 @@ function FileTree(): React.ReactElement {
               onClick={(ev) => ev.stopPropagation()}
             />
           ) : (
-            <span className="tree-name ellipsis">{e.name}</span>
+            <span className="col" style={{ minWidth: 0, gap: 0, flex: 1 }}>
+              <span className="tree-name ellipsis">{e.name}</span>
+              {fileSummaries[e.path] && <span className="tree-desc ellipsis">{fileSummaries[e.path]}</span>}
+            </span>
           )}
         </div>
         {e.isDir && isOpen && (dirCache[e.path] || []).map((child) => renderEntry(child, depth + 1))}
@@ -286,8 +333,18 @@ function FileTree(): React.ReactElement {
                 <button className="menu-item" onClick={() => void doAction('rename', ctxMenu.entry)}>
                   <Icon name="edit" size={12} /> {t('common.rename')}
                 </button>
+                {!ctxMenu.entry.isDir && (
+                  <button className="menu-item" onClick={() => void describeFileNow(ctxMenu.entry!.path)}>
+                    <Icon name="zap" size={12} /> {t('side.describeFile')}
+                  </button>
+                )}
+                {ctxMenu.entry.isDir && (
+                  <button className="menu-item" onClick={() => void describeDir(ctxMenu.entry!.path)}>
+                    <Icon name="zap" size={12} /> {t('side.describeFolder')}
+                  </button>
+                )}
                 <button className="menu-item" onClick={() => void doAction('copy-path', ctxMenu.entry)}>
-                  <Icon name="copy" size={12} /> {t('common.copy')} path
+                  <Icon name="copy" size={12} /> {t('side.copyPath')}
                 </button>
                 <button className="menu-item" onClick={() => void doAction('reveal', ctxMenu.entry)}>
                   <Icon name="external" size={12} /> {t('side.revealInFolder')}
