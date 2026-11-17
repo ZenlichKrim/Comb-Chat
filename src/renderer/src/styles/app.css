@@ -3076,3 +3076,208 @@ hr {
   border: none;
   border-top: 1px solid var(--line-1);
 }
+
+/* ------------------------------------------------------------------ */
+/* Agent notes: guard lines and vote cards                             */
+/* ------------------------------------------------------------------ */
+
+.guard-note {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 8px;
+  margin: 3px 0;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-1);
+  background: color-mix(in oklab, var(--bg-2) 60%, transparent);
+  font-size: var(--fs-2xs);
+  color: var(--fg-3);
+}
+.guard-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.guard-note .guard-icon {
+  flex: none;
+  align-self: center;
+  color: var(--fg-3);
+}
+.guard-label {
+  flex: none;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 9px;
+  opacity: 0.75;
+}
+.guard-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-2);
+  line-height: 1.45;
+}
+.guard-detail {
+  padding-left: 23px;
+  opacity: 0.55;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.guard-note[data-kind='done'] {
+  border-color: color-mix(in oklab, var(--ok) 35%, var(--line-1));
+}
+.guard-note[data-kind='done'] .guard-icon {
+  color: var(--ok);
+}
+.guard-note[data-kind='cost'] .guard-icon,
+.guard-note[data-kind='stuck'] .guard-icon,
+.guard-note[data-kind='errors'] .guard-icon {
+  color: var(--warn);
+}
+.guard-note[data-kind='verify'] .guard-icon {
+  color: var(--accent);
+}
+
+.vote-card {
+  margin: 8px 0;
+  padding: 10px 11px 11px;
+  border-radius: var(--r-md);
+  border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--line-2));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 7%, var(--bg-2)), var(--bg-2));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 620px;
+}
+.vote-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.vote-title {
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.vote-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vote-question {
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--fg-1);
+}
+.vote-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.vote-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  text-align: left;
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  transition: all var(--dur-fast);
+}
+.vote-option:hover {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--line-2));
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
+}
+.vote-key {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  background: var(--bg-3);
+  color: var(--fg-3);
+  font-size: 10px;
+  font-weight: 700;
+}
+.vote-label {
+  flex: 1;
+  min-width: 0;
+}
+.vote-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.vote-go {
+  flex: none;
+  opacity: 0;
+  color: var(--accent);
+  transition: opacity var(--dur-fast);
+}
+.vote-option:hover .vote-go {
+  opacity: 1;
+}
+.vote-own {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.vote-own input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+}
+.vote-own input:focus {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--line-2));
+  outline: none;
+}
+.vote-answered {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.vote-picked {
+  color: var(--fg-1);
+  font-weight: 600;
+}
+.vote-card[data-answered='true'] {
+  border-color: var(--line-2);
+  background: var(--bg-2);
+}
+
+.setting-group-title {
+  margin: 14px 0 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+  opacity: 0.8;
+}

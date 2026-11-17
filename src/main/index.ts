@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeTheme, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, nativeTheme, Menu, Notification } from 'electron'
 import path from 'node:path'
 import os from 'node:os'
 import { promises as fs } from 'node:fs'
@@ -336,7 +336,25 @@ function registerIpc(): void {
   ipcMain.handle('git:checkout', (_e, root: string, p: string) => git(['checkout', '--', p], root))
 
   /* agent */
-  const emit = (e: AgentEvent): void => mainWindow?.webContents.send('agent:event', e)
+  const emit = (e: AgentEvent): void => {
+    mainWindow?.webContents.send('agent:event', e)
+    // Native toast for the things worth interrupting someone for. Clicking it
+    // brings the window back instead of leaving them hunting for it.
+    if (e.type === 'notify' && Notification.isSupported()) {
+      try {
+        const n = new Notification({ title: e.title, body: e.body, urgency: e.urgent ? 'critical' : 'normal' })
+        n.on('click', () => {
+          if (!mainWindow) return
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.show()
+          mainWindow.focus()
+        })
+        n.show()
+      } catch {
+        /* notifications are best-effort: no tray, no server, no problem */
+      }
+    }
+  }
   ipcMain.handle('agent:run', async (_e, req: RunRequest) => {
     // approvals are dispatched by the agent loop through agent.ts' resolver;
     // the renderer answers via the 'agent:approve' channel below.
@@ -349,6 +367,13 @@ function registerIpc(): void {
     resolveApproval(runId, callId, decision)
   })
   ipcMain.handle('agent:stop', (_e, runId: string) => stopRun(runId))
+  ipcMain.on('app:attention', (_e, on: boolean, label?: string) => {
+    if (!mainWindow) return
+    mainWindow.setProgressBar(on ? 2 : -1)
+    if (on && !mainWindow.isFocused()) mainWindow.flashFrame(true)
+    else if (!on) mainWindow.flashFrame(false)
+    void label
+  })
   ipcMain.handle('agent:testKey', (_e, key: string, baseUrl: string) => testApiKey(key, baseUrl))
 
   /* terminal */

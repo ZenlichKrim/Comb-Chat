@@ -85,6 +85,12 @@ interface State {
   filePreview: { path: string; rel: string; note?: string } | null
   /** the request currently in flight, shown by the "agent is working" row */
   lastPrompt: string
+  /** how many times this task resumed itself after hitting the step budget */
+  autoContinues?: number
+  /** stable-mode guard notes for the current run */
+  guards: { id: string; kind: string; title: string; detail?: string }[]
+  /** desktop pings this session, shown in the bell menu */
+  notifications: { id: string; title: string; body: string; at: number }[]
   /** model-written one-liners, by absolute path */
   fileSummaries: Record<string, string>
   /** why each file exists, when the agent wrote it and explained itself */
@@ -119,8 +125,10 @@ interface Actions {
   selectThread: (id: string) => void
   deleteThread: (id: string) => Promise<void>
   renameThread: (id: string, title: string) => void
-  sendMessage: (text: string, attachments?: Attachment[]) => Promise<void>
+  sendMessage: (text: string, attachments?: Attachment[], opts?: { auto?: boolean }) => Promise<void>
   stopRun: () => Promise<void>
+  /** answer an agent question: records the pick and starts the next turn */
+  answerVote: (answer: string) => Promise<void>
   approve: (decision: 'allow' | 'allow-always' | 'deny') => Promise<void>
   handleEvent: (e: AgentEvent) => void
   refreshGit: () => Promise<void>
@@ -179,6 +187,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   diffPreview: null,
   filePreview: null,
   lastPrompt: '',
+  guards: [],
+  notifications: [],
   fileSummaries: {},
   filePurposes: {},
   changedFiles: [],
@@ -418,7 +428,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   /* ---------------------------------------------------------------- */
-  sendMessage: async (text, attachments = []) => {
+  sendMessage: async (text, attachments = [], opts) => {
     const state = get()
     if (state.running) return
     let threadId = state.activeThreadId
@@ -475,10 +485,13 @@ export const useStore = create<State & Actions>((set, get) => ({
       changedFiles: [],
       pendingApproval: null,
       lastPrompt: text,
+      guards: [],
+      autoContinues: opts?.auto ? get().autoContinues || 0 : 0,
       contextFiles: []
     }))
     get().persistThread(updated)
 
+    void window.comb.app.attention(true, text.slice(0, 40))
     const runId = get().runId!
     const settings = get().settings
     const req: RunRequest = {
@@ -500,12 +513,33 @@ export const useStore = create<State & Actions>((set, get) => ({
       userMessage: userMsg,
       attachments,
       openFiles: get().tabs.map((t) => ({ rel: t.rel, path: t.path })),
-      disabledTools: []
+      disabledTools: [],
+      mode: settings.stableMode ? 'stable' : 'normal',
+      costCap: settings.costCap,
+      verifyCommand: settings.verifyCommand
     }
     const res = await window.comb.agent.run(req)
     if (res && !res.ok) {
       set({ running: false })
     }
+  },
+
+  answerVote: async (answer: string) => {
+    const threads = get().threads
+    const thread = threads.find((t) => t.id === get().activeThreadId)
+    const msg = thread?.messages.find((m) => m.vote && !m.vote.answer)
+    if (!msg?.vote) return
+    const text = answer.trim()
+    if (!text) return
+    set((s) => ({
+      threads: s.threads.map((t) =>
+        t.id === thread?.id
+          ? { ...t, messages: t.messages.map((m) => (m.id === msg.id ? { ...m, vote: { ...m.vote!, answer: text } } : m)) }
+          : t
+      )
+    }))
+    // the pick becomes the next user turn
+    await get().sendMessage(text)
   },
 
   stopRun: async () => {
@@ -569,6 +603,17 @@ export const useStore = create<State & Actions>((set, get) => ({
           const exists = tools.some((t) => t.id === e.call.id)
           return { ...m, tools: exists ? tools.map((t) => (t.id === e.call.id ? { ...t, ...e.call } : t)) : [...tools, e.call] }
         })
+        // ask_user is not a tool row: it becomes a vote card the user can click
+        if (e.call.name === 'ask_user' && e.call.status !== 'error') {
+          const opts: string[] = Array.isArray(e.call.args?.options) ? e.call.args.options.map(String) : []
+          const question = String(e.call.args?.question || '')
+          if (question && opts.length >= 2) {
+            updateAssistant((m) => ({
+              ...m,
+              vote: { id: e.call.id, question, options: opts.slice(0, 4), recommend: e.call.args?.recommend }
+            }))
+          }
+        }
         break
       case 'tool-update':
         updateAssistant((m) => ({
@@ -606,6 +651,17 @@ export const useStore = create<State & Actions>((set, get) => ({
         void get().refreshTree()
         break
       }
+      case 'guard': {
+        const note = { id: uid('guard'), kind: e.kind, title: e.title, detail: e.detail }
+        updateAssistant((m) => ({ ...m, guards: [...(m.guards || []), note] }))
+        if (e.kind === 'cost' || e.kind === 'stuck') get().toast('warn', e.title, e.detail)
+        break
+      }
+      case 'notify': {
+        // the native toast is main's job; in-app we keep a quiet record
+        set((s) => ({ notifications: [...s.notifications, { id: uid('note'), title: e.title, body: e.body, at: Date.now() }].slice(-20) }))
+        break
+      }
       case 'file-summaries': {
         // the agent labelled the files it wrote: the explorer picks these up live
         set((s) => {
@@ -636,10 +692,22 @@ export const useStore = create<State & Actions>((set, get) => ({
             : m.tools
         }))
         set({ running: false, pendingApproval: null, activity: null })
+        void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         const t = get().threads.find((x) => x.id === threadId)
         if (t) get().persistThread({ ...t, updatedAt: Date.now() })
         if (e.reason === 'limit') get().toast('warn', tr('store.stepLimit'), tr('store.stepLimitHint'))
+        if (e.reason === 'guard') get().toast('warn', tr('store.guardStopped'), tr('store.guardStoppedHint'))
+        // "walk away for two hours": hitting the step budget mid-task is a pause,
+        // not a failure — pick the run back up by itself, a bounded number of times.
+        const runs = get().autoContinues || 0
+        if (e.reason === 'limit' && get().settings.autoContinue !== false && runs < 3) {
+          set({ autoContinues: runs + 1 })
+          get().toast('info', tr('store.autoContinue'), tr('store.autoContinueCount', { n: runs + 1 }))
+          setTimeout(() => {
+            if (!get().running) void get().sendMessage(tr('store.autoContinuePrompt'), undefined, { auto: true })
+          }, 900)
+        }
         break
       }
       default:
@@ -820,6 +888,7 @@ export function activityLabel(tool: string): string {
     move_path: 'tool.move',
     todo_write: 'tool.plan',
     ask_user: 'tool.ask',
+    notify_user: 'tool.notify',
     finish: 'chat.stepDone',
     attach_file: 'tool.attach_file'
   }

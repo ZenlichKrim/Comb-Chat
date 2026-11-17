@@ -119,6 +119,8 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 - Keep diffs minimal. Do not reformat, rename or "improve" unrelated code. Never delete functionality you were not asked to touch.
 - Keep replies short and dense. Use markdown, code blocks with a language tag, and file references like \`src/app.ts:42\`. No emoji unless the user uses them first.
 - If a tool fails, read the error, fix the cause, try once more — do not repeat the identical failing call.
+- Long task, user may be away: call \`notify_user\` once when you are done or when you are stuck and need them. Do not narrate progress with it.
+- When a decision genuinely changes the result and you cannot infer the answer from the code, call \`ask_user\` with 2-4 concrete options and set \`recommend\`. Once per task at most: guessing is better than asking twice.
 - When you finish, call \`finish\` with a one-paragraph summary (files changed, what was verified).
 
 # Safety
@@ -294,7 +296,59 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   deps.emit({ type: 'run-start', runId: req.runId, threadId: req.threadId, messageId: req.messageId })
 
   let step = 0
-  let finalReason: 'done' | 'stopped' | 'error' | 'limit' = 'done'
+  let finalReason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' = 'done'
+
+  /* --- stable-mode state ------------------------------------------------ */
+  // Stability is the baseline of this build, not a switch at the bottom of the
+  // composer: the guards below run unless someone explicitly opts out.
+  const stableMode = req.mode ? req.mode === 'stable' : settings.stableMode !== false
+  const costCap = stableMode ? Math.max(0, req.costCap ?? 0) : 0
+  // "make sure the first steps are solid": collect what went wrong before deciding
+  const errorsSoFar: { step: number; name: string; error: string }[] = []
+  const callCounts = new Map<string, number>()
+  let verifyStage: 'pending' | 'running' | 'done' | 'failed' = 'pending'
+  let notifiedCost = false
+  let notifiedStuck = false
+  let notifiedVote = false
+  let notifyCount = 0
+
+  /** Ask the model to verify before it is allowed to finish (stable mode). */
+  const pushVerifyPrompt = async (): Promise<void> => {
+    if (!stableMode || verifyStage !== 'pending') return
+    // Nothing was written: there is nothing to verify, and asking anyway would
+    // cost a round trip on every "what does this file do?" question.
+    if (!touched.size) {
+      verifyStage = 'done'
+      return
+    }
+    verifyStage = 'running'
+    const cmd = await pickVerifyCommand(req.verifyCommand || '', req.workspace || '', touched)
+    const targets = [...touched].slice(0, 8).map((p) => path.relative(req.workspace || p, p) || p)
+    deps.emit({
+      type: 'guard',
+      runId: req.runId,
+      kind: 'verify',
+      title: cmd ? `Проверка: ${cmd}` : 'Проверка результата',
+      detail: targets.length ? targets.join(', ') : undefined
+    })
+    history.push({
+      role: 'user',
+      content:
+        `[stable mode] Before you call finish, verify the work yourself.\n` +
+        (cmd ? `- Run \`${cmd}\` with run_command and fix everything it reports.\n` : '- Run the project\'s type check / tests / linter if it has any.\n') +
+        (targets.length ? `- Re-read what you changed: ${targets.join(', ')}.\n` : '') +
+        '- Confirm no API you introduced is called with the wrong arguments and no import is missing.\n' +
+        '- If something is broken, fix it now. Only then call finish with an honest summary (what was verified, what was not).'
+    })
+  }
+
+  /** desktop ping, rate-limited so a long run does not become a notification mill */
+  const notify = (title: string, body: string, urgent = false): void => {
+    if (settings.notifyDesktop === false) return
+    if (!urgent && notifyCount >= 3) return
+    notifyCount++
+    deps.emit({ type: 'notify', runId: req.runId, title, body, urgent })
+  }
 
   try {
     while (step < Math.max(1, req.maxSteps)) {
@@ -344,6 +398,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           history.push({ role: 'user', content: 'Continue — and call finish when the task is complete.' })
           continue
         }
+        if (stableMode && verifyStage === 'pending') {
+          await pushVerifyPrompt()
+          continue
+        }
+        if (stableMode) verifyStage = 'done'
         finalReason = 'done'
         break
       }
@@ -378,6 +437,23 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           continue
         }
 
+        // A vote is valuable once; the second one in a row is spam. The model is
+        // told the same rule in the prompt, this is the enforcement.
+        if (call.name === 'ask_user' && (notifiedVote || settings.proposeVotes === false)) {
+          deps.emit({
+            type: 'tool-call',
+            runId: req.runId,
+            call: { ...view, status: 'error', error: 'Already asked the user once this run.' }
+          })
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.name,
+            content: `ERROR: ${settings.proposeVotes === false ? 'asking the user is disabled. ' : 'you already asked the user a question in this run. '}Decide yourself and continue.`
+          })
+          continue
+        }
+
         const needsApproval =
           (req.workspace || fullDisk) &&
           toolNeedsApproval(call.name, approvalPolicy, new Set([...(settings.allowedTools || []), ...run.autoApproved]))
@@ -406,6 +482,26 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
 
         const t0 = Date.now()
         const outcome = await executeTool(call.name, args, ctx)
+        if (stableMode) {
+          const sig = `${call.name}:${JSON.stringify(args).slice(0, 200)}`
+          const seen = (callCounts.get(sig) || 0) + 1
+          callCounts.set(sig, seen)
+          if (!outcome.ok) {
+            errorsSoFar.push({ step, name: call.name, error: (outcome.error || outcome.output || '').slice(0, 300) })
+          }
+          // The same call failing twice means the model is guessing: stop before it
+          // burns the whole budget going in circles.
+          if (seen >= 3 && !outcome.ok && !notifiedStuck) {
+            notifiedStuck = true
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'stuck',
+              title: 'Остановился: один и тот же вызов повторяется',
+              detail: `${call.name} · ${outcome.error || 'failed'}`
+            })
+          }
+        }
         const finished: ToolResultView = {
           ...view,
           status: outcome.ok ? 'ok' : 'error',
@@ -417,6 +513,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           durationMs: Date.now() - t0
         }
         deps.emit({ type: 'tool-update', runId: req.runId, call: finished })
+        if (outcome.notify) notify(outcome.notify.title, outcome.notify.body, !!outcome.notify.urgent)
 
         if (outcome.diff?.length) {
           deps.emit({ type: 'files-changed', runId: req.runId, paths: outcome.diff.map((d) => d.path) })
@@ -426,6 +523,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           ? String(outcome.output ?? 'ok')
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
         history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: toolContent.slice(0, 30000) })
+
+        if (call.name === 'ask_user' && outcome.ok) notifiedVote = true
 
         if (outcome.halt) {
           halted = outcome.halt
@@ -457,12 +556,38 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         break
       }
       if (halted === 'done') {
+        if (stableMode && verifyStage === 'pending') {
+          await pushVerifyPrompt()
+          continue
+        }
+        if (stableMode) verifyStage = 'done'
+        if (stableMode) verifyStage = 'done'
         finalReason = 'done'
         break
       }
       if (halted === 'error') {
         finalReason = 'error'
         break
+      }
+
+      if (stableMode) {
+        // money ceiling: a run you walk away from must not surprise you
+        if (costCap > 0 && usage.cost >= costCap && !notifiedCost) {
+          notifiedCost = true
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'cost',
+            title: `Лимит стоимости: $${usage.cost.toFixed(4)} из $${costCap.toFixed(2)}`,
+            detail: 'Прогон остановлен, чтобы счёт не вырос. Продолжите вручную, когда будете готовы.'
+          })
+          finalReason = 'guard'
+          break
+        }
+        if (notifiedStuck) {
+          finalReason = 'guard'
+          break
+        }
       }
 
       // nudge toward a plan for long tasks
@@ -496,6 +621,34 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       deps.emit({ type: 'error', runId: req.runId, message: e?.message || String(e) })
     }
   } finally {
+    // How did it end, in one line the user can read from across the room.
+    if (finalReason === 'done' && touched.size) {
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'done',
+        title: `файлов — ${touched.size}, шагов — ${step}, $${usage.cost.toFixed(4)}`,
+        detail: verifyStage === 'done' ? 'Результат проверен перед тем, как сказать «готово».' : undefined
+      })
+      notify('Задача выполнена', `${touched.size} файл(ов) изменено, ${step} шагов, $${usage.cost.toFixed(4)}`)
+    } else if (finalReason === 'guard') {
+      notify('Прогон остановлен защитой', 'Смотрите карточку в приложении — там причина.', true)
+    } else if (finalReason === 'error') {
+      notify('Прогон упал с ошибкой', 'Смотрите карточку в приложении.', true)
+    }
+    if (stableMode && errorsSoFar.length) {
+      const uniq = [...new Map(errorsSoFar.map((e) => [e.name + e.error, e])).values()]
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'errors',
+        title: `За прогон было ${errorsSoFar.length} ошибок инструментов`,
+        detail: uniq
+          .slice(0, 5)
+          .map((e) => `шаг ${e.step} · ${e.name}: ${e.error.split('\n')[0].slice(0, 120)}`)
+          .join('\n')
+      })
+    }
     active.delete(req.runId)
     deps.emit({ type: 'usage', runId: req.runId, usage })
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })
@@ -534,4 +687,44 @@ function buildUserContent(msg: ChatMessage, attachments: Attachment[]): string |
 
 export function listActiveRuns(): string[] {
   return [...active.keys()]
+}
+
+/**
+ * What should "verified" mean for this project?
+ *
+ * Stable mode asks the project itself: a test script, a type-check script, or a
+ * known manifest. The user can override it in Settings, which always wins.
+ */
+export async function pickVerifyCommand(configured: string, workspace: string, touched: Set<string>): Promise<string> {
+  if (configured.trim()) return configured.trim()
+  if (!workspace) return ''
+  const has = async (rel: string): Promise<boolean> =>
+    fs
+      .stat(path.join(workspace, rel))
+      .then(() => true)
+      .catch(() => false)
+  try {
+    const pkgRaw = await fs.readFile(path.join(workspace, 'package.json'), 'utf8')
+    const pkg = JSON.parse(pkgRaw) as { scripts?: Record<string, string>; packageManager?: string }
+    const scripts = pkg.scripts || {}
+    const pm = /pnpm/.test(pkg.packageManager || '') ? 'pnpm' : (await has('yarn.lock')) ? 'yarn' : (await has('pnpm-lock.yaml')) ? 'pnpm' : 'npm'
+    if (scripts.test && !/no test specified/i.test(scripts.test)) return `${pm} test`
+    for (const script of ['typecheck', 'type-check', 'tsc', 'lint', 'check', 'build']) {
+      if (scripts[script]) return `${pm} run ${script}`
+    }
+  } catch {
+    /* not a node project */
+  }
+  if (await has('Cargo.toml')) return 'cargo check'
+  if (await has('go.mod')) return 'go build ./...'
+  if (await has('pyproject.toml') || await has('requirements.txt')) {
+    return (await has('tests')) || [...touched].some((p) => /test/i.test(p)) ? 'python -m pytest -q' : 'python -m compileall -q .'
+  }
+  if ((await has('pom.xml')) && (await has('mvnw'))) return './mvnw -q -DskipTests compile'
+  if (await has('gradlew')) return './gradlew -q compileDebugJavaWithJavac'
+  if ((await has('pom.xml')) || (await has('build.gradle')) || (await has('build.gradle.kts'))) {
+    return 'echo "no wrapper here — verify with your IDE or install gradle/maven"'
+  }
+  if (await has('Makefile')) return 'make -n'
+  return ''
 }

@@ -22,7 +22,9 @@ const api = {
     onMaximized: (cb: (v: boolean) => void) => on<boolean>('window:maximized', cb),
     openExternal: (url: string) => ipcRenderer.send('app:openExternal', url),
     showItemInFolder: (p: string) => ipcRenderer.send('app:showItemInFolder', p),
-    openPath: (p: string) => ipcRenderer.invoke('app:openPath', p)
+    openPath: (p: string) => ipcRenderer.invoke('app:openPath', p),
+    /** taskbar progress + flash while a long run is in flight */
+    attention: (on: boolean, label?: string) => ipcRenderer.send('app:attention', on, label)
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

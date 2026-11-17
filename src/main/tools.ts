@@ -43,6 +43,11 @@ export interface ToolOutcome {
   locale?: string
   /** extra data for renderer */
   meta?: Record<string, any>
+  /**
+   * Something the user should hear about even if they are not looking at the
+   * window: a completion, a blocker, a decision they may want to veto.
+   */
+  notify?: { title: string; body: string; urgent?: boolean }
   /** abort the whole run (e.g. user said stop, or ask_user) */
   halt?: 'done' | 'error' | 'aborted'
 }
@@ -128,11 +133,28 @@ export async function executeTool(
         return await toolMove(args, ctx)
       case 'todo_write':
         return toolTodo(args, ctx)
-      case 'ask_user':
+      case 'notify_user':
         return {
           ok: true,
-          output: `Question sent to user: ${args.question || ''}`,
+          output: 'The user was notified on their desktop.',
+          notify: {
+            title: String(args.title || 'Comb Chat'),
+            body: String(args.body || ''),
+            urgent: !!args.urgent
+          }
+        }
+      case 'ask_user':
+        // a real vote, not a bare question: the renderer shows it as pickable cards
+        // and the answer comes back as the next user message
+        return {
+          ok: true,
+          output: `Question sent to the user (they will answer in the app): ${args.question || ''}`,
           meta: { question: args.question, options: args.options },
+          notify: {
+            title: String(args.title || 'Нужно ваше решение'),
+            body: String(args.question || ''),
+            urgent: true
+          },
           halt: ctx.approvalPolicy === 'yolo' ? undefined : 'done'
         }
       case 'attach_file':
@@ -802,14 +824,37 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
     type: 'function',
     function: {
       name: 'ask_user',
-      description: 'Ask the user a clarifying question when a decision is genuinely ambiguous or risky. Stops the run until they answer.',
+      description:
+        'Ask the user to choose between concrete options when a decision genuinely changes the outcome. The app shows it as a vote with buttons, so phrase the options as things the user can pick, not as prose. Use it sparingly — at most once per run, and never for something you can decide yourself.',
       parameters: {
         type: 'object',
         properties: {
-          question: { type: 'string' },
-          options: { type: 'array', items: { type: 'string' }, description: '2-4 suggested answers' }
+          question: { type: 'string', description: 'One short question, in the interface language' },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '2-4 short, concrete options. Do not include "something else" — the user can always type their own answer.'
+          },
+          recommend: { type: 'string', description: 'The option you would pick yourself, verbatim from the list' }
         },
-        required: ['question']
+        required: ['question', 'options']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'notify_user',
+      description:
+        'Send a desktop notification to the user when they are probably not watching the app: the task finished, a long step finished, you are blocked, or you found something they should know now. Never use it for progress chatter — at most a few times per task.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short headline, in the interface language' },
+          body: { type: 'string', description: 'One or two sentences: what happened and what happens next' },
+          urgent: { type: 'boolean', description: 'true when the run is blocked and needs them' }
+        },
+        required: ['title', 'body']
       }
     }
   },

@@ -73,6 +73,13 @@ export function modelOptions(id: string): { thinking?: { type: 'enabled' | 'disa
   return {}
 }
 
+/**
+ * How much the app protects a run that nobody is watching. `stable` is only ever
+ * picked automatically (long task, full-disk access, or the user asked for it in
+ * the prompt) — it is a guaranteed baseline, not a switch people have to know.
+ */
+export type RunMode = 'normal' | 'stable'
+
 export interface Settings {
   apiKey: string
   baseUrl: string
@@ -106,6 +113,18 @@ export interface Settings {
   alphaFeatures: boolean
   /** let the model label the files it wrote, in the background */
   describeFiles: boolean
+  /** extra-hardening on top of the always-on guards: verification, cost ceiling, stuck detection */
+  stableMode: boolean
+  /** stop a run when it costs more than this, in USD (0 = no ceiling) */
+  costCap: number
+  /** command the stable mode runs before claiming success, e.g. `npm test` (empty = auto) */
+  verifyCommand: string
+  /** pick up a run by itself after an approval or a guard, instead of waiting for the user */
+  autoContinue: boolean
+  /** desktop notifications for finished tasks, blockers and decisions */
+  notifyDesktop: boolean
+  /** let the agent offer a vote when a decision really matters (at most once per run) */
+  proposeVotes: boolean
   allowedTools: string[]
   locale: Locale
 }
@@ -141,6 +160,12 @@ export const DEFAULT_SETTINGS: Settings = {
   fullDiskAccess: false,
   alphaFeatures: false,
   describeFiles: true,
+  stableMode: true,
+  costCap: 0.5,
+  verifyCommand: '',
+  autoContinue: true,
+  notifyDesktop: true,
+  proposeVotes: true,
   allowedTools: [],
   locale: 'en'
 }
@@ -216,6 +241,7 @@ export type ToolName =
   | 'move_path'
   | 'todo_write'
   | 'ask_user'
+  | 'notify_user'
   | 'finish'
 
 export interface ToolCall {
@@ -243,6 +269,17 @@ export interface ToolResultView {
   locale?: string
   durationMs?: number
   collapsed?: boolean
+}
+
+/** A question the agent wants the user to decide, shown as pickable cards. */
+export interface AgentVote {
+  id: string
+  question: string
+  options: string[]
+  /** the option the agent would choose itself */
+  recommend?: string
+  /** filled in once the user picks or types an answer */
+  answer?: string
 }
 
 export interface FileDiff {
@@ -308,6 +345,10 @@ export interface ChatMessage {
   attachments?: Attachment[]
   /** assistant message still streaming */
   streaming?: boolean
+  /** stable-mode guard notes attached to the turn they happened in */
+  guards?: { id: string; kind: string; title: string; detail?: string }[]
+  /** an open/answered question from the agent */
+  vote?: AgentVote
   error?: string
   stopped?: boolean
 }
@@ -353,7 +394,22 @@ export type AgentEvent =
   | { type: 'files-changed'; runId: string; paths: string[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
-  | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' }
+  | {
+      type: 'notify'
+      runId: string
+      title: string
+      body: string
+      urgent?: boolean
+    }
+  | {
+      type: 'guard'
+      runId: string
+      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done'
+      /** short headline for the transcript */
+      title: string
+      detail?: string
+    }
+  | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' }
 
 export interface RunRequest {
   runId: string
@@ -381,6 +437,12 @@ export interface RunRequest {
   openFiles?: { rel: string; path: string }[]
   /** only run these tool ids: used by "apply" flows */
   disabledTools?: string[]
+  /** stable = verification pass + guards; defaults to normal */
+  mode?: RunMode
+  /** USD ceiling for this run (0 = off) */
+  costCap?: number
+  /** what "done" has to pass; empty = auto-detect from manifests */
+  verifyCommand?: string
 }
 
 export interface TerminalDataEvent {
@@ -416,6 +478,8 @@ export interface CombApi {
     onMaximized(cb: (v: boolean) => void): () => void
     openExternal(url: string): void
     showItemInFolder(path: string): void
+    /** taskbar progress + window flash while a long run is in flight */
+    attention(on: boolean, label?: string): void
     openPath(path: string): Promise<string>
   }
   files: {

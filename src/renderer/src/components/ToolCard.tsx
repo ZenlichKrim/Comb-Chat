@@ -20,6 +20,7 @@ const TOOL_META: Record<string, { icon: IconName; label: DictKey; verb: DictKey 
   move_path: { icon: 'arrow-right', label: 'tool.move', verb: 'tool.verbMoving' },
   todo_write: { icon: 'check', label: 'tool.plan', verb: 'tool.verbPlanning' },
   ask_user: { icon: 'chat', label: 'tool.ask', verb: 'tool.verbAsking' },
+  notify_user: { icon: 'bell', label: 'tool.notify', verb: 'tool.verbNotifying' },
   attach_file: { icon: 'paperclip', label: 'tool.attach_file', verb: 'tool.verbAttaching' },
   finish: { icon: 'check-circle', label: 'tool.done', verb: 'tool.verbFinishing' }
 }

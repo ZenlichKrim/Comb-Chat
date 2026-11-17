@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
+import { VoteCard, GuardNote } from './AgentNotes'
 import { useStore, useActiveThread, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
@@ -427,6 +428,15 @@ export function ChatPane(): React.ReactElement {
               <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : settings.approvalPolicy === 'auto-edit' ? 'edit' : 'shield'} size={11} className={settings.approvalPolicy === 'yolo' ? 'err' : settings.approvalPolicy === 'auto-edit' ? 'warn' : 'ok'} />
               {settings.approvalPolicy === 'ask' ? t('chat.policyAsk') : settings.approvalPolicy === 'auto-edit' ? t('chat.policyAuto') : t('chat.policyYolo')}
             </button>
+            <button
+              className="composer-chip"
+              data-tip={t('chat.stableTip')}
+              data-on={settings.stableMode}
+              onClick={() => void setSettings({ stableMode: !settings.stableMode })}
+            >
+              <Icon name={settings.stableMode ? 'shield' : 'zap'} size={11} className={settings.stableMode ? 'ok' : 'faint'} />
+              {settings.stableMode ? t('chat.stableOn') : t('chat.stableOff')}
+            </button>
             <button className="composer-chip" data-tip={t('chat.contextTip')} onClick={() => void setSettings({ autoContext: !settings.autoContext })}>
               <Icon name="layers" size={11} className={settings.autoContext ? 'acc' : 'faint'} />
               {settings.autoContext ? t('chat.contextOn') : t('chat.contextOff')}
@@ -549,9 +559,13 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
           </div>
         )}
 
-        {tools.map((t) => (
-          <ToolCard key={t.id} call={t} />
+        {tools.map((t) => (t.name === 'ask_user' && msg.vote?.id !== t.id ? <ToolCard key={t.id} call={t} /> : t.name === 'ask_user' ? null : <ToolCard key={t.id} call={t} />))}
+
+        {(msg.guards || []).map((g) => (
+          <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />
         ))}
+
+        {msg.vote && <VoteCard vote={msg.vote} />}
 
         {msg.error && (
           <div className="msg-error">

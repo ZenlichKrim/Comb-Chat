@@ -50,6 +50,8 @@ export type IconName =
   | 'zap'
   | 'shield'
   | 'clock'
+  | 'wallet'
+  | 'bell'
   | 'alert'
   | 'info'
   | 'x-circle'
@@ -222,6 +224,19 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="8" cy="8" r="5.8" />
       <path d="M8 4.5V8l2.5 1.5" />
+    </>
+  ),
+  wallet: (
+    <>
+      <rect x="2.2" y="4" width="11.6" height="8.4" rx="1.6" />
+      <path d="M2.2 6.7h11.6" />
+      <circle cx="10.4" cy="9.7" r="0.6" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M4.3 7a3.7 3.7 0 017.4 0c0 2.3.6 3.3 1.2 4H3.1c.6-.7 1.2-1.7 1.2-4z" />
+      <path d="M6.6 12.7a1.5 1.5 0 002.8 0" />
     </>
   ),
   alert: (

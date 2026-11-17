@@ -240,6 +240,56 @@ export function SettingsDialog(): React.ReactElement {
               </Row>
               <Toggle label={t('set.autoContext')} hint={t('set.autoContextHint')} value={settings.autoContext} onChange={(v) => void setSettings({ autoContext: v })} />
 
+              {/* stability: the guarantees that make an unattended run safe */}
+              <div className="setting-group-title">{t('set.stableGroup')}</div>
+              <Toggle
+                label={t('set.stableMode')}
+                hint={t('set.stableModeHint')}
+                value={settings.stableMode !== false}
+                onChange={(v) => void setSettings({ stableMode: v })}
+              />
+              <Row label={t('set.costCap')} hint={t('set.costCapHint')}>
+                <div className="row gap-2" style={{ alignItems: 'center' }}>
+                  <span className="t-sm faint">$</span>
+                  <input
+                    className="input"
+                    style={{ width: 78 }}
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={settings.costCap}
+                    onChange={(e) => void setSettings({ costCap: Math.max(0, Number(e.target.value) || 0) })}
+                  />
+                </div>
+              </Row>
+              <Field label={t('set.verifyCommand')} hint={t('set.verifyCommandHint')}>
+                <input
+                  className="input mono"
+                  placeholder="npm test"
+                  value={settings.verifyCommand}
+                  spellCheck={false}
+                  onChange={(e) => void setSettings({ verifyCommand: e.target.value })}
+                />
+              </Field>
+              <Toggle
+                label={t('set.autoContinue')}
+                hint={t('set.autoContinueHint')}
+                value={settings.autoContinue !== false}
+                onChange={(v) => void setSettings({ autoContinue: v })}
+              />
+              <Toggle
+                label={t('set.notifyDesktop')}
+                hint={t('set.notifyDesktopHint')}
+                value={settings.notifyDesktop !== false}
+                onChange={(v) => void setSettings({ notifyDesktop: v })}
+              />
+              <Toggle
+                label={t('set.proposeVotes')}
+                hint={t('set.proposeVotesHint')}
+                value={settings.proposeVotes !== false}
+                onChange={(v) => void setSettings({ proposeVotes: v })}
+              />
+
               <Toggle
                 label={t('set.fullDisk')}
                 hint={t('set.fullDiskHint')}
