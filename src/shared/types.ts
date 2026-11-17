@@ -243,6 +243,7 @@ export type ToolName =
   | 'ask_user'
   | 'suggest'
   | 'notify_user'
+  | 'leave_note'
   | 'finish'
 
 export interface ToolCall {
@@ -336,6 +337,25 @@ export interface Attachment {
   /** for selections, 1-based line range */
   from?: number
   to?: number
+  /** a stick-on note: "не трогай этот файл", "здесь нужен рефакторинг" */
+  note?: string
+}
+
+/** A note the user attaches to a project, a file or the whole session. */
+export interface StickyNote {
+  id: string
+  text: string
+  /** where it points: a file path (as shown in the app) or a folder */
+  target?: string
+  /** short label shown on the tile, e.g. "sidebar.tsx" */
+  targetLabel?: string
+  /** palette slot, 0-5: the tile colour */
+  tone: number
+  createdAt: number
+  /** the agent or the user marked it handled */
+  done?: boolean
+  /** the agent wrote it (from a run) rather than the user */
+  byAgent?: boolean
 }
 
 export interface ChatMessage {
@@ -356,6 +376,8 @@ export interface ChatMessage {
   vote?: AgentVote
   /** clickable follow-ups offered by the agent */
   suggestions?: string[]
+  /** notes the agent left for the user ("todo for you") */
+  notes?: StickyNote[]
   error?: string
   stopped?: boolean
 }
@@ -373,6 +395,8 @@ export interface Thread {
   todos: TodoItem[]
   pinned?: boolean
   archived?: boolean
+  /** sticky notes that belong to this session */
+  notes?: StickyNote[]
 }
 
 export interface Checkpoint {
@@ -401,6 +425,7 @@ export type AgentEvent =
   | { type: 'files-changed'; runId: string; paths: string[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
+  | { type: 'note'; runId: string; note: StickyNote }
   | {
       /** the vote timed out: the run went ahead with the model's own pick */
       type: 'vote-auto'
@@ -454,6 +479,8 @@ export interface RunRequest {
   disabledTools?: string[]
   /** stable = verification pass + guards; defaults to normal */
   mode?: RunMode
+  /** the user's notes for this task: the agent has to respect them */
+  notes?: { text: string; target?: string }[]
   /** USD ceiling for this run (0 = off) */
   costCap?: number
   /** what "done" has to pass; empty = auto-detect from manifests */

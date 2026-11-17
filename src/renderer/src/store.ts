@@ -10,6 +10,7 @@ import type {
   GitStatus,
   RunRequest,
   Settings,
+  StickyNote,
   Thread,
   ToolResultView,
   TokenUsage,
@@ -89,6 +90,10 @@ interface State {
   autoContinues?: number
   /** stable-mode guard notes for the current run */
   guards: { id: string; kind: string; title: string; detail?: string }[]
+  /** sticky notes: project task list the agent also reads */
+  notes: StickyNote[]
+  /** notes panel open state */
+  notesOpen: boolean
   /** desktop pings this session, shown in the bell menu */
   notifications: { id: string; title: string; body: string; at: number }[]
   /** model-written one-liners, by absolute path */
@@ -133,6 +138,10 @@ interface Actions {
   answerLiveVote: (voteId: string, answer: string) => Promise<void>
   /** say something to the running agent without stopping it */
   steer: (text: string) => Promise<void>
+  addNote: (n: { text: string; target?: string; targetLabel?: string; tone?: number }) => void
+  updateNote: (id: string, patch: Partial<StickyNote>) => void
+  removeNote: (id: string) => void
+  setNotesOpen: (open: boolean) => void
   approve: (decision: 'allow' | 'allow-always' | 'deny') => Promise<void>
   handleEvent: (e: AgentEvent) => void
   refreshGit: () => Promise<void>
@@ -193,6 +202,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   lastPrompt: '',
   guards: [],
   notifications: [],
+  notes: [],
+  notesOpen: false,
   fileSummaries: {},
   filePurposes: {},
   changedFiles: [],
@@ -207,7 +218,13 @@ export const useStore = create<State & Actions>((set, get) => ({
   boot: async () => {
     const [settings, threads] = await Promise.all([window.comb.settings.get(), window.comb.threads.list()])
     const sorted = (threads as Thread[]).sort((a, b) => b.updatedAt - a.updatedAt)
-    set({ settings, threads: sorted, ready: true, activeThreadId: sorted[0]?.id ?? null })
+    set({
+      settings,
+      threads: sorted,
+      ready: true,
+      activeThreadId: sorted[0]?.id ?? null,
+      notes: sorted[0]?.notes ?? [],
+    })
     applyTheme(settings)
     if (settings.lastWorkspace) {
       await get().openWorkspace(settings.lastWorkspace).catch(() => {})
@@ -401,14 +418,16 @@ export const useStore = create<State & Actions>((set, get) => ({
       extraRoots: get().extraRoots,
       model: get().settings.model,
       usage: { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 },
-      todos: []
+      todos: [],
+      notes: []
     }
-    set((s) => ({ threads: [thread, ...s.threads], activeThreadId: thread.id, changedFiles: [] }))
+    set((s) => ({ threads: [thread, ...s.threads], activeThreadId: thread.id, changedFiles: [], notes: [] }))
     void window.comb.threads.save(thread)
   },
 
   selectThread: (id) => {
-    set({ activeThreadId: id, changedFiles: [], pendingApproval: null })
+    const thread = get().threads.find((t) => t.id === id)
+    set({ activeThreadId: id, changedFiles: [], pendingApproval: null, notes: thread?.notes ?? [] })
     const t = get().threads.find((x) => x.id === id)
     if (t) set({ checkpoints: [] })
   },
@@ -518,6 +537,9 @@ export const useStore = create<State & Actions>((set, get) => ({
       attachments,
       openFiles: get().tabs.map((t) => ({ rel: t.rel, path: t.path })),
       disabledTools: [],
+      notes: get()
+        .notes.filter((n) => !n.done && !n.byAgent)
+        .map((n) => ({ text: n.text, target: n.target })),
       mode: settings.stableMode ? 'stable' : 'normal',
       costCap: settings.costCap,
       verifyCommand: settings.verifyCommand
@@ -706,6 +728,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         )
         break
       }
+      case 'note': {
+        set((s) => ({ notes: [...s.notes, e.note] }))
+        const thread = get().threads.find((t) => t.id === threadId)
+        if (thread) get().persistThread({ ...thread, notes: [...(thread.notes || []), e.note] })
+        break
+      }
       case 'notify': {
         // the native toast is main's job; in-app we keep a quiet record
         set((s) => ({ notifications: [...s.notifications, { id: uid('note'), title: e.title, body: e.body, at: Date.now() }].slice(-20) }))
@@ -787,6 +815,41 @@ export const useStore = create<State & Actions>((set, get) => ({
   setPalette: (p) => set((s) => ({ palette: { ...s.palette, ...p } })),
   setBottomPanel: (p) => set({ bottomPanel: p }),
   setRightPanel: (p) => set({ rightPanel: p }),
+
+  addNote: (n) => {
+    const text = n.text.trim()
+    if (!text) return
+    const note: StickyNote = {
+      id: uid('note'),
+      text,
+      target: n.target,
+      targetLabel: n.targetLabel,
+      tone: n.tone ?? Math.floor(Math.random() * 6),
+      createdAt: Date.now()
+    }
+    set((s) => ({ notes: [...s.notes, note] }))
+    const thread = get().threads.find((t) => t.id === get().activeThreadId)
+    if (thread) get().persistThread({ ...thread, notes: [...(thread.notes || []), note] })
+  },
+
+  updateNote: (id, patch) => {
+    set((s) => ({ notes: s.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)) }))
+    const thread = get().threads.find((t) => t.id === get().activeThreadId)
+    if (thread) {
+      get().persistThread({
+        ...thread,
+        notes: (thread.notes || []).map((n) => (n.id === id ? { ...n, ...patch } : n))
+      })
+    }
+  },
+
+  removeNote: (id) => {
+    set((s) => ({ notes: s.notes.filter((n) => n.id !== id) }))
+    const thread = get().threads.find((t) => t.id === get().activeThreadId)
+    if (thread) get().persistThread({ ...thread, notes: (thread.notes || []).filter((n) => n.id !== id) })
+  },
+
+  setNotesOpen: (open) => set({ notesOpen: open }),
 
   addContextFile: (a) => {
     if (a.kind === 'image') {
@@ -939,6 +1002,7 @@ export function activityLabel(tool: string): string {
     ask_user: 'tool.ask',
     notify_user: 'tool.notify',
     suggest: 'tool.suggest',
+    leave_note: 'tool.note',
     finish: 'chat.stepDone',
     attach_file: 'tool.attach_file'
   }

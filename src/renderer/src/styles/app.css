@@ -1582,7 +1582,8 @@ a.code-ref code {
   border-radius: var(--r-lg);
   background: var(--bg-1);
   transition: border-color var(--dur), box-shadow var(--dur);
-  overflow: hidden;
+  /* not hidden: the note popover has to escape the composer box */
+  position: relative;
 }
 .composer:focus-within {
   border-color: var(--accent-line);
@@ -1647,6 +1648,8 @@ a.code-ref code {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex: none;
+  white-space: nowrap;
   height: 21px;
   padding: 0 6px;
   border-radius: var(--r-sm);
@@ -3333,4 +3336,327 @@ hr {
 /* the composer stays usable mid-run: typing turns the button into "tell the agent" */
 .composer[data-steer='true'] .send-btn:not(.stop) {
   background: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Sticky notes: the board and the pins                                */
+/* ------------------------------------------------------------------ */
+
+.tone-butter {
+  --note-bg: color-mix(in oklab, #f5cf6a 30%, var(--bg-2));
+  --note-ink: #f6dc9a;
+  --note-edge: color-mix(in oklab, #f5cf6a 42%, var(--line-2));
+}
+.tone-mint {
+  --note-bg: color-mix(in oklab, #7fd8a8 28%, var(--bg-2));
+  --note-ink: #a8e9c4;
+  --note-edge: color-mix(in oklab, #7fd8a8 40%, var(--line-2));
+}
+.tone-sky {
+  --note-bg: color-mix(in oklab, #79bdf0 28%, var(--bg-2));
+  --note-ink: #a8d6f7;
+  --note-edge: color-mix(in oklab, #79bdf0 40%, var(--line-2));
+}
+.tone-lilac {
+  --note-bg: color-mix(in oklab, #b79bf0 30%, var(--bg-2));
+  --note-ink: #cfbcf8;
+  --note-edge: color-mix(in oklab, #b79bf0 42%, var(--line-2));
+}
+.tone-peach {
+  --note-bg: color-mix(in oklab, #f2a273 30%, var(--bg-2));
+  --note-ink: #f7c2a1;
+  --note-edge: color-mix(in oklab, #f2a273 42%, var(--line-2));
+}
+.tone-rose {
+  --note-bg: color-mix(in oklab, #ef92a8 30%, var(--bg-2));
+  --note-ink: #f7b7c4;
+  --note-edge: color-mix(in oklab, #ef92a8 42%, var(--line-2));
+}
+
+.note-pin {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin: 0 1px;
+  border-radius: 5px;
+  border: 1px dashed var(--line-2);
+  color: var(--fg-3);
+  transition: all var(--dur-fast);
+}
+.note-pin:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.note-pin[data-has='true'] {
+  border-style: solid;
+  border-color: var(--note-edge, var(--accent));
+  background: var(--note-bg, var(--accent-soft));
+  color: var(--note-ink, var(--accent));
+}
+.note-pin-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--bg-1);
+}
+
+.note-pop {
+  position: absolute;
+  z-index: 220;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 290px;
+  padding: 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.75);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.note-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-2xs);
+  font-weight: 650;
+  color: var(--fg-2);
+}
+.note-pop-input {
+  width: 100%;
+  resize: none;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.note-pop-input:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--line-2));
+}
+.note-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.notes-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 6, 5, 0.62);
+  backdrop-filter: blur(7px);
+  animation: fade-in var(--dur-fast) var(--ease);
+}
+.notes-panel {
+  width: min(820px, 92%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-radius: 18px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  box-shadow: 0 32px 80px -30px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+.notes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.notes-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--fg-0);
+}
+.notes-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-1);
+}
+.note-palette {
+  display: flex;
+  gap: 6px;
+}
+.note-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
+  border: 1px solid var(--note-edge);
+  background: var(--note-bg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.note-swatch:hover {
+  transform: scale(1.12);
+}
+.note-swatch[data-active='true'] {
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 3px var(--note-ink);
+}
+.notes-input {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.notes-input:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--line-2));
+}
+.notes-compose-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.notes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+  overflow-y: auto;
+  padding: 2px;
+  align-content: start;
+  min-height: 0;
+}
+.notes-empty {
+  grid-column: 1 / -1;
+  padding: 18px 4px;
+  text-align: center;
+}
+.note-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 96px;
+  padding: 9px 10px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--note-edge);
+  background: var(--note-bg);
+  color: var(--fg-0);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast);
+}
+.note-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.7);
+}
+.note-tile[data-done='true'] {
+  opacity: 0.5;
+}
+.note-tile[data-done='true'] .note-text {
+  text-decoration: line-through;
+}
+.note-tile[data-compact='true'] {
+  min-height: 0;
+  padding: 7px 9px;
+  border-radius: 12px;
+}
+.note-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--note-ink);
+  min-height: 14px;
+}
+.note-target {
+  min-width: 0;
+  max-width: 110px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--note-ink);
+  text-align: left;
+}
+.note-target:hover {
+  text-decoration: underline;
+}
+.note-mini {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  color: var(--note-ink);
+  opacity: 0;
+  transition: opacity var(--dur-fast), background var(--dur-fast);
+}
+.note-tile:hover .note-mini {
+  opacity: 0.75;
+}
+.note-mini:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.22);
+}
+.note-text {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--fg-0);
+  word-break: break-word;
+}
+.notes-sub {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.notes-foot {
+  border-top: 1px solid var(--line-1);
+  padding-top: 8px;
+}
+
+/* the "+" row: notes attached to the files in context, right under the chips */
+.composer-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 9px 8px;
+  border-bottom: 1px solid var(--line-1);
+  background: color-mix(in oklab, var(--accent) 4%, transparent);
+}
+.ctx-note {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 230px;
+  height: 22px;
+  padding: 0 4px 0 7px;
+  border-radius: 9px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+}
+.ctx-note-file {
+  min-width: 0;
+  font-size: var(--fs-2xs);
+  color: var(--fg-2);
+}
+.ctx-note .note-pin {
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
 }

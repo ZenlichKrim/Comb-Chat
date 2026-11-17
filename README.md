@@ -108,6 +108,19 @@ Settings → Agent, every run behaves itself:
 - **Clickable next steps.** After an answer the agent can call `suggest` with 2-4 follow-ups; they appear as chips —
   one click is the next request.
 
+**Sticky notes**
+
+A small board of notes that lives with the session and is read by the agent before every task.
+
+- Press the little **+** on any file in the context row to hang a note on that exact file — "Сайдбар пока не
+  трогаем, там отдельная задача" — or open **Notes** in the composer to write one about the project.
+- Notes are rounded pastel tiles in six colours, so a board reads at a glance. Tick one done, edit, delete, click its
+  file label to open the file.
+- Open notes travel with every request as **requirements**, not suggestions: if a note conflicts with the prompt the
+  agent follows the note and says so.
+- The agent has its own pen: `leave_note` drops a note for you — "моки в plans.json, заменить перед релизом" — into
+  the same board, marked with the bee, so loose ends stop getting buried in prose.
+
 **Safety**
 
 - Three approval policies: `ask first` (every write/edit/delete/command), `auto-edit` (edits apply, commands ask),

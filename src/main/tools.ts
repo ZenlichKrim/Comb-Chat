@@ -159,6 +159,20 @@ export async function executeTool(
                   urgent: false
                 }
         }
+      case 'leave_note':
+        // the agent's own sticky note for the user: a loose end, a warning, a
+        // "you still need to do X". It shows up in the notes panel, not the log.
+        return {
+          ok: true,
+          output: 'Note left on the board for the user.',
+          meta: {
+            note: {
+              text: String(args.text || '').slice(0, 400),
+              target: args.target ? String(args.target) : undefined,
+              tone: Number(args.tone) || 2
+            }
+          }
+        }
       case 'suggest':
         // Follow-up chips under the answer: one click starts the next task.
         return {
@@ -853,6 +867,23 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
           quiet: { type: 'boolean', description: 'true = do not ring the desktop, just show the card (for a low-stakes question)' }
         },
         required: ['question', 'options']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'leave_note',
+      description:
+        'Leave a sticky note on the user board: something they must know or do that is not part of the current task ("the mock data is fake, replace before release", "I did not touch the legacy billing page"). Use it instead of burying the warning in prose. Never more than 3 per run.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'One sentence, in the interface language' },
+          target: { type: 'string', description: 'Optional file or folder this note is about' },
+          tone: { type: 'number', description: '0-5 colour slot, pick something different from the previous note' }
+        },
+        required: ['text']
       }
     }
   },

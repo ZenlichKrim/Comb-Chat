@@ -52,6 +52,7 @@ export type IconName =
   | 'clock'
   | 'wallet'
   | 'bell'
+  | 'sticky'
   | 'alert'
   | 'info'
   | 'x-circle'
@@ -224,6 +225,12 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="8" cy="8" r="5.8" />
       <path d="M8 4.5V8l2.5 1.5" />
+    </>
+  ),
+  sticky: (
+    <>
+      <path d="M3.2 3.2h9.6v6.4l-3.2 3.2H3.2z" />
+      <path d="M12.8 9.6H9.6v3.2" />
     </>
   ),
   wallet: (

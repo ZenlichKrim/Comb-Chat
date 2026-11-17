@@ -159,6 +159,7 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 - Long task, user may be away: call \`notify_user\` once when you are done or when you are stuck and need them. Do not narrate progress with it.
 - When a decision genuinely changes the result and you cannot infer the answer from the code, call \`ask_user\` with 2-4 concrete options and set \`recommend\`. Once per task at most: guessing is better than asking twice.
 - \`ask_user\` does not stop you: keep working with your recommended option and mention the open question in your summary.
+- Something the user must do or know outside this task: \`leave_note\` — a sticky note, not a paragraph.
 - After an answer, call \`suggest\` with 2-4 clickable next steps when they are obvious — the user then continues in one click.
 - When you finish, call \`finish\` with a one-paragraph summary (files changed, what was verified).
 
@@ -324,6 +325,16 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const prior = toApiHistory(req.history, 70000)
   history.push(...prior)
   history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) + langNote })
+  if (req.notes?.length) {
+    // the board the user keeps: hard constraints for this task, not suggestions
+    history.push({
+      role: 'user',
+      content:
+        `[notes from the user — respect them]\n` +
+        req.notes.map((n) => `- ${n.target ? `${n.target}: ` : ''}${n.text}`).join('\n') +
+        `\nTreat these as requirements. If one conflicts with the request, follow the note and say so in your summary.`
+    })
+  }
   if (contextBlock) {
     // insert workspace context as a system-ish user message right before the ask
     history.splice(history.length - 1, 0, { role: 'user', content: `<workspace_context>\n${contextBlock}\n</workspace_context>` })
@@ -574,6 +585,20 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
         deps.emit({ type: 'tool-update', runId: req.runId, call: finished })
         if (outcome.notify) notify(outcome.notify.title, outcome.notify.body, !!outcome.notify.urgent)
+        if (outcome.meta?.note?.text) {
+          deps.emit({
+            type: 'note',
+            runId: req.runId,
+            note: {
+              id: randomUUID(),
+              text: outcome.meta.note.text,
+              target: outcome.meta.note.target,
+              tone: outcome.meta.note.tone ?? 2,
+              createdAt: Date.now(),
+              byAgent: true
+            }
+          })
+        }
 
         if (outcome.diff?.length) {
           deps.emit({ type: 'files-changed', runId: req.runId, paths: outcome.diff.map((d) => d.path) })

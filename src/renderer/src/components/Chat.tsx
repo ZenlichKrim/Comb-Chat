@@ -3,6 +3,7 @@ import { Icon } from './Icon'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
 import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
+import { NotePin, NotesPanel } from './Notes'
 import { useStore, useActiveThread, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
@@ -148,6 +149,8 @@ export function ChatPane(): React.ReactElement {
   }, [messages, pendingApproval])
 
   const steer = useStore((s) => s.steer)
+  const setNotesOpen = useStore((s) => s.setNotesOpen)
+  const notesCount = useStore((s) => s.notes.filter((n) => !n.done).length)
 
   const onScroll = (): void => {
     const el = scrollRef.current
@@ -379,6 +382,22 @@ export function ChatPane(): React.ReactElement {
           </span>
         </div>
       )}
+      {!!contextFiles.length && (
+        <div className="composer-notes">
+          {contextFiles.map((c) => (
+            <span key={`n_${c.id}`} className="ctx-note">
+              <Icon name="sticky" size={9} className="acc" />
+              <span className="ctx-note-file ellipsis">{c.name}</span>
+              <NotePin target={c.rel || c.name} label={c.name} />
+            </span>
+          ))}
+          <span className="t-xs ghost" style={{ alignSelf: 'center' }}>
+            {t('note.pinnedRow')}
+          </span>
+        </div>
+      )}
+
+      <NotesPanel />
 
       <div className="composer-wrap">
         <div className="composer" data-running={running}>
@@ -447,6 +466,10 @@ export function ChatPane(): React.ReactElement {
             <button className="composer-chip" data-tip={t('chat.contextTip')} onClick={() => void setSettings({ autoContext: !settings.autoContext })}>
               <Icon name="layers" size={11} className={settings.autoContext ? 'acc' : 'faint'} />
               {settings.autoContext ? t('chat.contextOn') : t('chat.contextOff')}
+            </button>
+            <button className="composer-chip" data-tip={t('note.chipTip')} data-on={notesCount > 0} onClick={() => setNotesOpen(true)}>
+              <Icon name="sticky" size={11} className={notesCount > 0 ? 'acc' : 'faint'} />
+              {notesCount > 0 ? t('note.chipCount', { n: notesCount }) : t('note.chip')}
             </button>
             <button className="composer-chip" onClick={() => setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')} data-tip={t('chat.terminalTip')}>
               <Icon name="terminal" size={11} />
