@@ -100,6 +100,7 @@ export function ChatPane(): React.ReactElement {
   const [approvalAge, setApprovalAge] = useState(0)
   const [input, setInput] = useState('')
   const [menu, setMenu] = useState(false)
+  const [launcher, setLauncher] = useState(false)
   const queued = useStore((s) => s.queued)
   const dropQueued = useStore((s) => s.dropQueued)
   const [historyIdx, setHistoryIdx] = useState(-1)
@@ -441,6 +442,89 @@ export function ChatPane(): React.ReactElement {
         </div>
       )}
 
+      {launcher && (
+        <div className="launcher" onClick={() => setLauncher(false)}>
+          <div className="launcher-card" onClick={(e) => e.stopPropagation()}>
+            <div className="launcher-head">
+              <Icon name="sparkles" size={10} className="acc" />
+              {t('launcher.title')}
+              <span className="spacer" />
+              <button className="icon-btn" onClick={() => setLauncher(false)} data-tip={t('common.close')}>
+                <Icon name="close" size={11} />
+              </button>
+            </div>
+            <div className="launcher-grid">
+              <button
+                className="launcher-tile"
+                onClick={async () => {
+                  setLauncher(false)
+                  const st = useStore.getState()
+                  const picked = await window.comb.fs.pickFiles()
+                  for (const full of (picked || []).slice(0, 12)) {
+                    const rel = workspace && full.startsWith(workspace) ? full.slice(workspace.length + 1).replace(/\\/g, '/') : full.split(/[\\/]/).pop() || full
+                    try {
+                      const fc = await window.comb.fs.read(full)
+                      st.addContextFile({ id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, kind: 'file', name: rel, rel, path: full, content: fc.content })
+                    } catch {
+                      st.toast('err', t('chat.couldNotRead', { rel }))
+                    }
+                  }
+                }}
+              >
+                <span className="launcher-glyph">
+                  <Icon name="file" size={20} />
+                </span>
+                <span className="launcher-label">{t('launcher.files')}</span>
+                <span className="launcher-sub">{t('launcher.filesSub')}</span>
+              </button>
+              <button
+                className="launcher-tile"
+                onClick={() => {
+                  setLauncher(false)
+                  setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')
+                }}
+                data-on={bottomPanel === 'terminal'}
+              >
+                <span className="launcher-glyph">
+                  <Icon name="terminal" size={20} />
+                </span>
+                <span className="launcher-label">{t('chat.terminal')}</span>
+                <span className="launcher-sub">{t('launcher.terminalSub')}</span>
+              </button>
+              <button
+                className="launcher-tile"
+                onClick={() => {
+                  setLauncher(false)
+                  setNotesOpen(true)
+                }}
+                data-on={notesCount > 0}
+              >
+                <span className="launcher-glyph">
+                  <Icon name="sticky" size={20} />
+                </span>
+                <span className="launcher-label">
+                  {t('note.chip')} {notesCount > 0 ? `· ${notesCount}` : ''}
+                </span>
+                <span className="launcher-sub">{t('launcher.notesSub')}</span>
+              </button>
+              <button
+                className="launcher-tile"
+                onClick={() => {
+                  setLauncher(false)
+                  useStore.setState({ sidebarOpen: !useStore.getState().sidebarOpen })
+                }}
+              >
+                <span className="launcher-glyph">
+                  <Icon name="folder" size={20} />
+                </span>
+                <span className="launcher-label">{t('launcher.project')}</span>
+                <span className="launcher-sub">{t('launcher.projectSub')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <NotesPanel />
 
       <div className="composer-wrap">
@@ -507,12 +591,12 @@ export function ChatPane(): React.ReactElement {
             <div className="composer-menu-wrap">
               <button
                 className="composer-plus"
-                data-on={menu}
+                data-on={launcher}
                 data-tip={t('chat.attachTip')}
                 aria-label={t('chat.attachTip')}
-                onClick={() => setMenu((v) => !v)}
+                onClick={() => setLauncher(true)}
               >
-                <Icon name={menu ? 'close' : 'plus'} size={12} strokeWidth={2} />
+                <Icon name="plus" size={12} strokeWidth={2} />
               </button>
               {menu && (
                 <>
@@ -824,8 +908,12 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
           </div>
         )}
 
+        {/* The work goes first, the answer after it: you read what happened,
+            then what it means. Guards and votes sit under the answer, where a
+            decision you have to make belongs. */}
         <StepNotes tools={msg.tools} live={!!msg.streaming} />
-        {!tools.length && null}
+
+        {hasText && <Markdown text={msg.content} />}
 
         {(msg.guards || []).map((g) => (
           <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />
@@ -848,8 +936,6 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             </div>
           </div>
         )}
-
-        {hasText && <Markdown text={msg.content} />}
 
         {!!msg.suggestions?.length && !msg.streaming && <Suggestions items={msg.suggestions} />}
 

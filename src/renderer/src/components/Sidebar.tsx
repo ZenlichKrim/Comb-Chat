@@ -12,29 +12,45 @@ export function Sidebar(): React.ReactElement {
   const refreshGit = useStore((s) => s.refreshGit)
   const changes = (git?.files.length ?? 0)
 
+  const sidebarOpen = useStore((s) => s.sidebarOpen)
+  // Collapsed the rail keeps working: clicking a section opens the panel again,
+  // so "hide the files" is one click, not a trip to a menu.
+  const pick = (v: 'files' | 'search' | 'git' | 'threads'): void => {
+    if (!sidebarOpen) {
+      useStore.setState({ sidebarSection: v, sidebarOpen: true })
+      return
+    }
+    if (section === v) {
+      useStore.setState({ sidebarOpen: false })
+      return
+    }
+    setSection(v)
+  }
+  const active = (v: string): 'true' | 'false' => (sidebarOpen && section === v ? 'true' : 'false')
+
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" data-open={sidebarOpen}>
       <div className="sb-tabs">
-        <button className="sb-tab" data-active={section === 'files'} onClick={() => setSection('files')} data-tip={t('side.explorer')}>
+        <button className="sb-tab" data-active={active('files')} onClick={() => pick('files')} data-tip={t('side.explorer')}>
           <Icon name="file" size={13} />
         </button>
-        <button className="sb-tab" data-active={section === 'search'} onClick={() => setSection('search')} data-tip={t('side.searchTip')}>
+        <button className="sb-tab" data-active={active('search')} onClick={() => pick('search')} data-tip={t('side.searchTip')}>
           <Icon name="search" size={13} />
         </button>
-        <button className="sb-tab" data-active={section === 'git'} onClick={() => { setSection('git'); void refreshGit() }} data-tip={t('side.sourceControl')}>
+        <button className="sb-tab" data-active={active('git')} onClick={() => { pick('git'); void refreshGit() }} data-tip={t('side.sourceControl')}>
           <Icon name="git" size={13} />
           {changes > 0 && <span className="sb-badge">{changes > 99 ? '99+' : changes}</span>}
         </button>
-        <button className="sb-tab" data-active={section === 'threads'} onClick={() => setSection('threads')} data-tip={t('side.sessionsTip')}>
+        <button className="sb-tab" data-active={active('threads')} onClick={() => pick('threads')} data-tip={t('side.sessionsTip')}>
           <Icon name="chat" size={13} />
         </button>
         <span className="spacer" />
       </div>
-      <div className="sb-body">
-        {section === 'files' && <FileTree />}
-        {section === 'search' && <SearchPanel />}
-        {section === 'git' && <GitPanel />}
-        {section === 'threads' && <ThreadsPanel />}
+      <div className="sb-body" data-open={sidebarOpen}>
+        {sidebarOpen && section === 'files' && <FileTree />}
+        {sidebarOpen && section === 'search' && <SearchPanel />}
+        {sidebarOpen && section === 'git' && <GitPanel />}
+        {sidebarOpen && section === 'threads' && <ThreadsPanel />}
       </div>
     </aside>
   )

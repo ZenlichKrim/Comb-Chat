@@ -120,7 +120,9 @@ export function App(): React.ReactElement {
     <div className="app">
       <TitleBar />
       <div className="app-body">
-        {sidebarOpen && <Sidebar />}
+        {/* The rail stays (four icons), the panel behind it opens and closes and
+            animates its width, so the editor does not jump — it slides. */}
+        <Sidebar />
         <div className="workspace-area">
           <div className="main-split">
             <div className="editor-col" style={{ flex: chatCollapsed ? 1 : splitter }}>

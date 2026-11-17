@@ -4003,3 +4003,122 @@ hr {
 .queued-x:hover {
   color: var(--err);
 }
+
+/* ---------------------------------------------------------------- */
+/* Sidebar: rail always, panel slides                              */
+/* ---------------------------------------------------------------- */
+.sidebar {
+  transition: width 0.18s cubic-bezier(0.3, 0.8, 0.3, 1);
+  overflow: hidden;
+}
+.sidebar[data-open='false'] {
+  width: var(--rail-w);
+}
+.sb-body {
+  transition: opacity 0.12s ease;
+}
+.sb-tabs {
+  border-right: 1px solid transparent;
+}
+
+/* ---------------------------------------------------------------- */
+/* Big launcher: one rounded card with the four places to go         */
+/* ---------------------------------------------------------------- */
+.launcher {
+  position: absolute;
+  inset: 0;
+  z-index: 230;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: color-mix(in oklab, var(--bg-0) 72%, transparent);
+  backdrop-filter: blur(6px);
+  animation: launcher-in 0.16s ease both;
+}
+@keyframes launcher-in {
+  from {
+    opacity: 0;
+  }
+}
+.launcher-card {
+  width: min(560px, 100%);
+  padding: 14px;
+  border-radius: 26px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.75);
+  animation: launcher-rise 0.2s cubic-bezier(0.3, 0.9, 0.3, 1) both;
+}
+@keyframes launcher-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.launcher-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--bg-2);
+  border: 1px solid transparent;
+  text-align: left;
+  transition:
+    transform 0.16s cubic-bezier(0.3, 0.9, 0.3, 1),
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+.launcher-tile:hover {
+  transform: translateY(-2px);
+  background: var(--bg-3);
+  border-color: var(--line-2);
+}
+.launcher-tile:active {
+  transform: translateY(0) scale(0.99);
+}
+.launcher-tile[data-on='true'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.launcher-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--bg-3);
+  color: var(--accent);
+}
+.launcher-tile[data-on='true'] .launcher-glyph {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+}
+.launcher-label {
+  font-size: var(--fs-md);
+  font-weight: 650;
+  color: var(--fg-1);
+}
+.launcher-sub {
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+  line-height: 1.45;
+}
+.launcher-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 12px;
+  color: var(--fg-4);
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}

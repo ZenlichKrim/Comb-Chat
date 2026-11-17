@@ -949,10 +949,17 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
     type: 'function',
     function: {
       name: 'finish',
-      description: 'Call when the task is fully complete. Provide a concise summary of what changed and how it was verified.',
+      description:
+        'Call when the task is fully complete — after the work, never after the plan. Provide a concise summary of what changed and how it was verified.',
       parameters: {
         type: 'object',
-        properties: { summary: { type: 'string' } },
+        properties: {
+          summary: { type: 'string' },
+          work_done: {
+            type: 'boolean',
+            description: 'true only if this run actually changed files or ran commands. false means nothing was done yet.'
+          }
+        },
         required: ['summary']
       }
     }

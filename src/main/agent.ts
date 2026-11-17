@@ -272,8 +272,12 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     beforeState,
     todos,
     onTodos: (t) => {
-      todos = t
-      deps.emit({ type: 'todos', runId: req.runId, todos: t })
+      // The checklist is a promise, not decoration: the first item goes in
+      // immediately as in-progress so the panel shows what is happening now.
+      const [first, ...rest] = t.map((x, i) => (i === 0 && x.status === 'pending' ? { ...x, status: 'in_progress' as const } : x))
+      const marked = first ? [first, ...rest] : t
+      todos = marked
+      deps.emit({ type: 'todos', runId: req.runId, todos: marked })
     },
     approvalPolicy,
     runId: req.runId,
@@ -400,6 +404,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // that fail the same tools with the same arguments are one attempt, repeated.
   const roundSignatures = new Map<string, number>()
   let silentRounds = 0
+  let ranAnyCommand = false
+  let finishRefused = 0
   let loopHits = 0
   let loopNote = '', loopTool = ''
   let verifyStage: 'pending' | 'running' | 'done' | 'failed' = 'pending'
@@ -562,14 +568,15 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           /(сделаю|добавлю|провер[юи]|сейчас|начну|приступаю|исправ|перепиш|установл|создам|I'?ll|let me|now I|starting|going to)/i.test(
             result.content.slice(0, 600)
           )
-        if (stableMode && promisesWork && !touched.size && step < 8 && silentRounds < 2) {
+        if (stableMode && promisesWork && !touched.size && step < 10 && silentRounds < 3) {
           silentRounds++
           history.push({
             role: 'user',
             content:
               '[nothing done yet] You have described what you are going to do, but no file has changed and no command has run. ' +
               'Stop planning out loud and do the first concrete thing now: read the file, run the command, make the edit. ' +
-              'If something truly blocks you, say it in one line and call finish.'
+              'Do not answer with more prose — this turn must contain a tool call. ' +
+              'If something truly blocks you, say what it is in one line and call finish.'
           })
           continue
         }
@@ -735,6 +742,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           deps.emit({ type: 'files-changed', runId: req.runId, paths: outcome.diff.map((d) => d.path) })
         }
 
+        if (call.name === 'run_command' && outcome.ok) ranAnyCommand = true
         const toolContent = outcome.ok
           ? String(outcome.output ?? 'ok')
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
@@ -787,6 +795,28 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
 
         if (outcome.halt) {
+          // "готово" with nothing done is not a finish: it is the failure the user
+          // screenshots. Refuse it once, make it do the work it promised.
+          // the model itself says nothing was done: never show that as a success
+          const claimedNoWork = call.name === 'finish' && args.work_done === false
+          if (claimedNoWork && !touched.size && !ranAnyCommand && finishRefused < 1) {
+            finishRefused++
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'errors',
+              title: 'Не принял «готово»: ничего не изменено',
+              detail: 'Ни одного файла и ни одной команды — прошу сначала сделать шаг.'
+            })
+            history.push({
+              role: 'user',
+              content:
+                '[finish refused] You called finish with work_done=false, so nothing was done. That is not a finished task. ' +
+                'Do the first step of the work you described now — a real tool call — and only then finish. ' +
+                'If you genuinely cannot do it, explain what blocks you in one line and call finish again with work_done=false — and the user will be told the task was not done.'
+            })
+            continue
+          }
           halted = outcome.halt
           break
         }
@@ -932,6 +962,16 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     }
   } finally {
     // How did it end, in one line the user can read from across the room.
+    if (finalReason === 'done' && !touched.size && !ranAnyCommand) {
+      // the model stopped mid-promise: tell the user plainly instead of a green card
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'errors',
+        title: 'Прогон закончился без изменений',
+        detail: 'Агент описал план, но ничего не сделал. Продолжите — он начнёт с первого шага.'
+      })
+    }
     if (finalReason === 'done' && touched.size) {
       deps.emit({
         type: 'guard',
@@ -943,6 +983,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       notify('Задача выполнена', `${touched.size} файл(ов) изменено, ${step} шагов, $${usage.cost.toFixed(4)}`)
     } else if (finalReason === 'guard') {
       notify('Прогон остановлен защитой', 'Смотрите карточку в приложении — там причина.', true)
+    } else if (finalReason === 'done' && !touched.size) {
+      notify('Прогон закончился без изменений', 'Агент описал план, но файлы не тронуты — откройте и продолжите.', true)
     } else if (finalReason === 'error') {
       notify('Прогон упал с ошибкой', 'Смотрите карточку в приложении.', true)
     }
