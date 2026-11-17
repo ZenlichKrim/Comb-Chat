@@ -4024,49 +4024,42 @@ hr {
 /* ---------------------------------------------------------------- */
 /* Big launcher: one rounded card with the four places to go         */
 /* ---------------------------------------------------------------- */
-.launcher {
+.launcher-anchor {
   position: absolute;
   inset: 0;
   z-index: 230;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  background: color-mix(in oklab, var(--bg-0) 72%, transparent);
-  backdrop-filter: blur(6px);
-  animation: launcher-in 0.16s ease both;
-}
-@keyframes launcher-in {
-  from {
-    opacity: 0;
-  }
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0 0 92px 8px;
 }
 .launcher-card {
-  width: min(560px, 100%);
-  padding: 14px;
-  border-radius: 26px;
+  width: min(430px, calc(100% - 16px));
+  padding: 10px;
+  border-radius: 22px;
   background: var(--bg-1);
   border: 1px solid var(--line-2);
-  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.75);
-  animation: launcher-rise 0.2s cubic-bezier(0.3, 0.9, 0.3, 1) both;
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.7);
+  transform-origin: bottom left;
+  animation: launcher-rise 0.16s cubic-bezier(0.3, 0.9, 0.3, 1) both;
 }
 @keyframes launcher-rise {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(6px) scale(0.97);
   }
 }
 .launcher-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 6px;
 }
 .launcher-tile {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  padding: 16px;
+  gap: 6px;
+  padding: 10px 12px;
   border-radius: 20px;
   background: var(--bg-2);
   border: 1px solid transparent;
@@ -4092,9 +4085,9 @@ hr {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 32px;
+  height: 32px;
+  border-radius: 11px;
   background: var(--bg-3);
   color: var(--accent);
 }
@@ -4102,12 +4095,12 @@ hr {
   background: color-mix(in oklab, var(--accent) 26%, transparent);
 }
 .launcher-label {
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   font-weight: 650;
   color: var(--fg-1);
 }
 .launcher-sub {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-2xs);
   color: var(--fg-3);
   line-height: 1.45;
 }
@@ -4121,4 +4114,101 @@ hr {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- */
+/* Sidebar: the handle you can actually find                        */
+/* ---------------------------------------------------------------- */
+.sb-collapse {
+  position: absolute;
+  z-index: 60;
+  top: calc(var(--titlebar-h) + 14px);
+  left: calc(var(--rail-w) + var(--sidebar-w) - 9px);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-3);
+  border: 1px solid var(--line-2);
+  color: var(--fg-3);
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.sidebar:hover ~ .sb-collapse,
+.sb-collapse:hover,
+.sb-collapse:focus-visible {
+  opacity: 1;
+}
+.sb-collapse:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+
+/* the chat/editor seam: a real toggle, centred in the seam */
+.split-toggle {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  color: var(--fg-3);
+  opacity: 0.55;
+  transition: all 0.12s ease;
+  z-index: 5;
+}
+.split-handle:hover .split-toggle,
+.split-toggle:hover {
+  opacity: 1;
+  color: var(--fg-1);
+  border-color: var(--line-3);
+}
+.split-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.split-handle[data-collapsed='true'] .split-toggle {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------- */
+/* Calmer transcript: the ceiling, not a wall of read cards           */
+/* ---------------------------------------------------------------- */
+.read-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 3px 0 6px;
+  border-radius: 7px;
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+  background: transparent;
+}
+.read-card:hover {
+  background: var(--bg-2);
+  color: var(--fg-2);
+}
+.read-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+}
+.read-card-ext {
+  color: var(--fg-4);
 }

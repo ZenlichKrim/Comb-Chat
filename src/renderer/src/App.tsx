@@ -13,6 +13,7 @@ import { Icon } from './components/Icon'
 import { useT } from './lib/i18n'
 
 export function App(): React.ReactElement {
+  const t = useT()
   const ready = useStore((s) => s.ready)
   const boot = useStore((s) => s.boot)
   const sidebarOpen = useStore((s) => s.sidebarOpen)
@@ -123,18 +124,41 @@ export function App(): React.ReactElement {
         {/* The rail stays (four icons), the panel behind it opens and closes and
             animates its width, so the editor does not jump — it slides. */}
         <Sidebar />
+        {/* The way out of the file panel is where it is in every editor: a small
+            chevron on its own edge, at the top. */}
+        {sidebarOpen && (
+          <button
+            className="sb-collapse"
+            onClick={() => useStore.setState({ sidebarOpen: false })}
+            data-tip={t('side.hide')}
+            aria-label={t('side.hide')}
+          >
+            <Icon name="chevron-left" size={9} />
+          </button>
+        )}
         <div className="workspace-area">
           <div className="main-split">
             <div className="editor-col" style={{ flex: chatCollapsed ? 1 : splitter }}>
               <EditorPane />
             </div>
-            <div className="split-handle" onMouseDown={() => setDragging(true)} data-active={dragging}>
+            {/* Dragging anywhere on the seam works; the toggle is a real button
+                with a hover background, not a mystery 4px strip. */}
+            <div
+              className="split-handle"
+              onMouseDown={(e) => {
+                if ((e.target as HTMLElement).closest('.split-toggle')) return
+                setDragging(true)
+              }}
+              data-active={dragging}
+              data-collapsed={chatCollapsed}
+            >
               <button
-                className="collapse-btn"
-                data-tip={chatCollapsed ? 'Show chat' : 'Collapse chat'}
+                className="split-toggle"
+                data-tip={chatCollapsed ? t('chat.showChat') : t('chat.hideChat')}
+                aria-label={chatCollapsed ? t('chat.showChat') : t('chat.hideChat')}
                 onClick={() => setChatCollapsed((v) => !v)}
               >
-                <Icon name={chatCollapsed ? 'chevron-left' : 'chevron-right'} size={9} />
+                <Icon name={chatCollapsed ? 'chevron-left' : 'chevron-right'} size={10} />
               </button>
             </div>
             <div className="chat-col" style={{ flex: chatCollapsed ? 0 : 1 - splitter, display: chatCollapsed ? 'none' : 'flex' }}>

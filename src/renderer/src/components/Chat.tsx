@@ -443,7 +443,7 @@ export function ChatPane(): React.ReactElement {
       )}
 
       {launcher && (
-        <div className="launcher" onClick={() => setLauncher(false)}>
+        <div className="launcher-anchor" onClick={() => setLauncher(false)}>
           <div className="launcher-card" onClick={(e) => e.stopPropagation()}>
             <div className="launcher-head">
               <Icon name="sparkles" size={10} className="acc" />
@@ -472,7 +472,7 @@ export function ChatPane(): React.ReactElement {
                 }}
               >
                 <span className="launcher-glyph">
-                  <Icon name="file" size={20} />
+                  <Icon name="file" size={16} />
                 </span>
                 <span className="launcher-label">{t('launcher.files')}</span>
                 <span className="launcher-sub">{t('launcher.filesSub')}</span>
@@ -486,7 +486,7 @@ export function ChatPane(): React.ReactElement {
                 data-on={bottomPanel === 'terminal'}
               >
                 <span className="launcher-glyph">
-                  <Icon name="terminal" size={20} />
+                  <Icon name="terminal" size={16} />
                 </span>
                 <span className="launcher-label">{t('chat.terminal')}</span>
                 <span className="launcher-sub">{t('launcher.terminalSub')}</span>
@@ -500,7 +500,7 @@ export function ChatPane(): React.ReactElement {
                 data-on={notesCount > 0}
               >
                 <span className="launcher-glyph">
-                  <Icon name="sticky" size={20} />
+                  <Icon name="sticky" size={16} />
                 </span>
                 <span className="launcher-label">
                   {t('note.chip')} {notesCount > 0 ? `· ${notesCount}` : ''}
@@ -515,7 +515,7 @@ export function ChatPane(): React.ReactElement {
                 }}
               >
                 <span className="launcher-glyph">
-                  <Icon name="folder" size={20} />
+                  <Icon name="folder" size={16} />
                 </span>
                 <span className="launcher-label">{t('launcher.project')}</span>
                 <span className="launcher-sub">{t('launcher.projectSub')}</span>
@@ -776,6 +776,21 @@ export function ChatPane(): React.ReactElement {
  * instead of scattered paragraphs. Each row is "what I am doing" with the tool
  * that did it underneath — the shape of the work, not a wall of text.
  */
+/** Reads are one line each: a row of file pills, not a card per file. */
+function ReadCard({ call }: { call: NonNullable<ChatMessage['tools']>[number] }): React.ReactElement {
+  const name = String(call.args?.path || call.args?.rel || '')
+  const short = name.split(/[\\/]/).filter(Boolean).slice(-2).join('/')
+  const ext = short.includes('.') ? short.slice(short.lastIndexOf('.')) : ''
+  return (
+    <span className="read-card" data-tip={name}>
+      <Icon name="file" size={10} className="faint" />
+      <span className="read-card-name">{short.replace(ext, '')}</span>
+      <span className="read-card-ext">{ext}</span>
+      {call.status === 'error' && <Icon name="alert" size={10} className="err" />}
+    </span>
+  )
+}
+
 function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean }): React.ReactElement | null {
   const rows = useMemo(() => {
     const out: { key: string; text: string; tool?: ChatMessage['tools'] extends (infer T)[] | undefined ? T : never }[] = []
@@ -807,11 +822,16 @@ function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean
               </span>
               <div className="step-main">
                 <span className="step-text chat-text">{r.text}</span>
-                {r.tool && (
-                  <div className="step-tool">
-                    <ToolCard call={r.tool as ChatMessage['tools'] extends (infer T)[] | undefined ? T : never} compact />
-                  </div>
-                )}
+                {r.tool &&
+                  (r.tool.name === 'read_file' || r.tool.name === 'grep' || r.tool.name === 'glob' ? (
+                    <div className="step-tool">
+                      <ReadCard call={r.tool} />
+                    </div>
+                  ) : (
+                    <div className="step-tool">
+                      <ToolCard call={r.tool as ChatMessage['tools'] extends (infer T)[] | undefined ? T : never} compact />
+                    </div>
+                  ))}
               </div>
             </div>
           ))}
@@ -822,7 +842,7 @@ function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean
               </span>
               <div className="step-main">
                 <div className="step-tool">
-                  <ToolCard call={t} />
+                  {t.name === 'read_file' || t.name === 'grep' || t.name === 'glob' ? <ReadCard call={t} /> : <ToolCard call={t} />}
                 </div>
               </div>
             </div>
