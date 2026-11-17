@@ -103,7 +103,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          name: Comb Chat v1.0.0 (build ${{ github.run_number }})
+          name: Comb Chat 2.0 (build ${{ github.run_number }})
           draft: false
           prerelease: false
           generate_release_notes: false
@@ -111,12 +111,12 @@ jobs:
             **Comb Chat** — a desktop AI coding agent that runs on your own DeepSeek key.
 
             ### Windows x64
-            - `Comb-Chat-1.0.0-x64.exe` — installer (choose install folder, Start-menu + desktop shortcut)
-            - `Comb-Chat-1.0.0-portable-x64.exe` — single-file portable, nothing to install
+            - `Comb-Chat-2.0.0-x64.exe` — installer (choose install folder, Start-menu + desktop shortcut)
+            - `Comb-Chat-2.0.0-portable-x64.exe` — single-file portable, nothing to install
 
             ### Linux x64
-            - `Comb-Chat-1.0.0-x86_64.AppImage` — `chmod +x` and run
-            - `Comb-Chat-1.0.0-amd64.deb` — `sudo dpkg -i`
+            - `Comb-Chat-2.0.0-x86_64.AppImage` — `chmod +x` and run
+            - `Comb-Chat-2.0.0-amd64.deb` — `sudo dpkg -i`
 
             ### First run
             1. Paste a DeepSeek API key ([get one](https://platform.deepseek.com/api_keys)).
