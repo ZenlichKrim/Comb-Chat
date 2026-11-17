@@ -235,6 +235,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         run.approvals.set(key, (d) => {
           clearTimeout(timer)
           if (d === 'allow-always') {
+            // safety net: whatever the policy loop does next, this tool will not
+            // ask again during this run
             run.autoApproved.add(call.name)
             const tools = Array.from(new Set([...(settings.allowedTools || []), call.name]))
             void setSettings({ allowedTools: tools }).catch(() => undefined)
@@ -372,7 +374,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           continue
         }
 
-        const needsApproval = (req.workspace || fullDisk) && toolNeedsApproval(call.name, approvalPolicy)
+        const needsApproval =
+          (req.workspace || fullDisk) &&
+          toolNeedsApproval(call.name, approvalPolicy, new Set([...(settings.allowedTools || []), ...run.autoApproved]))
         if (needsApproval) {
           view.status = 'awaiting-approval'
           if ((req.workspace || fullDisk) && (call.name === 'write_file' || call.name === 'edit_file' || call.name === 'multi_edit')) {

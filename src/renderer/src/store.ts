@@ -83,11 +83,15 @@ interface State {
   diffPreview: { path: string; rel: string; before: string; after: string; kind: string } | null
   /** file the agent handed over, shown in a preview modal */
   filePreview: { path: string; rel: string; note?: string } | null
+  /** the request currently in flight, shown by the "agent is working" row */
+  lastPrompt: string
   /** model-written one-liners, by absolute path */
   fileSummaries: Record<string, string>
   /** why each file exists, when the agent wrote it and explained itself */
   filePurposes: Record<string, string>
   changedFiles: string[]
+  /** folders we already showed a read error for, so a broken root cannot spam toasts */
+  errorToasted: Record<string, boolean>
   sidebarSection: 'files' | 'search' | 'git' | 'threads'
   commandHistory: string[]
   contextFiles: Attachment[]
@@ -174,9 +178,11 @@ export const useStore = create<State & Actions>((set, get) => ({
   checkpoints: [],
   diffPreview: null,
   filePreview: null,
+  lastPrompt: '',
   fileSummaries: {},
   filePurposes: {},
   changedFiles: [],
+  errorToasted: {},
   sidebarSection: 'files',
   commandHistory: [],
   contextFiles: [],
@@ -274,8 +280,27 @@ export const useStore = create<State & Actions>((set, get) => ({
     const target = dir || root
     try {
       const entries = (await window.comb.fs.list(target)) as DirEntry[]
-      set((s) => ({ dirCache: { ...s.dirCache, [target]: entries } }))
+      set((s) => {
+        const flags = { ...s.errorToasted }
+        delete flags[target]
+        return { dirCache: { ...s.dirCache, [target]: entries }, errorToasted: flags }
+      })
     } catch (e: any) {
+      if (get().workspace !== root) return
+      const missing = /ENOENT|no such file|cannot find/i.test(e?.message || '')
+      if (missing) {
+        // the folder was moved or renamed under us: stop hammering it with requests
+        const state = get()
+        set({ dirCache: { ...state.dirCache, [target]: [] } })
+        if (target === root) {
+          void get().setSettings({ lastWorkspace: null })
+          set({ workspace: null, dirCache: {}, expandedDirs: new Set(), tabs: [] })
+          get().toast('warn', tr('store.folderGone'), root)
+        }
+        return
+      }
+      if (get().errorToasted?.[target]) return
+      set((s) => ({ errorToasted: { ...s.errorToasted, [target]: true } }))
       get().toast('err', tr('store.cannotRead'), e?.message)
     }
   },
@@ -449,6 +474,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       streamingMessageId: assistantMsg.id,
       changedFiles: [],
       pendingApproval: null,
+      lastPrompt: text,
       contextFiles: []
     }))
     get().persistThread(updated)
@@ -492,6 +518,15 @@ export const useStore = create<State & Actions>((set, get) => ({
     const runId = get().approvalRunId
     if (!call || !runId) return
     set({ pendingApproval: null })
+    if (decision === 'allow-always') {
+      // reflect the grant immediately: the list in Settings and future runs read this,
+      // and it has to outlive the app too, so it is written to disk here
+      const tools = Array.from(new Set([...(get().settings.allowedTools || []), call.name]))
+      void get()
+        .setSettings({ allowedTools: tools })
+        .catch(() => set((s) => ({ settings: { ...s.settings, allowedTools: tools } })))
+      get().toast('ok', tr('store.alwaysAllowed'), call.name)
+    }
     await window.comb.agent.approve(runId, call.id, decision)
   },
 

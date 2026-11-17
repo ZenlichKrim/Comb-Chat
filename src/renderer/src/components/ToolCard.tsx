@@ -211,8 +211,12 @@ function ApprovalInline({ call }: { call: ToolResultView }): React.ReactElement 
         <button className="btn primary sm" onClick={() => void approve('allow')}>
           <Icon name="check" size={11} /> {t('tool.allow')} <kbd style={{ opacity: 0.6 }}>↵</kbd>
         </button>
-        <button className="btn sm" onClick={() => void approve('allow-always')}>
-          {t('tool.alwaysAllow', { tool: call.name })}
+        <button
+          className="btn sm"
+          data-tip={t('tool.alwaysAllow', { tool: call.name })}
+          onClick={() => void approve('allow-always')}
+        >
+          {t('tool.alwaysShort')}
         </button>
         <button className="btn danger sm" onClick={() => void approve('deny')}>
           {t('tool.deny')}

@@ -1456,7 +1456,18 @@ a.code-ref code {
 .approval-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
+}
+/* "Always allow run_command" is long: let it wrap instead of pushing "Deny" off the card */
+.approval-actions > .btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-actions > .spacer {
+  flex: 1 0 0;
 }
 
 /* drag & drop veil */
@@ -1529,6 +1540,10 @@ a.code-ref code {
   font-variant-numeric: tabular-nums;
   min-width: 34px;
   text-align: right;
+}
+.thinking-goal {
+  max-width: 42%;
+  opacity: 0.75;
 }
 .composer-estimate {
   display: flex;

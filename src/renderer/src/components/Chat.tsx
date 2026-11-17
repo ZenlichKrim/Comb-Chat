@@ -92,6 +92,8 @@ export function ChatPane(): React.ReactElement {
   const bottomPanel = useStore((s) => s.bottomPanel)
 
   const activity = useStore((s) => s.activity)
+  const lastPrompt = useStore((s) => s.lastPrompt)
+  const changedFiles = useStore((s) => s.changedFiles)
   const [elapsed, setElapsed] = useState(0)
   const [approvalAge, setApprovalAge] = useState(0)
   const [input, setInput] = useState('')
@@ -305,9 +307,17 @@ export function ChatPane(): React.ReactElement {
             {running && (
               <div className="thinking-row">
                 <span className="spinner" />
-                <span className="faint t-xs">
+                <span className="faint t-xs ellipsis" style={{ minWidth: 0 }}>
                   {activity ? `${t('chat.stepLabel', { n: activity.step })} · ${activity.label}` : t('chat.working')}
                 </span>
+                {lastPrompt && (
+                  <span className="faint t-xs ellipsis thinking-goal" title={lastPrompt}>
+                    ← {lastPrompt}
+                  </span>
+                )}
+                {changedFiles.length > 0 && (
+                  <span className="pill acc t-xs">{t('chat.filesTouched', { n: changedFiles.length })}</span>
+                )}
                 {activity && <span className="faint t-xs tabular">{elapsed}s</span>}
               </div>
             )}

@@ -368,6 +368,33 @@ async function toolGrep(args: Record<string, any>, ctx: ToolContext): Promise<To
 }
 
 /** Run a shell command, capturing output. Interactive commands get a timeout. */
+/* ------------------------------------------------------------------ */
+/* Command output decoding                                             */
+/* ------------------------------------------------------------------ */
+
+const CP866_HIGH =
+  'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюяЁё░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀рстуфхцчшщъыьэюяЁёЄєЇїЎў°∙·√№¤■\u00a0'
+
+/**
+ * Windows' cmd.exe writes in the OEM code page (866 for Russian, 850/437 for
+ * others), so Cyrillic file names arrive as "ЁюфхЁ" garbage. Recover them by
+ * mapping the high bytes through CP866 when the text is not valid UTF-8 anyway.
+ */
+export function decodeCommandOutput(buf: Buffer): string {
+  if (process.platform !== 'win32') return buf.toString('utf8')
+  const utf8 = buf.toString('utf8')
+  if (!utf8.includes('\ufffd')) return utf8
+  let out = ''
+  for (const b of buf) {
+    if (b < 0x80) out += String.fromCharCode(b)
+    else {
+      const idx = b - 0x80
+      out += idx < CP866_HIGH.length ? CP866_HIGH[idx] : '\ufffd'
+    }
+  }
+  return out
+}
+
 export async function runCommand(
   command: string,
   cwd: string,
@@ -385,9 +412,12 @@ export async function runCommand(
         maxBuffer: 8 * 1024 * 1024,
         shell,
         env: { ...process.env, GIT_PAGER: 'cat', PAGER: 'cat', CI: '1', TERM: 'dumb', NO_COLOR: '1', FORCE_COLOR: '0' },
-        windowsHide: true
+        windowsHide: true,
+        encoding: 'buffer'
       },
-      (err, stdout, stderr) => {
+      (err, stdoutBuf, stderrBuf) => {
+        const stdout = Buffer.isBuffer(stdoutBuf) ? decodeCommandOutput(stdoutBuf) : String(stdoutBuf || '')
+        const stderr = Buffer.isBuffer(stderrBuf) ? decodeCommandOutput(stderrBuf) : String(stderrBuf || '')
         const code = (err as any)?.code ?? 0
         const out = `${stdout || ''}${stderr ? (stdout ? '\n' : '') + stderr : ''}`.replace(/\u001b\[[0-9;]*m/g, '')
         const timedOut = (err as any)?.killed
@@ -773,9 +803,21 @@ export const READ_ONLY_TOOLS = new Set(['read_file', 'list_dir', 'glob', 'grep',
 export const DESTRUCTIVE_TOOLS = new Set(['run_command', 'delete_path', 'move_path'])
 export const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit', 'delete_path', 'move_path'])
 
-export function toolNeedsApproval(name: string, policy: 'ask' | 'auto-edit' | 'yolo'): boolean {
+/**
+ * Does this tool call need a human before it runs?
+ *
+ * `granted` holds tool names the user already allowed with "always" (persisted in
+ * Settings → Agent). It is checked here, not only inside the approval request:
+ * a surface that never asks would otherwise silently ignore the grant.
+ */
+export function toolNeedsApproval(
+  name: string,
+  policy: 'ask' | 'auto-edit' | 'yolo',
+  granted?: Iterable<string> | Set<string>
+): boolean {
   if (policy === 'yolo') return false
   if (READ_ONLY_TOOLS.has(name)) return false
+  if (granted && [...granted].includes(name)) return false
   if (policy === 'auto-edit') return DESTRUCTIVE_TOOLS.has(name)
   // ask policy
   if (MUTATING_TOOLS.has(name)) return true

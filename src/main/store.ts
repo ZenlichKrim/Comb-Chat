@@ -46,6 +46,11 @@ export async function getSettings(): Promise<Settings> {
   const stored = await readJson<Settings>(file, DEFAULTS)
   // merge defaults for keys added in later versions
   settingsCache = { ...DEFAULTS, ...stored }
+  // arrays must not be frozen references to DEFAULTS: patching one grant would
+  // otherwise mutate the defaults for the whole process
+  settingsCache.allowedTools = [...(stored.allowedTools || DEFAULTS.allowedTools)]
+  settingsCache.extraRoots = [...(stored.extraRoots || DEFAULTS.extraRoots)]
+  settingsCache.recentWorkspaces = [...(stored.recentWorkspaces || [])]
   // deepseek-chat / deepseek-reasoner were retired by the API on 2026-07-24
   const legacy: Record<string, string> = {
     'deepseek-chat': 'deepseek-flash',
