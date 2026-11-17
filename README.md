@@ -94,11 +94,12 @@ Settings → Agent, every run behaves itself:
   there were, at which step, in which tool.
 - **Continue without you.** Hitting the step budget mid-task is a pause, not a failure: the run resumes itself up to
   three times, so a long job does not die at step 40 while you are away.
-- **The agent talks while it works.** Every turn it writes one or two sentences in plain prose — what it understood,
-  what it is about to do and why — and they stay in the transcript above the tool cards, so a run reads like a
-  colleague working next to you instead of "asked → five diffs". If the model goes silent and fires tools anyway, it is
-  asked for the missing sentence before the tools run. The live status line names the actual target too:
-  "правит · src/main/agent.ts", not just "работает".
+- **The agent talks while it works — and is not rationed.** Its commentary stays in the transcript above the tool cards,
+  so a run reads like a colleague working next to you instead of "asked → five diffs". The prompt asks for its own
+  read on the code, the approach and the project, in whatever length the thought needs; it forbids status reports
+  ("сейчас прочитаю файл, потом внесу правку"), not length. If the model goes silent and fires tools anyway, it is
+  reminded to speak before the tools run — reminded, never told what to say. The live status line names the actual
+  target too: "правит · src/main/agent.ts", not just "работает".
 - **The network does not kill a run.** A dropped socket, a reset connection, a 429 or a 5xx is retried up to six
   times with real backoff (1.5 s → 24 s, jittered, honouring `Retry-After`), and the transcript says so instead of
   freezing: "Переподключаюсь · попытка 2 из 6". A stream that dies halfway is **not** accepted as an answer — it used
