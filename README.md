@@ -39,7 +39,8 @@ persisted. A Russian-locale system starts in Russian automatically. The agent al
 | **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
 | **File preview** — "Reading file · name.ext", why it exists, wide actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
 | **Stable runs** — guard notes: verification, cost, end-of-run digest<br>![](docs/screenshots/ru-25-stable-vote.png) | **Vote card** — a non-blocking question, one option is the agent's own pick<br>![](docs/screenshots/ru-26-vote-card.png) |
-| **Stability settings** — verification command, cost limit, notifications<br>![](docs/screenshots/ru-27-stable-settings.png) | |
+| **Stability settings** — verification command, cost limit, notifications<br>![](docs/screenshots/ru-27-stable-settings.png) | **Step narration** — what the agent is doing, in words, above its tool cards<br>![](docs/screenshots/ru-31-step-notes.png) |
+| **Notes board** — clarifications for a run in progress<br>![](docs/screenshots/ru-28-notes-board.png) | **Reconnecting** — a dropped socket retried mid-step, not a dead run<br>![](docs/screenshots/ru-30-reconnect.png) |
 
 ## Download
 
@@ -93,6 +94,11 @@ Settings → Agent, every run behaves itself:
   there were, at which step, in which tool.
 - **Continue without you.** Hitting the step budget mid-task is a pause, not a failure: the run resumes itself up to
   three times, so a long job does not die at step 40 while you are away.
+- **The agent talks while it works.** Every turn it writes one or two sentences in plain prose — what it understood,
+  what it is about to do and why — and they stay in the transcript above the tool cards, so a run reads like a
+  colleague working next to you instead of "asked → five diffs". If the model goes silent and fires tools anyway, it is
+  asked for the missing sentence before the tools run. The live status line names the actual target too:
+  "правит · src/main/agent.ts", not just "работает".
 - **The network does not kill a run.** A dropped socket, a reset connection, a 429 or a 5xx is retried up to six
   times with real backoff (1.5 s → 24 s, jittered, honouring `Retry-After`), and the transcript says so instead of
   freezing: "Переподключаюсь · попытка 2 из 6". A stream that dies halfway is **not** accepted as an answer — it used

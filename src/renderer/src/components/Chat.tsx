@@ -544,6 +544,37 @@ export function ChatPane(): React.ReactElement {
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * What the agent said while it worked, one line per turn, right where the tools
+ * are. Without this the transcript reads "user asked → five file diffs", which is
+ * exactly the black box the user complained about.
+ */
+function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean }): React.ReactElement | null {
+  const groups = useMemo(() => {
+    const out: { key: string; text: string; tools: number }[] = []
+    for (const tool of tools || []) {
+      const line = typeof tool.args?.note === 'string' ? tool.args.note.trim() : ''
+      if (line) out.push({ key: tool.id, text: line, tools: 0 })
+      else if (out.length) out[out.length - 1].tools++
+      else out.push({ key: `${tool.id}-quiet`, text: '', tools: 1 })
+    }
+    return out
+  }, [tools])
+  const spoken = groups.filter((g) => g.text)
+  if (!spoken.length) return null
+  return (
+    <div className="step-notes">
+      {spoken.map((g, i) => (
+        <div className="step-note" key={g.key} style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}>
+          <span className="step-note-dot" />
+          <span className="step-note-text chat-text">{g.text}</span>
+        </div>
+      ))}
+      {live && <span className="step-note-caret" />}
+    </div>
+  )
+}
+
 function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean; index: number }): React.ReactElement {
   const t = useT()
   const [showReasoning, setShowReasoning] = useState(false)
@@ -608,6 +639,8 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             {showReasoning && <div className="reasoning-body chat-text">{msg.reasoning}</div>}
           </div>
         )}
+
+        <StepNotes tools={msg.tools} live={!!msg.streaming} />
 
         {tools.map((t) => (t.name === 'ask_user' && msg.vote?.id !== t.id ? <ToolCard key={t.id} call={t} /> : t.name === 'ask_user' ? null : <ToolCard key={t.id} call={t} />))}
 

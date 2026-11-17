@@ -3699,3 +3699,57 @@ hr {
 .spin-slow {
   animation: spin-slow 2.4s linear infinite;
 }
+
+/* step narration: what the agent said while it worked, above its tool cards */
+.step-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+.step-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding-left: 2px;
+  animation: step-note-in 0.22s ease both;
+}
+.step-note-dot {
+  margin-top: 7px;
+  width: 3px;
+  height: 3px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--accent, #e8b04b);
+  opacity: 0.75;
+}
+.step-note-text {
+  font-size: var(--fs-sm);
+  color: var(--text-dim, #b9b3a6);
+  line-height: 1.55;
+}
+.step-note-text p {
+  margin: 0;
+}
+.step-note-text p + p {
+  margin-top: 4px;
+}
+.step-note-caret {
+  width: 6px;
+  height: 12px;
+  margin-left: 11px;
+  border-radius: 2px;
+  background: var(--accent, #e8b04b);
+  animation: caret-blink 1.1s steps(2, start) infinite;
+}
+@keyframes step-note-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+@keyframes caret-blink {
+  50% {
+    opacity: 0.15;
+  }
+}

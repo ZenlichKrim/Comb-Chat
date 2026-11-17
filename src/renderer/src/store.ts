@@ -671,7 +671,7 @@ export const useStore = create<State & Actions>((set, get) => ({
         set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
         break
       case 'tool-call':
-        set({ activity: { step: get().activity?.step || 1, label: activityLabel(e.call.name), since: Date.now() } })
+        set({ activity: { step: get().activity?.step || 1, label: activityLabel(e.call.name, e.call.args), since: Date.now() } })
         updateAssistant((m) => {
           const tools = m.tools || []
           const exists = tools.some((t) => t.id === e.call.id)
@@ -1033,8 +1033,19 @@ export function applyTheme(s: Settings): void {
   window.comb?.window?.setTheme(s.theme, s.accent)
 }
 
+/** What a step is actually touching: a file, a command, a folder. */
+function activityTarget(args?: Record<string, any>): string {
+  if (!args) return ''
+  const raw = args.path ?? args.file ?? args.rel ?? args.target ?? args.pattern ?? args.query ?? args.command ?? ''
+  const s = String(raw || '').trim().replace(/\s+/g, ' ')
+  if (!s) return ''
+  const short = s.length > 48 ? `${s.slice(0, 47)}…` : s
+  return short
+}
+
 /** Human label for the live status line: what the agent is doing right now. */
-export function activityLabel(tool: string): string {
+export function activityLabel(tool: string, args?: Record<string, any>): string {
+  const target = activityTarget(args)
   const map: Record<string, DictKey> = {
     read_file: 'tool.read',
     write_file: 'tool.write',
@@ -1054,7 +1065,8 @@ export function activityLabel(tool: string): string {
     finish: 'chat.stepDone',
     attach_file: 'tool.attach_file'
   }
-  return map[tool] ? tr(map[tool]) : tool
+  const label = map[tool] ? tr(map[tool]) : tool
+  return target && !['finish', 'suggest', 'ask_user'].includes(tool) ? `${label} · ${target}` : label
 }
 
 export function formatCost(n: number): string {

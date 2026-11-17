@@ -150,8 +150,17 @@ The user has not opened a folder. You cannot read or write files. Answer questio
 ${toolsGuide}
 ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFiles.map((f) => `- ${f}`).join('\n')}` : ''}
 
+# How you talk
+- You are a colleague working next to the user, not a mute tool. Say what you are doing and why, in one or two sentences, as you go: "Смотрю, как сейчас устроен стор — от него зависит вся панель" then the tool call. Silence is the most common complaint about agents.
+- The first turn of a task is a message, not a diff: one or two sentences about what you understood and what you are going to do, then the tools. The user wrote to you and expects an answer, not just a changed file.
+- Every reply starts with substance: answer the user's question in a sentence before you touch anything, even if the task is obvious to you. If they wrote a message, they get an answer in words — not just files.
+- Narration is not a plan dump: no headings, no bullet lists of steps, no "I will now proceed to". One thought, the way a colleague talks over the shoulder.
+- When you learn something interesting about the project — how it is put together, what is fragile, what you would do differently — say it in a sentence. The user wants to understand what you think of the project, not only that the files changed.
+- Do not narrate trivia: the transcript already shows each tool call. Say the non-obvious part (why, what you expect, what surprised you) and move.
+- On a long run: a short line every couple of steps keeps the user oriented while they are away.
+
 # How you work
-- Act, don't narrate. Make the change instead of describing what you would change. Only ask questions when a real fork in the road blocks you.
+- Make the change instead of describing what you would change. Only ask questions when a real fork in the road blocks you.
 - Match the existing code style exactly: indentation, quotes, naming, error handling, comment density. Read neighbouring files first.
 - Keep diffs minimal. Do not reformat, rename or "improve" unrelated code. Never delete functionality you were not asked to touch.
 - Keep replies short and dense. Use markdown, code blocks with a language tag, and file references like \`src/app.ts:42\`. No emoji unless the user uses them first.
@@ -393,6 +402,25 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     })
   }
 
+  /**
+   * Keep the user in the loop without a round trip: while the agent is working,
+   * a line about what it is doing and why. Silent runs are the top complaint —
+   * "he just starts touching files and says nothing".
+   */
+  let nudges = 0
+  const MAX_NUDGES = 4
+  const narrate = (): void => {
+    history.push({
+      role: 'user',
+      content:
+        `[checked in, step ${step}] The user cannot see why you are doing what you are doing.\n` +
+        '- Write one or two sentences of plain prose to the user BEFORE your next tool call: what you understood from the request, what you are about to do and why.\n' +
+        '- No headings, no lists, no restating the plan — one thought, the way a colleague talks over the shoulder.\n' +
+        '- If nothing useful can be said (the call is mechanical), say the one thing that is not obvious, then call the tool.\n' +
+        '- Never answer with silence in the same turn as a tool call.'
+    })
+  }
+
   /** desktop ping, rate-limited so a long run does not become a notification mill */
   const notify = (title: string, body: string, urgent = false): void => {
     if (settings.notifyDesktop === false) return
@@ -447,6 +475,18 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           : undefined
       }
       history.push(assistantMsg)
+
+      // A turn that fires tools without a single word of prose reads as a black
+      // box: the user sees files being edited and no idea why. Ask for the
+      // missing sentence instead of accepting the silence — a few times per run,
+      // so the fix does not turn into a ping-pong of round trips.
+      const bookkeeping = new Set(['todo_write', 'finish', 'suggest', 'notify_user', 'leave_note', 'attach_file'])
+      const realCalls = result.toolCalls.filter((c) => !bookkeeping.has(c.name)).length > 0
+      if (!result.content.trim() && realCalls && nudges < MAX_NUDGES) {
+        nudges++
+        narrate()
+        continue
+      }
 
       if (!result.toolCalls.length) {
         // no more tools: if the message is empty and we have budget, nudge once
