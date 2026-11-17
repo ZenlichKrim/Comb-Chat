@@ -144,18 +144,27 @@ export async function executeTool(
           }
         }
       case 'ask_user':
-        // a real vote, not a bare question: the renderer shows it as pickable cards
-        // and the answer comes back as the next user message
+        // A non-blocking vote: the question is shown as pickable cards while the
+        // run continues. The loop decides what to do with a missing answer.
         return {
           ok: true,
-          output: `Question sent to the user (they will answer in the app): ${args.question || ''}`,
+          output: `Question shown to the user: ${args.question || ''}${args.recommend ? ` (your default: ${args.recommend})` : ''}`,
           meta: { question: args.question, options: args.options },
-          notify: {
-            title: String(args.title || 'Нужно ваше решение'),
-            body: String(args.question || ''),
-            urgent: true
-          },
-          halt: ctx.approvalPolicy === 'yolo' ? undefined : 'done'
+          notify:
+            args.quiet === true
+              ? undefined
+              : {
+                  title: String(args.title || 'Нужно ваше решение'),
+                  body: String(args.question || ''),
+                  urgent: false
+                }
+        }
+      case 'suggest':
+        // Follow-up chips under the answer: one click starts the next task.
+        return {
+          ok: true,
+          output: `Suggested: ${(args.options || []).join(' | ')}`,
+          meta: { suggestions: (Array.isArray(args.options) ? args.options : []).slice(0, 4) }
         }
       case 'attach_file':
         return await toolAttachFile(args, ctx)
@@ -825,7 +834,7 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
     function: {
       name: 'ask_user',
       description:
-        'Ask the user to choose between concrete options when a decision genuinely changes the outcome. The app shows it as a vote with buttons, so phrase the options as things the user can pick, not as prose. Use it sparingly — at most once per run, and never for something you can decide yourself.',
+        'Ask the user for a decision you cannot make for them — a product choice, a taste call, missing knowledge ("which particles should I use? are we adding particles at all?"), or a permission to do something surprising. It does NOT block the run: the question appears as cards and you keep working with your recommended option if nobody answers in time. Phrase options as short pickable answers. Never use it for things you can settle by reading the code, and never twice in a row.',
       parameters: {
         type: 'object',
         properties: {
@@ -833,11 +842,36 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
           options: {
             type: 'array',
             items: { type: 'string' },
-            description: '2-4 short, concrete options. Do not include "something else" — the user can always type their own answer.'
+            description:
+              '2-4 short concrete answers, starting with the default you would pick ("Да, делаю", "Нет, не надо", …). Do not add "something else" — the user can always type their own.'
           },
-          recommend: { type: 'string', description: 'The option you would pick yourself, verbatim from the list' }
+          recommend: { type: 'string', description: 'The option you will go with if the user stays silent, verbatim from the list' },
+          waitSeconds: {
+            type: 'number',
+            description: 'How long to hold before continuing with `recommend` (15-180, default 90). Use a larger value when the answer really matters.'
+          },
+          quiet: { type: 'boolean', description: 'true = do not ring the desktop, just show the card (for a low-stakes question)' }
         },
         required: ['question', 'options']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'suggest',
+      description:
+        'Offer follow-up actions as clickable chips under your answer — the user clicks one and it becomes their next request. Use it when a natural next step exists, so the user does not have to type it. Never more than 4, never generic filler.',
+      parameters: {
+        type: 'object',
+        properties: {
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '2-4 imperative follow-ups, in the interface language, e.g. "Добавить тесты на этот экран"'
+          }
+        },
+        required: ['options']
       }
     }
   },

@@ -241,6 +241,7 @@ export type ToolName =
   | 'move_path'
   | 'todo_write'
   | 'ask_user'
+  | 'suggest'
   | 'notify_user'
   | 'finish'
 
@@ -280,6 +281,10 @@ export interface AgentVote {
   recommend?: string
   /** filled in once the user picks or types an answer */
   answer?: string
+  /** true when the run moved on with `recommend` because nobody answered */
+  auto?: string
+  /** false once the agent is already past it and the answer only adjusts the plan */
+  live?: boolean
 }
 
 export interface FileDiff {
@@ -349,6 +354,8 @@ export interface ChatMessage {
   guards?: { id: string; kind: string; title: string; detail?: string }[]
   /** an open/answered question from the agent */
   vote?: AgentVote
+  /** clickable follow-ups offered by the agent */
+  suggestions?: string[]
   error?: string
   stopped?: boolean
 }
@@ -395,6 +402,14 @@ export type AgentEvent =
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
   | {
+      /** the vote timed out: the run went ahead with the model's own pick */
+      type: 'vote-auto'
+      runId: string
+      voteId: string
+      answer: string
+      detail?: string
+    }
+  | {
       type: 'notify'
       runId: string
       title: string
@@ -404,7 +419,7 @@ export type AgentEvent =
   | {
       type: 'guard'
       runId: string
-      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done'
+      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done' | 'steer'
       /** short headline for the transcript */
       title: string
       detail?: string
@@ -527,6 +542,10 @@ export interface CombApi {
   agent: {
     run(req: RunRequest): Promise<{ ok: boolean; error?: string }>
     stop(runId: string): Promise<void>
+    /** answer an open question while the run is still going */
+    vote(runId: string, voteId: string, answer: string): Promise<unknown>
+    /** drop a correction into the running agent's context */
+    steer(runId: string, note: string): Promise<unknown>
     approve(runId: string, callId: string, decision: 'allow' | 'allow-always' | 'deny', editedArgs?: Record<string, any>): Promise<void>
     onEvent(cb: (e: AgentEvent) => void): () => void
     testKey(apiKey: string, baseUrl: string): Promise<{ ok: boolean; message: string; models?: string[] }>

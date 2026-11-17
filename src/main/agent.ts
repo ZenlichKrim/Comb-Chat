@@ -30,6 +30,25 @@ interface ActiveRun {
   controller: AbortController
   approvals: Map<string, (d: 'allow' | 'allow-always' | 'deny') => void>
   autoApproved: Set<string>
+  /** open questions the user may still answer; answered ones land here as promises */
+  votes: Map<string, (answer: string) => void>
+}
+
+/** Votes whose default option already fired: a late reply still reaches the model. */
+const answeredVotes = new Map<string, string>()
+
+/** Notes the user typed while the agent was working, keyed by run. */
+const steerNotes = new Map<string, string[]>()
+
+/**
+ * The user typed while a run was in flight ("перестань трогать sidebar, правь
+ * только header"). The agent does not stop: the note is dropped into its context
+ * before the next round, which is what a person would do mid-conversation.
+ */
+export function steerRun(runId: string, note: string): void {
+  const list = steerNotes.get(runId) || []
+  list.push(note.slice(0, 2000))
+  steerNotes.set(runId, list.slice(-5))
 }
 
 const active = new Map<string, ActiveRun>()
@@ -39,8 +58,26 @@ export function stopRun(runId: string): void {
   if (run) {
     for (const [, fn] of run.approvals) fn('deny')
     run.approvals.clear()
+    run.votes.clear()
     run.controller.abort()
   }
+}
+
+/**
+ * The user picked an option (or typed their own answer) for a question the agent
+ * asked. The vote never blocks the run, so this may arrive after the default was
+ * already used — in that case the answer is queued for the model instead.
+ */
+export function answerVote(runId: string, voteId: string, answer: string): void {
+  const run = active.get(runId)
+  const fn = run?.votes.get(voteId)
+  if (fn && run) {
+    run.votes.delete(voteId)
+    fn(answer)
+    return
+  }
+  answeredVotes.set(voteId, answer)
+  if (answeredVotes.size > 40) answeredVotes.delete(answeredVotes.keys().next().value as string)
 }
 
 export function resolveApproval(runId: string, callId: string, decision: 'allow' | 'allow-always' | 'deny'): void {
@@ -121,6 +158,8 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 - If a tool fails, read the error, fix the cause, try once more — do not repeat the identical failing call.
 - Long task, user may be away: call \`notify_user\` once when you are done or when you are stuck and need them. Do not narrate progress with it.
 - When a decision genuinely changes the result and you cannot infer the answer from the code, call \`ask_user\` with 2-4 concrete options and set \`recommend\`. Once per task at most: guessing is better than asking twice.
+- \`ask_user\` does not stop you: keep working with your recommended option and mention the open question in your summary.
+- After an answer, call \`suggest\` with 2-4 clickable next steps when they are obvious — the user then continues in one click.
 - When you finish, call \`finish\` with a one-paragraph summary (files changed, what was verified).
 
 # Safety
@@ -198,7 +237,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const run: ActiveRun = {
     controller: new AbortController(),
     approvals: new Map(),
-    autoApproved: new Set(settings.allowedTools || [])
+    autoApproved: new Set(settings.allowedTools || []),
+    votes: new Map()
   }
   active.set(req.runId, run)
   const { signal } = run.controller
@@ -454,6 +494,26 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           continue
         }
 
+        // A vote never stalls the work: the run waits a short while for the user,
+        // then proceeds with the option the model itself prefers. A late answer is
+        // still delivered, as a note the model sees on its next round.
+        let voteWait: Promise<string | null> | null = null
+        if (call.name === 'ask_user') {
+          const opts: string[] = Array.isArray(args.options) ? args.options.map(String).slice(0, 4) : []
+          const preferred = String(args.recommend || opts[0] || 'yes')
+          voteWait = new Promise<string | null>((resolve) => {
+            const timer = setTimeout(() => {
+              run.votes.delete(call.id)
+              resolve(null)
+            }, Math.max(15, Number(args.waitSeconds) || 90) * 1000)
+            run.votes.set(call.id, (answer) => {
+              clearTimeout(timer)
+              resolve(answer)
+            })
+          })
+          ;(args as any).__default = preferred
+        }
+
         const needsApproval =
           (req.workspace || fullDisk) &&
           toolNeedsApproval(call.name, approvalPolicy, new Set([...(settings.allowedTools || []), ...run.autoApproved]))
@@ -524,7 +584,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
         history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: toolContent.slice(0, 30000) })
 
-        if (call.name === 'ask_user' && outcome.ok) notifiedVote = true
+        if (call.name === 'ask_user' && outcome.ok) {
+          notifiedVote = true
+          const preferred = String((args as any).__default || '')
+          const picked = voteWait ? await voteWait : null
+          const answer = picked || preferred
+          if (picked) {
+            // replace the tool result so the model works with what the user chose
+            history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: `The user answered: ${picked}` })
+          } else {
+            deps.emit({
+              type: 'vote-auto',
+              runId: req.runId,
+              voteId: call.id,
+              answer: preferred,
+              detail: 'никто не ответил — взят вариант, который агент считает лучшим'
+            })
+            history.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              name: call.name,
+              content: `No answer yet. Proceeding with your recommended option: ${answer}. Mention it in your summary so the user can still correct you.`
+            })
+          }
+        }
 
         if (outcome.halt) {
           halted = outcome.halt
@@ -590,6 +673,32 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
       }
 
+      // The user typed mid-run: their words arrive before the next round, so a
+      // correction actually changes what happens next.
+      const notes = steerNotes.get(req.runId)
+      if (notes?.length) {
+        steerNotes.delete(req.runId)
+        deps.emit({ type: 'guard', runId: req.runId, kind: 'steer', title: notes.join(' · ').slice(0, 200) })
+        history.push({
+          role: 'user',
+          content: `[from the user, mid-run] ${notes.join('\n')}\nFollow this immediately — it overrides earlier instructions where they conflict.`
+        })
+      }
+
+      // A user can answer a question after the agent already moved on: hand those
+      // answers to the model at the start of the next round so it can adapt.
+      if (answeredVotes.size) {
+        const late = [...answeredVotes.entries()]
+        answeredVotes.clear()
+        history.push({
+          role: 'user',
+          content:
+            `[late answers] The user answered questions you had already proceeded past:\n` +
+            late.map(([id, a]) => `- ${id}: ${a}`).join('\n') +
+            `\nAdapt your plan to these answers if they change anything.`
+        })
+      }
+
       // nudge toward a plan for long tasks
       if (step === 2 && req.workspace && !todos.length && req.maxSteps > 4) {
         history.push({
@@ -649,6 +758,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           .join('\n')
       })
     }
+    steerNotes.delete(req.runId)
     active.delete(req.runId)
     deps.emit({ type: 'usage', runId: req.runId, usage })
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })

@@ -67,6 +67,8 @@ const api = {
   agent: {
     run: (req: unknown) => ipcRenderer.invoke('agent:run', req),
     stop: (runId: string) => ipcRenderer.invoke('agent:stop', runId),
+    vote: (runId: string, voteId: string, answer: string) => ipcRenderer.invoke('agent:vote', runId, voteId, answer),
+    steer: (runId: string, note: string) => ipcRenderer.invoke('agent:steer', runId, note),
     approve: (runId: string, callId: string, decision: string, editedArgs?: unknown) =>
       ipcRenderer.invoke('agent:approve', runId, callId, decision, editedArgs),
     onEvent: (cb: (e: unknown) => void) => on('agent:event', cb),

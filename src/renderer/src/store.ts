@@ -129,6 +129,10 @@ interface Actions {
   stopRun: () => Promise<void>
   /** answer an agent question: records the pick and starts the next turn */
   answerVote: (answer: string) => Promise<void>
+  /** answer while the run is still in flight */
+  answerLiveVote: (voteId: string, answer: string) => Promise<void>
+  /** say something to the running agent without stopping it */
+  steer: (text: string) => Promise<void>
   approve: (decision: 'allow' | 'allow-always' | 'deny') => Promise<void>
   handleEvent: (e: AgentEvent) => void
   refreshGit: () => Promise<void>
@@ -524,6 +528,39 @@ export const useStore = create<State & Actions>((set, get) => ({
     }
   },
 
+  steer: async (text: string) => {
+    const runId = get().runId
+    const threadId = get().activeThreadId
+    if (!runId || !threadId) return
+    // show it in the transcript as a message from the user: they said it, and it
+    // should be part of the record even though the agent was already running
+    const msg: ChatMessage = { id: uid('m'), role: 'user', content: text, createdAt: Date.now() }
+    set((s) => ({
+      threads: s.threads.map((t) => (t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t))
+    }))
+    await window.comb.agent.steer(runId, text)
+  },
+
+  answerLiveVote: async (voteId: string, answer: string) => {
+    // the run is still going: the answer goes into the live run, the transcript
+    // only records it
+    const runId = get().runId
+    if (runId) await window.comb.agent.vote(runId, voteId, answer)
+    set((s) => ({
+      threads: s.threads.map((t) =>
+        t.id === get().activeThreadId
+          ? {
+              ...t,
+              messages: t.messages.map((m) =>
+                m.vote && m.vote.id === voteId ? { ...m, vote: { ...m.vote, answer, live: true } } : m
+              )
+            }
+          : t
+      )
+    }))
+    get().toast('ok', tr('vote.sent'), answer)
+  },
+
   answerVote: async (answer: string) => {
     const threads = get().threads
     const thread = threads.find((t) => t.id === get().activeThreadId)
@@ -603,6 +640,11 @@ export const useStore = create<State & Actions>((set, get) => ({
           const exists = tools.some((t) => t.id === e.call.id)
           return { ...m, tools: exists ? tools.map((t) => (t.id === e.call.id ? { ...t, ...e.call } : t)) : [...tools, e.call] }
         })
+        // suggest: follow-up chips, not a tool row
+        if (e.call.name === 'suggest') {
+          const opts: string[] = Array.isArray(e.call.args?.options) ? e.call.args.options.map(String).slice(0, 4) : []
+          if (opts.length) updateAssistant((m) => ({ ...m, suggestions: opts }))
+        }
         // ask_user is not a tool row: it becomes a vote card the user can click
         if (e.call.name === 'ask_user' && e.call.status !== 'error') {
           const opts: string[] = Array.isArray(e.call.args?.options) ? e.call.args.options.map(String) : []
@@ -655,6 +697,13 @@ export const useStore = create<State & Actions>((set, get) => ({
         const note = { id: uid('guard'), kind: e.kind, title: e.title, detail: e.detail }
         updateAssistant((m) => ({ ...m, guards: [...(m.guards || []), note] }))
         if (e.kind === 'cost' || e.kind === 'stuck') get().toast('warn', e.title, e.detail)
+        break
+      }
+      case 'vote-auto': {
+        // nobody answered in time: the run carried on with the agent's own pick
+        updateAssistant((m) =>
+          m.vote && m.vote.id === e.voteId ? { ...m, vote: { ...m.vote, answer: e.answer, auto: e.answer } } : m
+        )
         break
       }
       case 'notify': {
@@ -889,6 +938,7 @@ export function activityLabel(tool: string): string {
     todo_write: 'tool.plan',
     ask_user: 'tool.ask',
     notify_user: 'tool.notify',
+    suggest: 'tool.suggest',
     finish: 'chat.stepDone',
     attach_file: 'tool.attach_file'
   }

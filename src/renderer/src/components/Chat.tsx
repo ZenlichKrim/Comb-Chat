@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from './Icon'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
-import { VoteCard, GuardNote } from './AgentNotes'
+import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
 import { useStore, useActiveThread, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
@@ -147,6 +147,8 @@ export function ChatPane(): React.ReactElement {
     if (pinnedBottom.current) el.scrollTop = el.scrollHeight
   }, [messages, pendingApproval])
 
+  const steer = useStore((s) => s.steer)
+
   const onScroll = (): void => {
     const el = scrollRef.current
     if (!el) return
@@ -155,8 +157,14 @@ export function ChatPane(): React.ReactElement {
 
   const submit = async (): Promise<void> => {
     const text = input.trim()
-    if (!text || running) return
-    setInput('')
+    if (!text) return
+    if (running) {
+      // talking to a running agent: the note is injected into the live run, so a
+      // correction lands in the middle of the work instead of queueing behind it
+      setInput('')
+      await steer(text)
+      return
+    }
     setHistoryIdx(-1)
     pinnedBottom.current = true
     await sendMessage(text, contextFiles)
@@ -397,13 +405,12 @@ export function ChatPane(): React.ReactElement {
             placeholder={
               workspace
                 ? running
-                  ? t('chat.placeholderWorking')
+                  ? t('chat.placeholderSteer')
                   : t('chat.placeholderReady')
                 : t('chat.placeholderNoFolder')
             }
             rows={1}
             spellCheck={false}
-            disabled={running}
           />
           {input.trim().length > 0 && (
             <div className="composer-estimate" title={t('chat.estimateHint')}>
@@ -460,9 +467,19 @@ export function ChatPane(): React.ReactElement {
               </span>
             )}
             {running ? (
-              <button className="send-btn stop" onClick={() => void stopRun()} data-tip={t('chat.stopTip')}>
-                <Icon name="stop" size={11} />
-              </button>
+              <>
+                <button
+                  className="send-btn"
+                  onClick={() => void submit()}
+                  disabled={!input.trim()}
+                  data-tip={t('chat.steerTip')}
+                >
+                  <Icon name="arrow-up" size={13} strokeWidth={2} />
+                </button>
+                <button className="send-btn stop" onClick={() => void stopRun()} data-tip={t('chat.stopTip')}>
+                  <Icon name="stop" size={11} />
+                </button>
+              </>
             ) : (
               <button className="send-btn" onClick={() => void submit()} disabled={!input.trim()} data-tip={t('chat.sendTip')}>
                 <Icon name="arrow-up" size={13} strokeWidth={2} />
@@ -567,6 +584,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
 
         {msg.vote && <VoteCard vote={msg.vote} />}
 
+
         {msg.error && (
           <div className="msg-error">
             <Icon name="alert" size={12} />
@@ -583,6 +601,8 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
         )}
 
         {hasText && <Markdown text={msg.content} />}
+
+        {!!msg.suggestions?.length && !msg.streaming && <Suggestions items={msg.suggestions} />}
 
         {msg.streaming && !hasText && !tools.length && (
           <div className="stream-cursor">

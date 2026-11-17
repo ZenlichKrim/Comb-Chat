@@ -38,7 +38,7 @@ persisted. A Russian-locale system starts in Russian automatically. The agent al
 | **Agent settings** — policies and grants<br>![](docs/screenshots/ru-03-settings-agent.png) | **Keys** — the full shortcut sheet in Russian<br>![](docs/screenshots/ru-05-settings-keys.png) |
 | **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
 | **File preview** — "Reading file · name.ext", why it exists, wide actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
-| **Stable runs** — guard notes: verification, cost, end-of-run digest<br>![](docs/screenshots/ru-25-stable-vote.png) | **Vote card** — the agent asks with pickable options<br>![](docs/screenshots/ru-26-vote-card.png) |
+| **Stable runs** — guard notes: verification, cost, end-of-run digest<br>![](docs/screenshots/ru-25-stable-vote.png) | **Vote card** — a non-blocking question, one option is the agent's own pick<br>![](docs/screenshots/ru-26-vote-card.png) |
 | **Stability settings** — verification command, cost limit, notifications<br>![](docs/screenshots/ru-27-stable-settings.png) | |
 
 ## Download
@@ -95,10 +95,18 @@ Settings → Agent, every run behaves itself:
   three times, so a long job does not die at step 40 while you are away.
 - **Desktop pings.** A native system toast when the task finishes, when the agent is blocked, or when it needs you —
   clicking it brings the window back. The taskbar shows progress and the window flashes while a run is in flight.
-- **Votes instead of guesses.** When a choice genuinely changes the result, the agent can ask with `ask_user`:
-  the app renders it as a card with concrete options, one marked as its own recommendation, plus a free-text field.
-  One click is a complete answer and the run continues from it. At most once per run — an agent that asks all the
+- **Votes instead of guesses, without stopping.** When a choice genuinely needs you — a taste call, missing
+  knowledge ("which particles should I use? are we adding particles at all?"), permission for something
+  surprising — the agent asks with `ask_user`. The app shows a card with 2-4 concrete options, the one it would pick
+  marked *suggested*, plus a free-text field. It **does not block**: the agent keeps working and, if nobody answers
+  in the window it asked for (15-180 s), goes ahead with its own pick and says so. Answer late and your choice is
+  handed to the agent mid-run, where it changes what happens next. At most once per run — an agent that asks all the
   time is just a form.
+- **Talk to the agent while it works.** The composer stays live during a run: type "не трогай сайдбар, правь только
+  header" and it is delivered into the running context before the next step, instead of queueing behind the task.
+  The arrow button becomes *send to the agent*, stop stays next to it.
+- **Clickable next steps.** After an answer the agent can call `suggest` with 2-4 follow-ups; they appear as chips —
+  one click is the next request.
 
 **Safety**
 

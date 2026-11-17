@@ -3281,3 +3281,56 @@ hr {
   color: var(--fg-3);
   opacity: 0.8;
 }
+
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font-size: var(--fs-2xs);
+  text-align: left;
+  transition: all var(--dur-fast);
+}
+.suggest-chip:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2));
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
+  color: var(--fg-1);
+}
+.suggest-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.vote-card[data-answered='true'][data-auto='true'] {
+  border-color: color-mix(in oklab, var(--warn) 32%, var(--line-2));
+}
+.vote-answered .warn {
+  color: var(--warn);
+}
+
+.vote-now {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-3);
+  font-size: var(--fs-2xs);
+}
+.vote-now:hover {
+  color: var(--accent);
+}
+
+/* the composer stays usable mid-run: typing turns the button into "tell the agent" */
+.composer[data-steer='true'] .send-btn:not(.stop) {
+  background: var(--accent);
+}

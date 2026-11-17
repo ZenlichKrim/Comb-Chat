@@ -15,7 +15,7 @@ import type {
 } from '../shared/types'
 import * as store from './store'
 import * as fsops from './fsops'
-import { runAgent, stopRun, resolveApproval } from './agent'
+import { runAgent, stopRun, resolveApproval, answerVote, steerRun } from './agent'
 import { describeFile, getSummaries } from './describe'
 import { testApiKey } from './llm'
 import { createTerminal, writeTerminal, resizeTerminal, killTerminal, killAllTerminals } from './terminal'
@@ -367,6 +367,10 @@ function registerIpc(): void {
     resolveApproval(runId, callId, decision)
   })
   ipcMain.handle('agent:stop', (_e, runId: string) => stopRun(runId))
+  // a vote answer can arrive while the run is going: it is delivered in-place
+  ipcMain.handle('agent:vote', (_e, runId: string, voteId: string, answer: string) => answerVote(runId, voteId, answer))
+  // "не трогай сайдбар" typed while the agent is mid-run
+  ipcMain.handle('agent:steer', (_e, runId: string, note: string) => steerRun(runId, note))
   ipcMain.on('app:attention', (_e, on: boolean, label?: string) => {
     if (!mainWindow) return
     mainWindow.setProgressBar(on ? 2 : -1)
