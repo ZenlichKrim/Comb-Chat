@@ -239,6 +239,8 @@ export interface ToolResultView {
   diff?: FileDiff[]
   /** file handed to the user by attach_file */
   attach?: { path: string; rel: string; note?: string }
+  /** plain-language explanation of a failure, e.g. what exit 255 means here */
+  locale?: string
   durationMs?: number
   collapsed?: boolean
 }

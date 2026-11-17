@@ -12,6 +12,7 @@ import {
   walk,
   writeFileSafe
 } from './fsops'
+import { getSettings } from './store'
 import type { FileDiff, TodoItem, ToolResultView } from '../shared/types'
 import type { LlmToolSchema } from './llm'
 
@@ -38,6 +39,8 @@ export interface ToolOutcome {
   output?: string
   error?: string
   diff?: FileDiff[]
+  /** human explanation shown next to the error in the transcript */
+  locale?: string
   /** extra data for renderer */
   meta?: Record<string, any>
   /** abort the whole run (e.g. user said stop, or ask_user) */
@@ -368,6 +371,45 @@ async function toolGrep(args: Record<string, any>, ctx: ToolContext): Promise<To
 }
 
 /** Run a shell command, capturing output. Interactive commands get a timeout. */
+/**
+ * Turn "exit 255" into something a person can act on.
+ *
+ * 255 is what `git` returns when it cannot find a repository (and what a shell
+ * returns for an unknown command in some setups), so we check for that and say
+ * it plainly instead of echoing the number.
+ */
+async function explainExit(code: number, command: string, cwd: string): Promise<string> {
+  if (code === 0) return ''
+  const ru = (await getSettings().catch(() => null))?.locale === 'ru'
+  if (code === 255) {
+    const looksGit = /^\s*git\b/.test(command)
+    const inRepo = await fs
+      .stat(path.join(cwd, '.git'))
+      .then(() => true)
+      .catch(() => false)
+    if (looksGit && !inRepo) {
+      return ru
+        ? `255 — git не видит здесь репозиторий (в ${cwd} нет папки .git). Либо сделайте \`git init\`, либо откройте корень проекта.`
+        : `exit 255 — git says this folder is not a repository (no .git in ${cwd}). Initialize it with \`git init\`, or open the project root instead.`
+    }
+    return ru
+      ? '255 — программа не смогла запуститься: чаще всего git без репозитория, отсутствующий файл или сетевая/SSH-ошибка.'
+      : 'exit 255 — the program could not run here (usually: git with no repository, a missing executable, or an SSH/network failure).'
+  }
+  if (code === 127)
+    return ru ? '127 — команда не найдена: оболочка не знает такой программы.' : 'exit 127 — command not found: the shell does not know this program.'
+  if (code === 126) return ru ? '126 — файл не является исполняемым.' : 'exit 126 — file is not executable.'
+  if (code === 128)
+    return ru
+      ? '128 — git завершился с фатальной ошибкой (плохое состояние репозитория или неверная ревизия).'
+      : 'exit 128 — git failed fatally (bad repository state or a bad revision).'
+  if (code === 2)
+    return ru
+      ? '2 — команда использована неверно: неправильные аргументы или нет такого пути.'
+      : 'exit 2 — the command was used incorrectly (bad arguments or a missing path).'
+  return ru ? `код выхода ${code}` : `exit ${code}`
+}
+
 /* ------------------------------------------------------------------ */
 /* Command output decoding                                             */
 /* ------------------------------------------------------------------ */
@@ -443,10 +485,12 @@ async function toolRunCommand(args: Record<string, any>, ctx: ToolContext): Prom
     timeoutMs: Math.min(Number(args.timeout_ms) || 120000, 600000),
     signal: ctx.signal
   })
+  const why = res.ok ? '' : await explainExit(res.exitCode, command, cwd)
   return {
     ok: res.ok,
     output: `$ ${command}\n${res.output}\n[exit ${res.exitCode}]`,
     error: res.ok ? undefined : `Command failed with exit code ${res.exitCode}`,
+    locale: why || undefined,
     meta: { command, exitCode: res.exitCode, cwd: toRel(ctx.roots, cwd) || '.' }
   }
 }

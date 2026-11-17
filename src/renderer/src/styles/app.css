@@ -1379,6 +1379,23 @@ a.code-ref code {
   user-select: text;
   cursor: auto;
 }
+.tool-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.tool-hint .icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
 .tool-error {
   margin: 0;
   font-family: var(--font-code);

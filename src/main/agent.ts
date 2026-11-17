@@ -105,7 +105,8 @@ The user has not opened a folder. You cannot read or write files. Answer questio
 
 # Environment
 - Platform: ${opts.platform}
-- Interface language: ${opts.locale === 'ru' ? 'Russian (respond in Russian unless the user writes in another language)' : 'English'}
+- Interface language: ${opts.locale === 'ru' ? 'Russian' : 'English'}
+- ALWAYS write your own prose in ${opts.locale === 'ru' ? 'Russian' : 'English'}: narration between tool calls, conclusions, questions, the finish summary. Identifiers, paths, shell commands and code stay as they are. Do not answer in English just because the repository, the tool output or a library is in English, and do not switch language mid-run — the interface is ${opts.locale === 'ru' ? 'Russian' : 'English'}.
 - Shell: ${opts.shell}
 - Date: ${opts.now}
 - Approval policy: ${opts.approvalPolicy}${opts.workspace ? `\n- Workspace: ${opts.workspace}` : ''}
@@ -274,10 +275,13 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     locale: settings.locale || 'en'
   })
 
+  // A last-line reminder in the user turn itself: models drift back to English
+  // in long runs when every tool output is English.
+  const langNote = settings.locale === 'ru' ? '\n\n(Отвечай по-русски.)' : ''
   const history: LlmMessage[] = [{ role: 'system', content: sys }]
   const prior = toApiHistory(req.history, 70000)
   history.push(...prior)
-  history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) })
+  history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) + langNote })
   if (contextBlock) {
     // insert workspace context as a system-ish user message right before the ask
     history.splice(history.length - 1, 0, { role: 'user', content: `<workspace_context>\n${contextBlock}\n</workspace_context>` })
@@ -409,6 +413,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           error: outcome.error,
           diff: outcome.diff,
           attach: outcome.meta?.attach,
+          locale: outcome.locale,
           durationMs: Date.now() - t0
         }
         deps.emit({ type: 'tool-update', runId: req.runId, call: finished })

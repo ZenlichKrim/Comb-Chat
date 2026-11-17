@@ -170,6 +170,12 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
             <pre className="tool-output">{call.output.length > 6000 ? call.output.slice(0, 6000) + '\n' + t('tool.truncated') : call.output}</pre>
           ) : null}
           {call.error && <pre className="tool-error">{call.error}</pre>}
+          {call.locale && (
+            <div className="tool-hint">
+              <Icon name="info" size={11} />
+              <span>{call.locale}</span>
+            </div>
+          )}
           {call.status === 'running' && <div className="tool-running"><span className="spinner" /> {t(meta.verb)}…</div>}
         </div>
       )}
