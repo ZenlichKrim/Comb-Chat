@@ -38,6 +38,8 @@ persisted. A Russian-locale system starts in Russian automatically. The agent al
 | **Agent settings** — policies and grants<br>![](docs/screenshots/ru-03-settings-agent.png) | **Keys** — the full shortcut sheet in Russian<br>![](docs/screenshots/ru-05-settings-keys.png) |
 | **First run** — welcome overlay<br>![](docs/screenshots/ru-06-welcome.png) | **Sessions & terminal**<br>![](docs/screenshots/ru-07-sessions-terminal.png) |
 | **File preview** — "Reading file · name.ext", why it exists, wide actions<br>![](docs/screenshots/ru-21-file-modal.png) | **AI file descriptions** — in the explorer tree<br>![](docs/screenshots/ru-19-tree-descriptions.png) |
+| **Stable runs** — guard notes: verification, cost, end-of-run digest<br>![](docs/screenshots/ru-25-stable-vote.png) | **Vote card** — the agent asks with pickable options<br>![](docs/screenshots/ru-26-vote-card.png) |
+| **Stability settings** — verification command, cost limit, notifications<br>![](docs/screenshots/ru-27-stable-settings.png) | |
 
 ## Download
 
@@ -62,7 +64,7 @@ your machine and sent only to the endpoint you configure.
 **Agent that actually touches your files**
 
 - Tools: `read_file`, `write_file`, `edit_file`, `multi_edit`, `list_dir`, `glob`, `grep`, `run_command`,
-  `delete_path`, `move_path`, `todo_write`, `ask_user`, `attach_file`, `finish`.
+  `delete_path`, `move_path`, `todo_write`, `ask_user`, `notify_user`, `attach_file`, `finish`.
 - `attach_file` hands a result back to you: the run can end with a real file — a report, a patch, a screenshot —
   shown as a card in the transcript and openable in a preview (open in editor, reveal in folder, copy path or
   contents, toggle wrapping).
@@ -73,6 +75,30 @@ your machine and sent only to the endpoint you configure.
 - Context is built automatically: folder tree, manifests (`package.json`, `pyproject.toml`, `Cargo.toml`, …),
   git HEAD and the files you have open in the editor.
 - Every mutating step is checkpointed. **Undo run** restores the previous file contents.
+
+**Stable runs — give it a task and walk away**
+
+Stability is the baseline of this build, not a switch you have to find. Unless you switch it off in
+Settings → Agent, every run behaves itself:
+
+- **Verification before "done".** When the agent would call `finish`, it first has to prove the work:
+  Comb sends it back with the project's own check — `npm test`, `npm run typecheck|build`, `cargo check`,
+  `go build ./...`, `pytest` — auto-detected from the manifests, or whatever you put in
+  Settings → Agent → **Verification command**. Then it re-reads the files it touched. If the check fails it fixes
+  the failure instead of reporting success.
+- **Cost ceiling.** A run stops by itself at the per-run limit (default $0.50, `0` = off) and says why. A night of
+  agent work cannot turn into a surprising bill.
+- **Loop and error guards.** The same failing call three times in a row stops the run ("stopped: the same call keeps
+  repeating") instead of burning the budget in circles, and a run ends with an honest digest — how many tool errors
+  there were, at which step, in which tool.
+- **Continue without you.** Hitting the step budget mid-task is a pause, not a failure: the run resumes itself up to
+  three times, so a long job does not die at step 40 while you are away.
+- **Desktop pings.** A native system toast when the task finishes, when the agent is blocked, or when it needs you —
+  clicking it brings the window back. The taskbar shows progress and the window flashes while a run is in flight.
+- **Votes instead of guesses.** When a choice genuinely changes the result, the agent can ask with `ask_user`:
+  the app renders it as a card with concrete options, one marked as its own recommendation, plus a free-text field.
+  One click is a complete answer and the run continues from it. At most once per run — an agent that asks all the
+  time is just a form.
 
 **Safety**
 
