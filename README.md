@@ -93,6 +93,12 @@ Settings → Agent, every run behaves itself:
   there were, at which step, in which tool.
 - **Continue without you.** Hitting the step budget mid-task is a pause, not a failure: the run resumes itself up to
   three times, so a long job does not die at step 40 while you are away.
+- **The network does not kill a run.** A dropped socket, a reset connection, a 429 or a 5xx is retried up to six
+  times with real backoff (1.5 s → 24 s, jittered, honouring `Retry-After`), and the transcript says so instead of
+  freezing: "Переподключаюсь · попытка 2 из 6". A stream that dies halfway is **not** accepted as an answer — it used
+  to return half a tool call, which the agent then executed and broke everything downstream — it is retried. A socket
+  that goes silent for 150 s is treated as dropped. Stop still interrupts a backoff immediately. If the API never comes
+  back, the run resumes the task by itself instead of leaving you a corpse on step two.
 - **Desktop pings.** A native system toast when the task finishes, when the agent is blocked, or when it needs you —
   clicking it brings the window back. The taskbar shows progress and the window flashes while a run is in flight.
 - **Votes instead of guesses, without stopping.** When a choice genuinely needs you — a taste call, missing

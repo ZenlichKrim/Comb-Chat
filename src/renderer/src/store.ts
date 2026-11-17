@@ -94,6 +94,8 @@ interface State {
   notes: StickyNote[]
   /** notes panel open state */
   notesOpen: boolean
+  /** set while the API call is being retried */
+  retryInfo: { attempt: number; max: number; reason: string; at: number; waitMs: number } | null
   /** desktop pings this session, shown in the bell menu */
   notifications: { id: string; title: string; body: string; at: number }[]
   /** model-written one-liners, by absolute path */
@@ -202,6 +204,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   lastPrompt: '',
   guards: [],
   notifications: [],
+  retryInfo: null,
   notes: [],
   notesOpen: false,
   fileSummaries: {},
@@ -507,6 +510,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       streamingMessageId: assistantMsg.id,
       changedFiles: [],
       pendingApproval: null,
+      retryInfo: null,
       lastPrompt: text,
       guards: [],
       autoContinues: opts?.auto ? get().autoContinues || 0 : 0,
@@ -657,7 +661,10 @@ export const useStore = create<State & Actions>((set, get) => ({
         updateAssistant((m) => ({ ...m, reasoning: (m.reasoning || '') + e.text }))
         break
       case 'text-delta':
-        set({ activity: { step: get().activity?.step || 1, label: tr('chat.stepWriting'), since: get().activity?.since || Date.now() } })
+        set({
+          activity: { step: get().activity?.step || 1, label: tr('chat.stepWriting'), since: get().activity?.since || Date.now() },
+          retryInfo: null
+        })
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))
         break
       case 'step':
@@ -729,6 +736,20 @@ export const useStore = create<State & Actions>((set, get) => ({
         if (e.kind === 'cost' || e.kind === 'stuck') get().toast('warn', e.title, e.detail)
         break
       }
+      case 'run-retry': {
+        // the stream died mid-answer: wipe the partial text so the retry does not
+        // duplicate it, and show what is happening instead of a frozen spinner
+        set((s) => ({
+          activity: {
+            step: e.step,
+            label: tr('chat.reconnecting', { n: Math.round(e.waitMs / 1000) }),
+            since: s.activity?.since || Date.now()
+          },
+          retryInfo: { attempt: e.attempt, max: e.max, reason: e.reason, at: Date.now(), waitMs: e.waitMs }
+        }))
+        updateAssistant((m) => ({ ...m, content: '', reasoning: '' }))
+        break
+      }
       case 'vote-auto': {
         // nobody answered in time: the run carried on with the agent's own pick
         updateAssistant((m) =>
@@ -776,7 +797,7 @@ export const useStore = create<State & Actions>((set, get) => ({
             ? (m.tools || []).map((t) => (t.id === stale.id && t.status === 'awaiting-approval' ? { ...t, status: 'expired' } : t))
             : m.tools
         }))
-        set({ running: false, pendingApproval: null, activity: null })
+        set({ running: false, pendingApproval: null, activity: null, retryInfo: null })
         void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         const t = get().threads.find((x) => x.id === threadId)
@@ -786,6 +807,15 @@ export const useStore = create<State & Actions>((set, get) => ({
         // "walk away for two hours": hitting the step budget mid-task is a pause,
         // not a failure — pick the run back up by itself, a bounded number of times.
         const runs = get().autoContinues || 0
+        // A run that died on a network/server error after all retries is also a
+        // pause, not the end: pick it back up once or twice before giving up.
+        if (e.reason === 'error' && get().settings.autoContinue !== false && runs < 2) {
+          set({ autoContinues: runs + 1 })
+          get().toast('info', tr('store.autoRetry'), tr('store.autoRetryHint'))
+          setTimeout(() => {
+            if (!get().running) void get().sendMessage(tr('store.autoContinuePrompt'), undefined, { auto: true })
+          }, 2500)
+        }
         if (e.reason === 'limit' && get().settings.autoContinue !== false && runs < 3) {
           set({ autoContinues: runs + 1 })
           get().toast('info', tr('store.autoContinue'), tr('store.autoContinueCount', { n: runs + 1 }))

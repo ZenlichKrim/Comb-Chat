@@ -3675,3 +3675,27 @@ hr {
 .note-tile[data-status='sent'] {
   border-style: dashed;
 }
+
+.retry-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin: 2px 0 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in oklab, var(--warn) 34%, var(--line-1));
+  background: color-mix(in oklab, var(--warn) 9%, transparent);
+  color: var(--fg-2);
+}
+.retry-row .warn {
+  color: var(--warn);
+}
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spin-slow 2.4s linear infinite;
+}

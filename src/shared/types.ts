@@ -431,6 +431,16 @@ export type AgentEvent =
   | { type: 'files-changed'; runId: string; paths: string[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
+  | {
+      /** the API call failed and is being retried: the transcript must not keep half an answer */
+      type: 'run-retry'
+      runId: string
+      step: number
+      attempt: number
+      max: number
+      waitMs: number
+      reason: string
+    }
   | { type: 'note'; runId: string; note: StickyNote }
   | {
       /** the vote timed out: the run went ahead with the model's own pick */
@@ -450,7 +460,7 @@ export type AgentEvent =
   | {
       type: 'guard'
       runId: string
-      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done' | 'steer'
+      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done' | 'steer' | 'retry'
       /** short headline for the transcript */
       title: string
       detail?: string

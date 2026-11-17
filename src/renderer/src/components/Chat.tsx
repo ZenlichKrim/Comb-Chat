@@ -151,6 +151,7 @@ export function ChatPane(): React.ReactElement {
   const steer = useStore((s) => s.steer)
   const setNotesOpen = useStore((s) => s.setNotesOpen)
   const notesCount = useStore((s) => s.notes.filter((n) => n.status !== 'done').length)
+  const retryInfo = useStore((s) => s.retryInfo)
 
   const onScroll = (): void => {
     const el = scrollRef.current
@@ -316,6 +317,15 @@ export function ChatPane(): React.ReactElement {
             {messages.map((m, i) => (
               <MessageRow key={m.id} msg={m} isLast={i === messages.length - 1} index={i} />
             ))}
+            {retryInfo && (
+              <div className="retry-row">
+                <Icon name="refresh" size={11} className="warn spin-slow" />
+                <span className="t-xs">{t('chat.retrying')}</span>
+                <span className="t-xs faint">{t('chat.retryAttempt', { n: retryInfo.attempt, max: retryInfo.max })}</span>
+                <span className="spacer" />
+                <span className="t-xs faint">{t('chat.retryHint')}</span>
+              </div>
+            )}
             {running && (
               <div className="thinking-row">
                 <span className="spinner" />

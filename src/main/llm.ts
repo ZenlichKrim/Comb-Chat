@@ -51,10 +51,13 @@ export interface LlmToolSchema {
 export class LlmError extends Error {
   status?: number
   kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted'
-  constructor(message: string, kind: LlmError['kind'], status?: number) {
+  /** what the server told us to wait, in ms */
+  retryAfterMs?: number
+  constructor(message: string, kind: LlmError['kind'], status?: number, retryAfterMs?: number) {
     super(message)
     this.kind = kind
     this.status = status
+    this.retryAfterMs = retryAfterMs
   }
 }
 
@@ -69,6 +72,8 @@ export interface StreamArgs {
   signal: AbortSignal
   onDelta: (d: LlmDelta) => void
   onUsage?: (u: TokenUsage) => void
+  /** called before a retry: the UI shows "reconnecting in 4s" instead of a dead run */
+  onRetry?: (r: { attempt: number; max: number; waitMs: number; reason: string }) => void
 }
 
 export function priceFor(model: string): { priceIn: number; priceInCached: number; priceOut: number; contextWindow: number; maxOutput: number } {
@@ -153,21 +158,75 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
 
   let attempt = 0
   let lastErr: any = null
+  const MAX_ATTEMPTS = 6
 
-  while (attempt < 3) {
+  while (attempt < MAX_ATTEMPTS) {
     attempt++
     try {
-      return await runOnce({ endpoint, apiKey, body, signal, onDelta, model, onUsage: args.onUsage })
+      return await runOnce({ endpoint, apiKey, body, signal, onDelta, model, onUsage: args.onUsage, attempt })
     } catch (e: any) {
       lastErr = e
-      if (e instanceof LlmError && (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'bad-request')) throw e
-      if (e instanceof LlmError && e.status && !RETRYABLE.has(e.status)) throw e
+      // permanent: retrying cannot help, and a run you walked away from should
+      // stop with a clear reason instead of hammering the API
+      if (e instanceof LlmError && (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'bad-request')) {
+        throw e
+      }
       if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
-      if (attempt >= 3) throw e
-      await new Promise((r) => setTimeout(r, 700 * attempt * attempt))
+      if (attempt >= MAX_ATTEMPTS) throw e
+      // Anything else (network, 5xx, DNS, reset socket, dropped stream, 429) is
+      // worth waiting out: that is the difference between losing a night of work
+      // on step two and a run that just carries on.
+      const wait = retryDelay(e, attempt)
+      args.onRetry?.({ attempt, max: MAX_ATTEMPTS, waitMs: wait, reason: describeRetry(e) })
+      await sleepAbortable(wait, signal)
+      if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
     }
   }
   throw lastErr
+}
+
+/** Backoff that a Stop press interrupts instead of waiting out. */
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve()
+    const timer = setTimeout(done, ms)
+    function done(): void {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', done)
+      resolve()
+    }
+    signal.addEventListener('abort', done, { once: true })
+  })
+}
+
+/** Exponential backoff with jitter, honouring Retry-After when the server sends it. */
+function retryDelay(e: any, attempt: number): number {
+  const retryAfter = e instanceof LlmError ? e.retryAfterMs : undefined
+  if (retryAfter && retryAfter > 0) return Math.min(retryAfter, 60_000)
+  const base = e instanceof LlmError && e.kind === 'rate' ? 5_000 : 1_500
+  const wait = base * Math.pow(2, attempt - 1)
+  return Math.min(60_000, wait) + Math.floor(Math.random() * 750)
+}
+
+function parseRetryAfter(header: string | null): number | undefined {
+  if (!header) return undefined
+  const secs = Number(header)
+  if (Number.isFinite(secs) && secs > 0) return secs * 1000
+  const when = Date.parse(header)
+  if (!Number.isNaN(when)) return Math.max(0, when - Date.now())
+  return undefined
+}
+
+function describeRetry(e: any): string {
+  if (!(e instanceof LlmError)) return 'неизвестная ошибка'
+  switch (e.kind) {
+    case 'rate':
+      return 'сервер просит подождать (429)'
+    case 'network':
+      return 'обрыв связи с API'
+    default:
+      return e.status ? `ответ сервера ${e.status}` : 'сбой запроса'
+  }
 }
 
 async function runOnce(opts: {
@@ -178,6 +237,8 @@ async function runOnce(opts: {
   onDelta: (d: LlmDelta) => void
   onUsage?: (u: TokenUsage) => void
   model: string
+  /** which attempt this is, used only to keep the wire fresh */
+  attempt?: number
 }): Promise<LlmStreamResult> {
   const { endpoint, apiKey, body, signal, onDelta, model } = opts
   let res: Response
@@ -208,7 +269,9 @@ async function runOnce(opts: {
     }
     if (res.status === 401 || res.status === 403) throw new LlmError(`Authentication failed: ${msg}`, 'auth', res.status)
     if (res.status === 402) throw new LlmError(`Insufficient balance: ${msg}`, 'balance', res.status)
-    if (res.status === 429) throw new LlmError(`Rate limited: ${msg}`, 'rate', res.status)
+    const retryAfter = parseRetryAfter(res.headers.get('retry-after'))
+    if (res.status === 429) throw new LlmError(`Rate limited: ${msg}`, 'rate', res.status, retryAfter)
+    if (res.status >= 500) throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status, retryAfter)
     if (res.status === 400 || res.status === 422) {
       if (/model.*(not exist|not found|does not exist|retired|deprecated|invalid)/i.test(msg)) {
         throw new LlmError(
@@ -219,11 +282,21 @@ async function runOnce(opts: {
       }
       throw new LlmError(`Bad request: ${msg}`, 'bad-request', res.status)
     }
-    throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status)
+    throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status, retryAfter)
   }
   if (!res.body) throw new LlmError('Empty response body', 'server')
 
   const reader = res.body.getReader()
+  // If the server goes quiet for too long mid-stream, treat it as a dropped
+  // connection and let the retry loop take over: a stalled socket is exactly the
+  // "it died on step two while I was away" failure mode.
+  let lastByte = Date.now()
+  const stallTimer = setInterval(() => {
+    if (Date.now() - lastByte > 150_000) {
+      clearInterval(stallTimer)
+      void reader.cancel().catch(() => {})
+    }
+  }, 5_000)
   const decoder = new TextDecoder()
   let buffer = ''
   let content = ''
@@ -297,6 +370,7 @@ async function runOnce(opts: {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      lastByte = Date.now()
       buffer += decoder.decode(value, { stream: true })
       let idx
       while ((idx = buffer.indexOf('\n')) >= 0) {
@@ -308,12 +382,12 @@ async function runOnce(opts: {
     if (buffer.trim()) handleLine(buffer)
   } catch (e: any) {
     if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
-    if (content || reasoning) {
-      /* partial stream: return what we have */
-    } else {
-      throw new LlmError(`Stream interrupted: ${e?.message || e}`, 'network')
-    }
+    // A stream that died halfway used to be returned as if it were a complete
+    // answer — with half a tool call in it, which the agent then executed and
+    // broke everything downstream. Retry instead; the loop above will ask again.
+    throw new LlmError(`Stream interrupted: ${e?.message || e}`, 'network')
   } finally {
+    clearInterval(stallTimer)
     try {
       reader.releaseLock()
     } catch {

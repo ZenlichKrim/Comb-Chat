@@ -423,6 +423,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           if (d.reasoning) deps.emit({ type: 'reasoning-delta', runId: req.runId, text: d.reasoning })
           if (d.content) deps.emit({ type: 'text-delta', runId: req.runId, text: d.content })
         },
+        onRetry: (r) => {
+          // half an answer already streamed into the transcript: tell the UI to
+          // drop it, then wait — a dropped connection must not leave debris behind
+          deps.emit({ type: 'run-retry', runId: req.runId, step, attempt: r.attempt, max: r.max, waitMs: r.waitMs, reason: r.reason })
+        },
         onUsage: (u) => {
           usage.promptTokens = Math.max(usage.promptTokens, u.promptTokens)
           usage.completionTokens = Math.max(usage.completionTokens, u.completionTokens)
