@@ -234,6 +234,8 @@ export interface ToolResultView {
   error?: string
   /** diff shown inline for file mutations */
   diff?: FileDiff[]
+  /** file handed to the user by attach_file */
+  attach?: { path: string; rel: string; note?: string }
   durationMs?: number
   collapsed?: boolean
 }

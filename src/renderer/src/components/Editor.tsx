@@ -409,6 +409,11 @@ export function EditorPane(): React.ReactElement {
   const toast = useStore((s) => s.toast)
 
   useEffect(() => {
+    const onGoto = (ev: Event): void => {
+      const line = Number((ev as CustomEvent).detail?.line)
+      if (line > 0) handleRef.current?.goToLine(line)
+    }
+    window.addEventListener('comb:goto-line', onGoto as EventListener)
     const onFind = (): void => handleRef.current?.find()
     const onAttach = (): void => {
       handleRef.current?.focus()
@@ -433,6 +438,7 @@ export function EditorPane(): React.ReactElement {
     window.addEventListener('comb:find-click', onFind)
     window.addEventListener('comb:attach-selection', onAttach)
     return () => {
+      window.removeEventListener('comb:goto-line', onGoto as EventListener)
       window.removeEventListener('comb:find-click', onFind)
       window.removeEventListener('comb:attach-selection', onAttach)
     }

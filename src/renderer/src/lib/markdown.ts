@@ -30,9 +30,33 @@ function inline(text: string): string {
   s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
   s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>')
   s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>')
-  // inline code restore
-  s = s.replace(/\u0000(\d+)\u0000/g, (_m, i) => `<code>${esc(codes[Number(i)])}</code>`)
+  // inline code restore — code spans that look like a file reference become
+  // clickable links into the workspace (`src/app.ts:42`, `lib/x.ts`)
+  s = s.replace(/\u0000(\d+)\u0000/g, (_m, i) => {
+    const raw = codes[Number(i)] || ''
+    const ref = parseFileRef(raw)
+    if (!ref) return `<code>${esc(raw)}</code>`
+    return `<a href="#" class="code-ref" data-file="${esc(ref.file)}" data-line="${ref.line || ''}" title="${esc(raw)}"><code>${esc(raw)}</code></a>`
+  })
   return s
+}
+
+/**
+ * `src/api/auth.ts:42`, `src/api/auth.ts:12-30`, `./lib/x.ts` → file + line.
+ * Deliberately strict: needs a slash or a known source extension, so ordinary
+ * inline code like `Map` or `pnpm test` stays plain.
+ */
+export function parseFileRef(raw: string): { file: string; line?: number } | null {
+  const m = /^([\w./@-]+?\.[a-z0-9]{1,6})(?::(\d+)(?:-(\d+))?)?$/i.exec(raw.trim())
+  if (!m) return null
+  const file = m[1]
+  if (/^https?:/i.test(file)) return null
+  const hasSlash = file.includes('/')
+  const knownExt = /\.(tsx?|jsx?|mjs|cjs|py|rb|go|rs|java|kt|swift|cs|cpp|cc|c|h|hpp|json|ya?ml|toml|css|scss|html|md|sh|sql|php|lua|dart|vue|svelte)$/i.test(file)
+  if (!hasSlash && !knownExt) return null
+  // avoid matching things like "e.g.ts" or version strings
+  if (/^\d+\.\d+/.test(file)) return null
+  return { file: file.replace(/^\.\//, ''), line: m[2] ? Number(m[2]) : undefined }
 }
 
 export interface Segment {

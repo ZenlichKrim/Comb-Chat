@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { tr } from './lib/i18n'
+import type { DictKey } from '../../shared/i18n'
 import type {
   AgentEvent,
   Attachment,
@@ -72,12 +73,16 @@ interface State {
   runId: string | null
   streamingMessageId: string | null
   pendingApproval: ToolResultView | null
+  /** what the agent is doing right now, derived from the live tool stream */
+  activity: { step: number; label: string; since: number } | null
   approvalRunId: string | null
   toasts: Toast[]
   searchOpen: boolean
   aboutOpen: boolean
   checkpoints: Checkpoint[]
   diffPreview: { path: string; rel: string; before: string; after: string; kind: string } | null
+  /** file the agent handed over, shown in a preview modal */
+  filePreview: { path: string; rel: string; note?: string } | null
   changedFiles: string[]
   sidebarSection: 'files' | 'search' | 'git' | 'threads'
   commandHistory: string[]
@@ -122,6 +127,7 @@ interface Actions {
   restoreCheckpoint: (id: string) => Promise<void>
   undoLastRun: () => Promise<void>
   setDiffPreview: (d: State['diffPreview']) => void
+  setFilePreview: (d: State['filePreview']) => void
   closeDiff: () => void
   persistThread: (t: Thread) => void
 }
@@ -153,6 +159,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   runId: null,
   streamingMessageId: null,
   pendingApproval: null,
+  activity: null,
   approvalRunId: null,
   toasts: [],
   searchOpen: false,
@@ -160,6 +167,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   aboutOpen: false,
   checkpoints: [],
   diffPreview: null,
+  filePreview: null,
   changedFiles: [],
   sidebarSection: 'files',
   commandHistory: [],
@@ -504,9 +512,14 @@ export const useStore = create<State & Actions>((set, get) => ({
         updateAssistant((m) => ({ ...m, reasoning: (m.reasoning || '') + e.text }))
         break
       case 'text-delta':
+        set({ activity: { step: get().activity?.step || 1, label: tr('chat.stepWriting'), since: get().activity?.since || Date.now() } })
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))
         break
+      case 'step':
+        set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
+        break
       case 'tool-call':
+        set({ activity: { step: get().activity?.step || 1, label: activityLabel(e.call.name), since: Date.now() } })
         updateAssistant((m) => {
           const tools = m.tools || []
           const exists = tools.some((t) => t.id === e.call.id)
@@ -565,7 +578,7 @@ export const useStore = create<State & Actions>((set, get) => ({
             ? (m.tools || []).map((t) => (t.id === stale.id && t.status === 'awaiting-approval' ? { ...t, status: 'expired' } : t))
             : m.tools
         }))
-        set({ running: false, pendingApproval: null })
+        set({ running: false, pendingApproval: null, activity: null })
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         const t = get().threads.find((x) => x.id === threadId)
         if (t) get().persistThread({ ...t, updatedAt: Date.now() })
@@ -642,6 +655,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   setDiffPreview: (d) => set({ diffPreview: d }),
+  setFilePreview: (d) => set({ filePreview: d }),
   closeDiff: () => set({ diffPreview: null })
 }))
 
@@ -700,6 +714,27 @@ export function applyTheme(s: Settings): void {
   root.style.fontSize = `${s.fontSize}px`
   root.style.zoom = String(s.uiScale || 1)
   window.comb?.window?.setTheme(s.theme, s.accent)
+}
+
+/** Human label for the live status line: what the agent is doing right now. */
+export function activityLabel(tool: string): string {
+  const map: Record<string, DictKey> = {
+    read_file: 'tool.read',
+    write_file: 'tool.write',
+    edit_file: 'tool.edit',
+    multi_edit: 'tool.multiEdit',
+    list_dir: 'tool.list',
+    glob: 'tool.glob',
+    grep: 'tool.grep',
+    run_command: 'tool.run',
+    delete_path: 'tool.delete',
+    move_path: 'tool.move',
+    todo_write: 'tool.plan',
+    ask_user: 'tool.ask',
+    finish: 'chat.stepDone',
+    attach_file: 'tool.attach_file'
+  }
+  return map[tool] ? tr(map[tool]) : tool
 }
 
 export function formatCost(n: number): string {

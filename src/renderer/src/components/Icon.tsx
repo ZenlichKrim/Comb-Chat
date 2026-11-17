@@ -17,6 +17,7 @@ export type IconName =
   | 'folder'
   | 'file'
   | 'file-plus'
+  | 'paperclip'
   | 'search'
   | 'settings'
   | 'terminal'
@@ -81,6 +82,11 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6z" />
       <path d="M9 2v4h4" />
+    </>
+  ),
+  paperclip: (
+    <>
+      <path d="M13.5 7.5l-5.6 5.6a2.1 2.1 0 01-3-3l6-6a3.5 3.5 0 015 5l-6 6a5 5 0 01-7-7l5.5-5.5" />
     </>
   ),
   'file-plus': (

@@ -7,7 +7,7 @@ import { RightPanel } from './components/RightPanel'
 import { BottomPanel } from './components/Terminal'
 import { StatusBar } from './components/StatusBar'
 import { SettingsDialog } from './components/Settings'
-import { CommandPalette, Toasts, DiffModal, AboutDialog } from './components/Palette'
+import { CommandPalette, Toasts, DiffModal, AboutDialog, FilePreviewModal } from './components/Palette'
 import { useStore } from './store'
 import { Icon } from './components/Icon'
 import { useT } from './lib/i18n'
@@ -147,6 +147,7 @@ export function App(): React.ReactElement {
       <SettingsDialog />
       <CommandPalette />
       <DiffModal />
+      <FilePreviewModal />
       <AboutDialog />
       <Toasts />
       <OnboardingOverlay />

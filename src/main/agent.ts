@@ -400,6 +400,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           output: outcome.output,
           error: outcome.error,
           diff: outcome.diff,
+          attach: outcome.meta?.attach,
           durationMs: Date.now() - t0
         }
         deps.emit({ type: 'tool-update', runId: req.runId, call: finished })

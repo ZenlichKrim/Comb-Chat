@@ -20,6 +20,7 @@ const TOOL_META: Record<string, { icon: IconName; label: DictKey; verb: DictKey 
   move_path: { icon: 'arrow-right', label: 'tool.move', verb: 'tool.verbMoving' },
   todo_write: { icon: 'check', label: 'tool.plan', verb: 'tool.verbPlanning' },
   ask_user: { icon: 'chat', label: 'tool.ask', verb: 'tool.verbAsking' },
+  attach_file: { icon: 'paperclip', label: 'tool.attach_file', verb: 'tool.verbAttaching' },
   finish: { icon: 'check-circle', label: 'tool.done', verb: 'tool.verbFinishing' }
 }
 
@@ -98,6 +99,12 @@ export function ToolCard({ call }: { call: ToolResultView }): React.ReactElement
   const openFile = useStore((s) => s.openFile)
   const workspace = useStore((s) => s.workspace)
   const diff = call.diff?.reduce((a, d) => ({ add: a.add + d.additions, del: a.del + d.deletions }), { add: 0, del: 0 })
+
+  // a handed-over file renders as a real card, not a collapsible row: the point
+  // is that the user can look at it without hunting through the tree
+  if (call.name === 'attach_file' && call.attach) {
+    return <AttachCard call={call} />
+  }
 
   return (
     <div className="tool-card" data-status={call.status}>
@@ -215,6 +222,44 @@ function ApprovalInline({ call }: { call: ToolResultView }): React.ReactElement 
           {expanded ? t('common.less') : t('common.details')}
         </button>
       </div>
+    </div>
+  )
+}
+
+
+/** File the agent handed to the user: preview, open, reveal. */
+function AttachCard({ call }: { call: ToolResultView }): React.ReactElement {
+  const t = useT()
+  const setFilePreview = useStore((s) => s.setFilePreview)
+  const a = call.attach!
+  const isImage = /\.(png|jpe?g|gif|webp)$/i.test(a.path)
+  const [thumb, setThumb] = useState('')
+  React.useEffect(() => {
+    if (!isImage) return
+    void window.comb.fs.readImage(a.path).then((r) => {
+      if (r?.ok && r.dataUrl) setThumb(r.dataUrl)
+    })
+  }, [a.path, isImage])
+
+  return (
+    <div className="attach-card">
+      <button className="attach-main" onClick={() => setFilePreview({ path: a.path, rel: a.rel, note: a.note })}>
+        <span className="attach-thumb">
+          {thumb ? <img src={thumb} alt={a.rel} /> : <Icon name="file" size={16} className="acc" />}
+        </span>
+        <span className="col" style={{ gap: 2, minWidth: 0, alignItems: 'flex-start' }}>
+          <span className="t-sm ellipsis" style={{ fontWeight: 600 }}>{a.rel.split('/').pop()}</span>
+          <span className="t-xs faint ellipsis">{a.rel}</span>
+          {a.note && <span className="t-xs dim ellipsis">{a.note}</span>}
+        </span>
+      </button>
+      <span className="spacer" />
+      <button className="btn ghost sm" onClick={() => window.comb.app.showItemInFolder(a.path)} data-tip={a.path}>
+        <Icon name="folder" size={11} /> {t('fp.reveal')}
+      </button>
+      <button className="btn primary sm" onClick={() => setFilePreview({ path: a.path, rel: a.rel, note: a.note })}>
+        {t('fp.preview')}
+      </button>
     </div>
   )
 }

@@ -222,6 +222,83 @@ export function DiffModal(): React.ReactElement {
 }
 
 import { DiffView } from './CodeBlock'
+
+/**
+ * Preview for a file the agent handed over. Reads it on demand so a large log or
+ * asset does not bloat the transcript; images render, everything else as text.
+ */
+export function FilePreviewModal(): React.ReactElement {
+  const t = useT()
+  const preview = useStore((s) => s.filePreview)
+  const close = useStore((s) => s.setFilePreview)
+  const openFile = useStore((s) => s.openFile)
+  const [body, setBody] = React.useState<string>('')
+  const [isImage, setIsImage] = React.useState(false)
+  const [err, setErr] = React.useState('')
+
+  React.useEffect(() => {
+    if (!preview) return
+    setBody('')
+    setErr('')
+    const img = /\.(png|jpe?g|gif|webp)$/i.test(preview.path)
+    setIsImage(img)
+    if (img) {
+      void window.comb.fs.readImage(preview.path).then((r) => {
+        if (r?.ok && r.dataUrl) setBody(r.dataUrl)
+        else setErr(r?.error || 'Cannot read image')
+      })
+      return
+    }
+    void window.comb.fs
+      .read(preview.path)
+      .then((fc) => setBody(fc.content || ''))
+      .catch((e: any) => setErr(e?.message || 'Cannot read file'))
+  }, [preview])
+
+  if (!preview) return <></>
+  return (
+    <div className="modal-backdrop" onClick={() => close(null)}>
+      <div className="diff-modal file-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="diff-modal-head">
+          <Icon name="file" size={12} className="acc" />
+          <span className="mono t-sm ellipsis">{preview.rel}</span>
+          <span className="spacer" />
+          <button
+            className="btn ghost sm"
+            title={preview.path}
+            onClick={() => window.comb.app.showItemInFolder(preview.path)}
+          >
+            <Icon name="folder" size={11} /> {t('fp.reveal')}
+          </button>
+          <button
+            className="btn ghost sm"
+            onClick={() => {
+              close(null)
+              const st = useStore.getState()
+              void openFile(preview.path, preview.rel)
+              void st.setSettings({})
+            }}
+          >
+            <Icon name="file" size={11} /> {t('fp.open')}
+          </button>
+          <button className="icon-btn" onClick={() => close(null)}>
+            <Icon name="close" size={12} />
+          </button>
+        </div>
+        {preview.note && <div className="file-modal-note t-xs faint">{preview.note}</div>}
+        <div className="file-modal-body">
+          {err ? (
+            <div className="t-xs err" style={{ padding: 14 }}>{err}</div>
+          ) : isImage ? (
+            body && <img src={body} alt={preview.rel} className="file-modal-img" />
+          ) : (
+            <pre className="file-modal-pre">{body || t('fp.loading')}</pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 function DiffFull({ before, after, rel }: { before: string; after: string; rel: string }): React.ReactElement {
   return <DiffView before={before} after={after} rel={rel} maxHeight={window.innerHeight - 160} />
 }

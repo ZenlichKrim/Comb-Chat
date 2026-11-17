@@ -132,6 +132,8 @@ export async function executeTool(
           meta: { question: args.question, options: args.options },
           halt: ctx.approvalPolicy === 'yolo' ? undefined : 'done'
         }
+      case 'attach_file':
+        return await toolAttachFile(args, ctx)
       case 'finish':
         return { ok: true, output: args.summary || 'Task finished.', halt: 'done' }
       default:
@@ -143,6 +145,25 @@ export async function executeTool(
 }
 
 /* ------------------------------------------------------------------ */
+
+async function toolAttachFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  const rel = String(args.path || '')
+  if (!rel) return { ok: false, error: 'path is required' }
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
+  let isDir = false
+  try {
+    isDir = (await fs.stat(abs)).isDirectory()
+  } catch {
+    return { ok: false, error: `File not found: ${rel}` }
+  }
+  if (isDir) return { ok: false, error: `${rel} is a directory — attach a single file` }
+  const shown = relOrAbs(ctx, abs)
+  return {
+    ok: true,
+    output: `Attached ${shown} to the chat${args.note ? ` — ${args.note}` : ''}`,
+    meta: { attach: { path: abs, rel: shown, note: String(args.note || '') } }
+  }
+}
 
 async function toolReadFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const rel = String(args.path || '')
@@ -721,6 +742,22 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'attach_file',
+      description:
+        'Hand a file to the user in the chat instead of telling them to go find it: a report, a generated asset, a config, a diff. The file must exist. The user gets a preview window with an "open" button and its path.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the file, relative to the workspace or absolute' },
+          note: { type: 'string', description: 'One line: why this file matters' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'finish',
       description: 'Call when the task is fully complete. Provide a concise summary of what changed and how it was verified.',
       parameters: {
@@ -732,7 +769,7 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   }
 ]
 
-export const READ_ONLY_TOOLS = new Set(['read_file', 'list_dir', 'glob', 'grep', 'todo_write'])
+export const READ_ONLY_TOOLS = new Set(['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'attach_file'])
 export const DESTRUCTIVE_TOOLS = new Set(['run_command', 'delete_path', 'move_path'])
 export const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit', 'delete_path', 'move_path'])
 

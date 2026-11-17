@@ -91,6 +91,8 @@ export function ChatPane(): React.ReactElement {
   const setBottomPanel = useStore((s) => s.setBottomPanel)
   const bottomPanel = useStore((s) => s.bottomPanel)
 
+  const activity = useStore((s) => s.activity)
+  const [elapsed, setElapsed] = useState(0)
   const [approvalAge, setApprovalAge] = useState(0)
   const [input, setInput] = useState('')
   const [historyIdx, setHistoryIdx] = useState(-1)
@@ -99,6 +101,16 @@ export function ChatPane(): React.ReactElement {
   const pinnedBottom = useRef(true)
   const messages = thread?.messages || []
   const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+
+  // seconds spent on the current step, so a long read does not look frozen
+  useEffect(() => {
+    if (!activity) {
+      setElapsed(0)
+      return
+    }
+    const id = setInterval(() => setElapsed(Math.max(0, Math.round((Date.now() - activity.since) / 1000))), 500)
+    return () => clearInterval(id)
+  }, [activity])
 
   // tick the countdown while an approval waits
   useEffect(() => {
@@ -284,7 +296,15 @@ export function ChatPane(): React.ReactElement {
             {messages.map((m, i) => (
               <MessageRow key={m.id} msg={m} isLast={i === messages.length - 1} index={i} />
             ))}
-            {running && <div className="thinking-row"><span className="spinner" /> <span className="faint t-xs">{t('chat.working')}</span></div>}
+            {running && (
+              <div className="thinking-row">
+                <span className="spinner" />
+                <span className="faint t-xs">
+                  {activity ? `${t('chat.stepLabel', { n: activity.step })} · ${activity.label}` : t('chat.working')}
+                </span>
+                {activity && <span className="faint t-xs tabular">{elapsed}s</span>}
+              </div>
+            )}
           </div>
         )}
       </div>
