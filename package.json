@@ -1,7 +1,7 @@
 {
   "name": "comb-chat",
   "productName": "Comb Chat",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Comb Chat — a desktop AI coding agent for Windows, macOS and Linux, powered by DeepSeek.",
   "main": "./out/main/index.js",
   "author": {

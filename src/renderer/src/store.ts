@@ -728,6 +728,18 @@ export const useStore = create<State & Actions>((set, get) => ({
         })
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))
         break
+      case 'step-note':
+        // The prose of this round now lives in the trace, so drop it from the
+        // message body — otherwise every sentence is printed twice.
+        updateAssistant((m) => ({
+          ...m,
+          content: '',
+          steps: [
+            ...(m.steps || []),
+            { id: uid('stp'), step: e.step, say: e.say, actions: e.actions }
+          ].slice(-80)
+        }))
+        break
       case 'step':
         set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
         break

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Icon } from './Icon'
+import { Icon, type IconName } from './Icon'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
 import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
@@ -888,6 +888,93 @@ function StepNotes({ tools, live }: { tools: ChatMessage['tools']; live: boolean
   )
 }
 
+/**
+ * One step of work, the way the user asked for it:
+ *
+ *   >>  the agent says what it is about to do in this step
+ *   |>  action, with an icon that matches what the action is
+ *   |>  action
+ *
+ * The sentence is the model's own words, not a label assembled by us — that is
+ * the difference between a log and a train of thought.
+ */
+const ACTION_ICON: Record<string, IconName> = {
+  read_file: 'file',
+  list_dir: 'folder',
+  glob: 'search',
+  grep: 'search',
+  write_file: 'save',
+  edit_file: 'edit',
+  multi_edit: 'edit',
+  run_command: 'terminal',
+  delete_path: 'trash',
+  move_path: 'external',
+  todo_write: 'check',
+  leave_note: 'sticky',
+  notify_user: 'bell',
+  attach_file: 'paperclip',
+  ask_user: 'chat',
+  suggest: 'sparkles',
+  finish: 'check'
+}
+
+function actionLabel(name: string, args?: Record<string, any>): string {
+  const p = String(args?.path || args?.rel || args?.command || args?.pattern || '')
+  const short = p.split(/[\\/]/).filter(Boolean).slice(-2).join('/')
+  return short || name.replace(/_/g, ' ')
+}
+
+function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; live: boolean }): React.ReactElement {
+  const t = useT()
+  const [open, setOpen] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const visible = open ? steps : steps.slice(-1)
+  return (
+    <div className="trace" data-open={open}>
+      <button className="trace-head" onClick={() => setOpen((v) => !v)}>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
+        <span>{t('trace.title', { n: steps.length })}</span>
+        {live && <span className="spinner" />}
+      </button>
+      <div className="trace-body">
+        {visible.map((s, si) => (
+          <div className="trace-step" key={s.id} style={{ animationDelay: `${Math.min(si, 10) * 30}ms` }}>
+            {s.say && (
+              <div className="trace-say">
+                <span className="trace-caret">&gt;&gt;</span>
+                <div className="chat-text">
+                  <Markdown text={s.say} />
+                </div>
+              </div>
+            )}
+            <div className="trace-actions" data-empty={s.actions.length ? undefined : 'true'}>
+              {s.actions.map((a) => {
+                const bad = !a.ok
+                const isOpen = expanded === a.id
+                return (
+                  <button
+                    key={a.id}
+                    className="trace-action"
+                    data-bad={bad ? 'true' : undefined}
+                    onClick={() => setExpanded(isOpen ? null : a.id)}
+                    title={bad ? a.error : undefined}
+                  >
+                    <span className="trace-bar">|&gt;</span>
+                    <Icon name={bad ? 'alert' : (ACTION_ICON[a.name] || 'layers')} size={10} />
+                    <span className="trace-action-name">{actionLabel(a.name, a.args)}</span>
+                    {bad && <span className="trace-action-err ellipsis">{a.error}</span>}
+                  </button>
+                )
+              })}
+              {!s.actions.length && <span className="t-xs faint">{t('trace.noActions')}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean; index: number }): React.ReactElement {
   const t = useT()
   const [showReasoning, setShowReasoning] = useState(false)
@@ -956,7 +1043,11 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
         {/* The work goes first, the answer after it: you read what happened,
             then what it means. Guards and votes sit under the answer, where a
             decision you have to make belongs. */}
-        <StepNotes tools={msg.tools} live={!!msg.streaming} />
+        {(msg.steps?.length || 0) > 0 ? (
+          <StepTrace steps={msg.steps!} live={!!msg.streaming} />
+        ) : (
+          <StepNotes tools={msg.tools} live={!!msg.streaming} />
+        )}
 
         {hasText && <Markdown text={msg.content} />}
 

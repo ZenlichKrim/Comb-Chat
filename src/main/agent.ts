@@ -134,7 +134,8 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - \`run_command\` is non-interactive: no vim, no prompts, no servers that never exit (background them or skip).
 - You have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
-- Use \`todo_write\` for anything with more than 2 steps, and keep it current.`
+- Use \`todo_write\` for anything with more than 2 steps, and keep it current.
+- Go straight at the task. Do not turn into a detective: read what this step needs, then act. If the obvious way fails, try the next method in the same step instead of spending rounds investigating why the first failed. Finishing beats fully understanding the project.`
     : `
 # No workspace open
 The user has not opened a folder. You cannot read or write files. Answer questions, explain code, design architecture — and tell them to open a workspace (⌘/Ctrl+O) when they need edits.`
@@ -423,6 +424,10 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   let roundProgressed = false
   /** last step at which the "stop reading" nudge was sent */
   let lastIdlePrompt = 0
+  /** the agent's own sentence for the round being executed */
+  let roundNarration = ''
+  /** the calls of the round being executed, reported to the UI as one step */
+  let roundTools: { id: string; name: string; ok: boolean; error: string; args: Record<string, any> }[] = []
   let ranAnyCommand = false
   let finishRefused = 0
   let loopHits = 0
@@ -526,6 +531,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     while (step < Math.max(1, req.maxSteps)) {
       step++
       deps.emit({ type: 'step', runId: req.runId, step })
+      roundTools = []
       if (signal.aborted) {
         finalReason = 'stopped'
         break
@@ -570,6 +576,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           : undefined
       }
       history.push(assistantMsg)
+      // One step = one intention + the calls that carry it out. This is the unit
+      // the transcript shows, so it is captured here and handed to the UI.
+      roundNarration = result.content.trim()
 
       // A turn that fires tools without a single word of prose reads as a black
       // box: the user sees files being edited and no idea why. Ask for the
@@ -810,6 +819,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
         history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: toolContent.slice(0, 30000) })
 
+        roundTools.push({ id: call.id, name: call.name, ok: outcome.ok, error: outcome.error || outcome.output || '', args })
         if (stableMode) {
           const sig = `${call.name}:${JSON.stringify(args).slice(0, 240)}`
           const key = `${outcome.ok ? 'ok' : 'fail'}|${sig}`
@@ -930,6 +940,18 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         beforeState.clear()
       }
 
+      // The round is done: hand the UI one step — the sentence and the calls.
+      if (roundTools.length) {
+        deps.emit({
+          type: 'step-note',
+          runId: req.runId,
+          step,
+          say: roundNarration,
+          actions: roundTools.map((t) => ({ id: t.id, name: t.name, ok: t.ok, error: t.error.slice(0, 300), args: t.args }))
+        })
+      }
+      roundTools = []
+
       if (halted === 'aborted') {
         finalReason = 'stopped'
         break
@@ -939,7 +961,6 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           await pushVerifyPrompt()
           continue
         }
-        if (stableMode) verifyStage = 'done'
         if (stableMode) verifyStage = 'done'
         finalReason = 'done'
         break

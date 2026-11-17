@@ -378,6 +378,13 @@ export interface ChatMessage {
   createdAt: number
   model?: string
   tools?: ToolResultView[]
+  /** steps of work: a sentence from the agent, then the calls it made */
+  steps?: {
+    id: string
+    step: number
+    say: string
+    actions: { id: string; name: string; ok: boolean; error?: string; args?: Record<string, any> }[]
+  }[]
   usage?: TokenUsage
   attachments?: Attachment[]
   /** assistant message still streaming */
@@ -434,6 +441,17 @@ export type AgentEvent =
   | { type: 'usage'; runId: string; usage: TokenUsage }
   | { type: 'checkpoint'; runId: string; checkpoint: Checkpoint }
   | { type: 'step'; runId: string; step: number }
+  /**
+   * One step of work as the transcript shows it: the agent's own sentence about
+   * what it is doing, and the calls that did it.
+   */
+  | {
+      type: 'step-note'
+      runId: string
+      step: number
+      say: string
+      actions: { id: string; name: string; ok: boolean; error?: string; args?: Record<string, any> }[]
+    }
   | { type: 'files-changed'; runId: string; paths: string[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }

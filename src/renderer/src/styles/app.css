@@ -4338,3 +4338,146 @@ hr {
   color: var(--accent);
   background: var(--bg-2);
 }
+
+/* ---------------------------------------------------------------- */
+/* Train of thought: >> a sentence, then |> each action              */
+/* ---------------------------------------------------------------- */
+.trace {
+  margin: 10px 0 14px;
+  padding-left: 2px;
+}
+.trace-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  margin-left: -9px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--fg-4);
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.trace-head:hover {
+  background: var(--bg-2);
+  color: var(--fg-2);
+}
+.trace-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 8px;
+  padding-left: 18px;
+}
+/* the spine: one continuous line down the left, fading at the end */
+.trace-body::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 4px;
+  width: 1px;
+  background: linear-gradient(180deg, var(--accent), var(--line-2) 40%, transparent);
+  opacity: 0.5;
+}
+.trace-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  animation: trace-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes trace-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.trace-step::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--bg-0);
+}
+.trace-say {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.trace-caret {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+  opacity: 0.85;
+  letter-spacing: -0.05em;
+}
+.trace-say > .chat-text {
+  min-width: 0;
+  font-size: var(--fs-md);
+  line-height: 1.62;
+  color: var(--fg-1);
+}
+.trace-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 2px;
+}
+.trace-action {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px 3px 4px;
+  margin-left: -4px;
+  border-radius: 8px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  color: var(--fg-3);
+  font-size: var(--fs-sm);
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+  animation: action-in 0.25s ease both;
+}
+@keyframes action-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+.trace-action:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+  transform: translateX(1px);
+}
+.trace-bar {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--line-3);
+  flex: none;
+}
+.trace-action[data-bad='true'] {
+  color: var(--err);
+  background: color-mix(in oklab, var(--err) 8%, transparent);
+}
+.trace-action-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-action-err {
+  font-size: var(--fs-2xs);
+  opacity: 0.7;
+  min-width: 0;
+}
