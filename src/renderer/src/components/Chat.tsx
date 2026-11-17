@@ -159,19 +159,34 @@ export function ChatPane(): React.ReactElement {
     pinnedBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90
   }
 
-  const submit = async (): Promise<void> => {
+  const submit = async (opts?: { fromHistory?: boolean }): Promise<void> => {
+    // Recalled from history with ↑ and sent: it has been sent before, so it is
+    // in the transcript already — do not leave a copy in the box.
     const text = input.trim()
     if (!text) return
+    // The composer is not an archive: the message lives in the transcript from
+    // now on, so the box empties the moment it is sent — before the run even
+    // starts, and whether or not the agent is already busy.
+    setInput('')
+    setHistoryIdx(-1)
+    pinnedBottom.current = true
     if (running) {
       // talking to a running agent: the note is injected into the live run, so a
       // correction lands in the middle of the work instead of queueing behind it
-      setInput('')
-      await steer(text)
+      if ((await steer(text)) === false) setInput(text)
       return
     }
-    setHistoryIdx(-1)
-    pinnedBottom.current = true
-    await sendMessage(text, contextFiles)
+    try {
+      const sent = await sendMessage(text, contextFiles)
+      // `false` means the store refused it (a run is already going): the text is
+      // not anywhere else, so it goes back into the box.
+      if (sent === false && !opts?.fromHistory) setInput(text)
+      inputRef.current?.focus()
+    } catch (e) {
+      // nothing was sent: give the words back instead of eating them
+      setInput(text)
+      useStore.getState().toast('err', t('chat.sendFailed'))
+    }
   }
 
   // Ctrl+V a screenshot straight from the clipboard — the fastest way to ask
@@ -210,7 +225,7 @@ export function ChatPane(): React.ReactElement {
     if (e.key === 'Enter') {
       if (settings.sendOnEnter ? !e.shiftKey && !mod : mod) {
         e.preventDefault()
-        void submit()
+        void submit({ fromHistory: historyIdx >= 0 })
       }
     }
     if (mod && e.key.toLowerCase() === 'k') {

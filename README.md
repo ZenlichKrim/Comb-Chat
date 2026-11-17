@@ -94,6 +94,10 @@ Settings → Agent, every run behaves itself:
   there were, at which step, in which tool.
 - **Continue without you.** Hitting the step budget mid-task is a pause, not a failure: the run resumes itself up to
   three times, so a long job does not die at step 40 while you are away.
+- **The composer empties on send.** The message appears in the transcript and the box is cleared immediately — before the
+  run starts, so a slow first token never leaves you wondering whether Enter registered. If sending fails (or the text
+  cannot be steered into a running agent) the words come back instead of being swallowed, and ↑ history does not leave a
+  duplicate behind.
 - **The agent talks while it works — and is not rationed.** Its commentary stays in the transcript above the tool cards,
   so a run reads like a colleague working next to you instead of "asked → five diffs". The prompt asks for its own
   read on the code, the approach and the project, in whatever length the thought needs; it forbids status reports

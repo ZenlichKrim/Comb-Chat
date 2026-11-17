@@ -132,14 +132,14 @@ interface Actions {
   selectThread: (id: string) => void
   deleteThread: (id: string) => Promise<void>
   renameThread: (id: string, title: string) => void
-  sendMessage: (text: string, attachments?: Attachment[], opts?: { auto?: boolean }) => Promise<void>
+  sendMessage: (text: string, attachments?: Attachment[], opts?: { auto?: boolean }) => Promise<boolean>
   stopRun: () => Promise<void>
   /** answer an agent question: records the pick and starts the next turn */
   answerVote: (answer: string) => Promise<void>
   /** answer while the run is still in flight */
   answerLiveVote: (voteId: string, answer: string) => Promise<void>
   /** say something to the running agent without stopping it */
-  steer: (text: string) => Promise<void>
+  steer: (text: string) => Promise<boolean>
   addNote: (n: { text: string; target?: string; targetLabel?: string; tone?: number }) => void
   updateNote: (id: string, patch: Partial<StickyNote>) => void
   removeNote: (id: string) => void
@@ -456,7 +456,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   /* ---------------------------------------------------------------- */
   sendMessage: async (text, attachments = [], opts) => {
     const state = get()
-    if (state.running) return
+    if (state.running) return false
     let threadId = state.activeThreadId
     if (!threadId) {
       const thread: Thread = {
@@ -474,7 +474,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       threadId = thread.id
     }
     const thread = get().threads.find((t) => t.id === threadId)
-    if (!thread) return
+    if (!thread) return false
 
     const userMsg: ChatMessage = {
       id: uid('msg'),
@@ -560,12 +560,13 @@ export const useStore = create<State & Actions>((set, get) => ({
     if (res && !res.ok) {
       set({ running: false })
     }
+    return true
   },
 
   steer: async (text: string) => {
     const runId = get().runId
     const threadId = get().activeThreadId
-    if (!runId || !threadId) return
+    if (!runId || !threadId) return false
     // show it in the transcript as a message from the user: they said it, and it
     // should be part of the record even though the agent was already running
     const msg: ChatMessage = { id: uid('m'), role: 'user', content: text, createdAt: Date.now() }
@@ -573,6 +574,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       threads: s.threads.map((t) => (t.id === threadId ? { ...t, messages: [...t.messages, msg], updatedAt: Date.now() } : t))
     }))
     await window.comb.agent.steer(runId, text)
+    return true
   },
 
   answerLiveVote: async (voteId: string, answer: string) => {
