@@ -12,7 +12,7 @@ export const en = {
   /* ---------------------------------------------------------------- */
   'app.tagline': 'desktop AI coding agent',
   'common.cancel': 'cancel',
-  'common.close': 'close',
+  'common.close': 'Close',
   'common.save': 'save',
   'common.delete': 'delete',
   'common.rename': 'rename',
@@ -119,6 +119,10 @@ export const en = {
   'chat.new': 'new',
   'chat.newTip': 'New session (Ctrl+N)',
   'chat.stepLabel': 'step {n}',
+  'fp.kicker': 'Reading file',
+  'fp.lines': '{n} lines',
+  'fp.copiedAll': 'Contents copied',
+  'fp.notWorth': 'This file is fine undescribed — nothing worth a line',
   'fp.reveal': 'Show in folder',
   'fp.preview': 'Preview',
   'fp.describe': 'Describe with AI',
@@ -421,6 +425,9 @@ export const en = {
   'set.sendOnEnterHint': 'Off: Ctrl+Enter sends, Enter inserts a newline.',
   'set.experimental': 'Experimental UI',
   'set.experimentalHint': 'Taller diffs, denser previews.',
+  'set.describeFiles': 'Let the AI sign the files it writes',
+  'set.describeFilesHint':
+    'After a run the model looks at each file it created or rewrote and adds one plain line to the explorer — only for files worth describing. Off = no extra requests.',
   'set.customInstructions': 'Custom instructions',
   'set.customInstructionsHint':
     'Appended to the system prompt for every run — project rules, conventions, forbidden paths.',
@@ -576,7 +583,7 @@ export type Dict = Record<DictKey, string>
 export const ru: Dict = {
   'app.tagline': 'десктопный ИИ-агент для кода',
   'common.cancel': 'отмена',
-  'common.close': 'закрыть',
+  'common.close': 'Закрыть',
   'common.save': 'сохранить',
   'common.delete': 'удалить',
   'common.rename': 'переименовать',
@@ -674,6 +681,10 @@ export const ru: Dict = {
   'chat.new': 'новая',
   'chat.newTip': 'Новая сессия (Ctrl+N)',
   'chat.stepLabel': 'шаг {n}',
+  'fp.kicker': 'Чтение файла',
+  'fp.lines': 'строк: {n}',
+  'fp.copiedAll': 'Содержимое скопировано',
+  'fp.notWorth': 'Этот файл не нуждается в описании',
   'fp.reveal': 'Показать в папке',
   'fp.preview': 'Посмотреть',
   'fp.describe': 'Описать через ИИ',
@@ -957,6 +968,9 @@ export const ru: Dict = {
   'set.sendOnEnterHint': 'Выкл: отправляет Ctrl+Enter, Enter вставляет новую строку.',
   'set.experimental': 'Экспериментальный интерфейс',
   'set.experimentalHint': 'Более высокие диффы, плотные превью.',
+  'set.describeFiles': 'Пусть ИИ подписывает созданные файлы',
+  'set.describeFilesHint':
+    'После прогона модель смотрит на каждый созданный или перезаписанный файл и пишет одну понятную строку в проводник — только тем файлам, которым это нужно. Выключено = ни одного лишнего запроса.',
   'set.customInstructions': 'Свои инструкции',
   'set.customInstructionsHint':
     'Добавляются к системному промпту каждого прогона — правила проекта, соглашения, запретные пути.',

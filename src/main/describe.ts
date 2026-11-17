@@ -17,6 +17,7 @@ import type { FileSummary } from '../shared/types'
 const MAX_FILES = 400
 
 interface CacheEntry extends FileSummary {
+  /** empty string = the model judged the file not worth a line (kept to avoid paying twice) */
   path: string
   mtime: number
   size: number
@@ -60,14 +61,14 @@ export async function getSummaries(paths: string[]): Promise<FileSummary[]> {
   const out: FileSummary[] = []
   for (const p of paths) {
     const hit = db[p]
-    if (!hit) continue
+    if (!hit || !hit.description) continue
     out.push({ path: p, description: hit.description, mtime: hit.mtime, size: hit.size, generatedAt: hit.generatedAt })
   }
   return out
 }
 
 /** Describe one file. Returns null when the file is binary or the model failed. */
-export async function describeFile(abs: string): Promise<FileSummary | null> {
+export async function describeFile(abs: string, hint?: string): Promise<FileSummary | null> {
   const db = await load()
   let st: Awaited<ReturnType<typeof fs.stat>>
   try {
@@ -77,7 +78,7 @@ export async function describeFile(abs: string): Promise<FileSummary | null> {
   }
   const existing = db[abs]
   if (existing && existing.mtime === st.mtimeMs && existing.size === st.size) {
-    return existing
+    return existing.description ? existing : null
   }
   if (SKIP_EXT.test(abs) || st.size > 400_000) return null
 
@@ -94,24 +95,31 @@ export async function describeFile(abs: string): Promise<FileSummary | null> {
     baseUrl: settings.baseUrl,
     model: settings.model,
     system:
-      'You write one-line file descriptions for a code explorer. Reply with JSON only: {"description": string}. ' +
-      'The description must be one sentence, at most 90 characters, in the same language as the user interface language given below. ' +
-      'Say what the file is for, not what it contains line by line. No markdown, no file name.',
-    user: `interface language: ${settings.locale === 'ru' ? 'ru' : 'en'}\nfile: ${rel}\n\n${body}`,
+      'You label files in a code explorer. Reply with JSON only: {"description": string|null}. ' +
+      'Decide first whether the file is worth a line: lockfiles, generated code, minified bundles, binaries, empty stubs, ' +
+      'barrels of re-exports, configs that say nothing beyond their name — reply {"description": null} and do not invent filler. ' +
+      'Otherwise write one plain sentence, at most 90 characters, in the language given below: what the file is FOR, ' +
+      'in words a newcomer understands. No markdown, no file name, no line-by-line narration.',
+    user:
+      `interface language: ${settings.locale === 'ru' ? 'ru' : 'en'}\nfile: ${rel}` +
+      (hint ? `\ncontext: ${hint}` : '') +
+      `\n\n${body}`,
     maxTokens: 160
   })
   const m = /\{[\s\S]*\}/.exec(text)
   let description = ''
+  let skip = false
   try {
-    description = JSON.parse(m ? m[0] : text)?.description || ''
+    const parsed = JSON.parse(m ? m[0] : text)?.description
+    if (parsed === null) skip = true
+    else description = String(parsed || '')
   } catch {
     description = text.split('\n')[0].slice(0, 120)
   }
-  if (!description) return null
 
   const entry: CacheEntry = {
     path: abs,
-    description: description.trim(),
+    description: skip ? '' : description.trim(),
     mtime: st.mtimeMs,
     size: st.size,
     generatedAt: Date.now()
@@ -126,5 +134,44 @@ export async function describeFile(abs: string): Promise<FileSummary | null> {
       .forEach((k) => delete db[k])
   }
   await save()
-  return entry
+  return entry.description ? entry : null
+}
+
+/* ------------------------------------------------------------------ */
+/* Auto-labelling                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Describe files the agent just wrote, quietly and in the background.
+ *
+ * The point is that the user should never have to ask "what is this file the
+ * agent just created". We hand the model the name plus a short prompt note so it
+ * can judge whether the file is worth a line at all; uninteresting ones are
+ * cached as "not worth it" and never asked about again. Errors are swallowed —
+ * labelling must never break a run.
+ */
+export function describeInBackground(
+  files: { path: string; note?: string }[],
+  opts: { concurrency?: number; onEach?: (s: FileSummary) => void } = {}
+): void {
+  const concurrency = opts.concurrency ?? 2
+  const queue = [...new Set(files.map((f) => f.path))].slice(0, 12)
+  if (!queue.length) return
+  let active = 0
+  const pump = (): void => {
+    while (active < concurrency && queue.length) {
+      const file = queue.shift() as string
+      active += 1
+      void describeFile(file, files.find((f) => f.path === file)?.note)
+        .then((s) => {
+          if (s) opts.onEach?.(s)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          active -= 1
+          pump()
+        })
+    }
+  }
+  pump()
 }

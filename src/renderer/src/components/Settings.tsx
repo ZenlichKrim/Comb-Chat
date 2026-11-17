@@ -246,6 +246,12 @@ export function SettingsDialog(): React.ReactElement {
                 value={settings.fullDiskAccess}
                 onChange={(v) => void setSettings({ fullDiskAccess: v })}
               />
+              <Toggle
+                label={t('set.describeFiles')}
+                hint={t('set.describeFilesHint')}
+                value={settings.describeFiles !== false}
+                onChange={(v) => void setSettings({ describeFiles: v })}
+              />
               <Toggle label={t('set.sendOnEnter')} hint={t('set.sendOnEnterHint')} value={settings.sendOnEnter} onChange={(v) => void setSettings({ sendOnEnter: v })} />
               <Toggle label={t('set.experimental')} hint={t('set.experimentalHint')} value={settings.alphaFeatures} onChange={(v) => void setSettings({ alphaFeatures: v })} />
               <Field label={t('set.customInstructions')} hint={t('set.customInstructionsHint')}>

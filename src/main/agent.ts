@@ -14,6 +14,10 @@ import type {
 } from '../shared/types'
 import { streamChat, toApiHistory, type LlmContentPart, type LlmMessage } from './llm'
 import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, type ToolContext } from './tools'
+import { describeInBackground } from './describe'
+
+/** never spend a request describing media, bundles or lockfiles */
+const SKIP_DESCRIBE = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|mp3|mp4|zip|tar|gz|7z|dmg|exe|dll|so|dylib|pdf|apk|jar)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/i
 import { IGNORED_DIRS, toRel } from './fsops'
 import { getSettings, saveCheckpoint, setSettings } from './store'
 
@@ -462,6 +466,16 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     }
 
     if (step >= Math.max(1, req.maxSteps)) finalReason = 'limit'
+
+    // Label the files this run created or rewrote, in the background: by the time
+    // the user opens the explorer they already read like known things.
+    if (touched.size && req.describeFiles !== false) {
+      const hint = `the agent just wrote this file while working on: ${(req.userMessage?.content || '').slice(0, 140)}`
+      describeInBackground(
+        [...touched].filter((p) => !SKIP_DESCRIBE.test(p)).map((p) => ({ path: p, note: hint })),
+        { onEach: (summary) => deps.emit({ type: 'file-summaries', runId: req.runId, summaries: [summary] }) }
+      )
+    }
   } catch (e: any) {
     if (signal.aborted) {
       finalReason = 'stopped'

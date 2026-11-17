@@ -465,6 +465,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       approvalPolicy: settings.approvalPolicy,
       maxSteps: settings.maxAgentSteps,
       autoContext: settings.autoContext,
+      describeFiles: settings.describeFiles,
       customInstructions: settings.customInstructions,
       history: thread.messages,
       userMessage: userMsg,
@@ -565,6 +566,15 @@ export const useStore = create<State & Actions>((set, get) => ({
         set((s) => ({ changedFiles: [...new Set([...s.changedFiles, ...rels])] }))
         void get().refreshGit()
         void get().refreshTree()
+        break
+      }
+      case 'file-summaries': {
+        // the agent labelled the files it wrote: the explorer picks these up live
+        set((s) => {
+          const next = { ...s.fileSummaries }
+          for (const f of e.summaries) if (f.description) next[f.path] = f.description
+          return { fileSummaries: next }
+        })
         break
       }
       case 'error':

@@ -1,6 +1,9 @@
 import React from 'react'
 
 export type IconName =
+  | 'code'
+  | 'braces'
+  | 'image'
   | 'plus'
   | 'minus'
   | 'close'
@@ -82,6 +85,15 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M9 2H4.5A1.5 1.5 0 003 3.5v9A1.5 1.5 0 004.5 14h7a1.5 1.5 0 001.5-1.5V6z" />
       <path d="M9 2v4h4" />
+    </>
+  ),
+  code: <path d="M6 4.5L2.5 8 6 11.5M10 4.5L13.5 8 10 11.5" />,
+  braces: <path d="M6 2.5c-1.2 0-1.6.8-1.6 2v1c0 1-.6 1.8-1.4 2 .8.2 1.4 1 1.4 2v1c0 1.2.4 2 1.6 2M10 2.5c1.2 0 1.6.8 1.6 2v1c0 1 .6 1.8 1.4 2-.8.2-1.4 1-1.4 2v1c0 1.2-.4 2-1.6 2" />,
+  image: (
+    <>
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <circle cx="6" cy="6.5" r="1.1" />
+      <path d="M3 11.5l3.2-3 2.4 2.2 1.8-1.6L13 11" />
     </>
   ),
   paperclip: (

@@ -223,13 +223,54 @@ export function DiffModal(): React.ReactElement {
 
 import { DiffView } from './CodeBlock'
 
+/* ------------------------------------------------------------------ */
+/* File preview                                                        */
+/* ------------------------------------------------------------------ */
+
+const EXT_META: { re: RegExp; icon: IconName; kind: string; tint: string }[] = [
+  { re: /^tsx?$/, icon: 'code', kind: 'ts', tint: '#4f9cf5' },
+  { re: /^jsx?$|^mjs$|^cjs$/, icon: 'code', kind: 'js', tint: '#e8c04c' },
+  { re: /^json$|^jsonc$|^ya?ml$|^toml$|^ini$|^env$/, icon: 'braces', kind: 'json', tint: '#b58cf0' },
+  { re: /^md$|^mdx$|^txt$|^rst$/, icon: 'file', kind: 'md', tint: '#9fb3c8' },
+  { re: /^css$|^scss$|^sass$|^less$/, icon: 'braces', kind: 'css', tint: '#6fc3df' },
+  { re: /^html?$|^vue$|^svelte$/, icon: 'code', kind: 'html', tint: '#e08a5a' },
+  { re: /^py$/, icon: 'code', kind: 'py', tint: '#6cc48a' },
+  { re: /^rs$/, icon: 'code', kind: 'rs', tint: '#d98a6a' },
+  { re: /^go$/, icon: 'code', kind: 'go', tint: '#5fbcd8' },
+  { re: /^png$|^jpe?g$|^gif$|^webp$|^svg$|^ico$|^bmp$/, icon: 'image', kind: 'img', tint: '#c79bf0' },
+  { re: /^sh$|^bash$|^zsh$|^ps1$|^bat$/, icon: 'terminal', kind: 'sh', tint: '#8fbf6f' },
+  { re: /^zip$|^tar$|^gz$|^7z$|^rar$|^dmg$|^exe$|^apk$|^jar$/, icon: 'layers', kind: 'bin', tint: '#b0a08a' },
+  { re: /^pdf$/, icon: 'file', kind: 'pdf', tint: '#e07070' },
+  { re: /^lock$/, icon: 'shield', kind: 'lock', tint: '#b0a08a' },
+  { re: /^l?o?g$/, icon: 'history', kind: 'log', tint: '#b0a08a' }
+]
+
+function extOf(p: string): string {
+  const base = p.split(/[\\/]/).pop() || p
+  const m = /\.([a-z0-9]+)$/i.exec(base)
+  return m ? m[1].toLowerCase() : ''
+}
+
+function fileMeta(p: string): { icon: IconName; kind: string; tint: string } {
+  const ext = extOf(p)
+  return EXT_META.find((m) => m.re.test(ext)) || { icon: 'file', kind: ext || 'file', tint: 'var(--fg-3)' }
+}
+
+function formatBytes(n?: number): string {
+  if (!n && n !== 0) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
 /**
  * Preview for a file the agent handed over.
  *
- * Portrait panel with a blur veil: the file is the subject, everything else
- * recedes. Actions live in a bar so the path is never a dead end — you can
- * copy it, open it in the editor, reveal it in the OS, or ask the model what
- * the file is for.
+ * A blur veil behind, then a portrait card: subtitle line, the file itself with
+ * a type tile, its name and weight, and a grid of wide rectangular actions at
+ * the bottom. The description is written by the model only when the file is
+ * worth one (see `describe.ts`), so most of them arrive already labelled.
  */
 export function FilePreviewModal(): React.ReactElement {
   const t = useT()
@@ -238,7 +279,8 @@ export function FilePreviewModal(): React.ReactElement {
   const openFile = useStore((s) => s.openFile)
   const toast = useStore((s) => s.toast)
   const [body, setBody] = React.useState<string>('')
-  const [isImage, setIsImage] = React.useState(false)
+  const [size, setSize] = React.useState<number | undefined>(undefined)
+  const [lines, setLines] = React.useState<number>(0)
   const [err, setErr] = React.useState('')
   const [summary, setSummary] = React.useState('')
   const [busy, setBusy] = React.useState(false)
@@ -249,9 +291,10 @@ export function FilePreviewModal(): React.ReactElement {
     setBody('')
     setErr('')
     setSummary('')
-    const img = /\.(png|jpe?g|gif|webp)$/i.test(preview.path)
-    setIsImage(img)
-    // a cached description is free: show it before asking the model
+    setSize(undefined)
+    setLines(0)
+    const meta = fileMeta(preview.path)
+    const img = meta.kind === 'img'
     void window.comb.files.summaries([preview.path]).then((rows) => {
       if (rows[0]?.description) setSummary(rows[0].description)
     })
@@ -264,7 +307,11 @@ export function FilePreviewModal(): React.ReactElement {
     }
     void window.comb.fs
       .read(preview.path)
-      .then((fc) => setBody(fc.content || ''))
+      .then((fc) => {
+        setBody(fc.content || '')
+        setSize(fc.size)
+        setLines((fc.content || '').split('\n').length)
+      })
       .catch((e: any) => setErr(e?.message || 'Cannot read file'))
   }, [preview])
 
@@ -278,11 +325,17 @@ export function FilePreviewModal(): React.ReactElement {
 
   if (!preview) return <></>
 
+  const meta = fileMeta(preview.path)
+  const base = preview.rel.split('/').pop() || preview.rel
+  const ext = extOf(preview.path)
+  const dir = preview.rel.includes('/') ? preview.rel.slice(0, preview.rel.lastIndexOf('/')) : ''
+
   const describe = async (): Promise<void> => {
     setBusy(true)
     const res = await window.comb.files.describe(preview.path)
     setBusy(false)
     if (res.ok && res.summary) setSummary(res.summary.description)
+    else if (res.ok) toast('warn', t('fp.notWorth'))
     else toast('err', t('fp.describeFailed'), res.error)
   }
 
@@ -291,25 +344,40 @@ export function FilePreviewModal(): React.ReactElement {
     void openFile(preview.path, preview.rel)
   }
 
+  const copy = (text: string, msg: string): void => {
+    window.comb.clipboard.write(text)
+    toast('ok', msg)
+  }
+
   return (
     <div className="modal-backdrop" onClick={() => setPreview(null)}>
       <div className="file-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="diff-modal-head">
-          <Icon name="file" size={12} className="acc" />
-          <span className="mono t-sm ellipsis">{preview.rel.split('/').pop()}</span>
+        <div className="file-modal-sub">
+          <span className="file-modal-kicker">{t('fp.kicker')}</span>
+          <span className="file-modal-sep">·</span>
+          <span className="mono ellipsis">{base}</span>
           <span className="spacer" />
-          <button className="icon-btn" onClick={() => setPreview(null)}>
+          <button className="icon-btn" onClick={() => setPreview(null)} title={t('common.close')}>
             <Icon name="close" size={12} />
           </button>
         </div>
 
-        <div className="file-modal-path mono t-xs faint ellipsis" title={preview.path}>
-          {preview.rel}
+        <div className="file-modal-ident">
+          <span className="file-type-tile" style={{ color: meta.tint }}>
+            <Icon name={meta.icon} size={20} strokeWidth={1.3} />
+            <span className="file-type-ext">{ext || 'file'}</span>
+          </span>
+          <span className="col" style={{ minWidth: 0, gap: 2 }}>
+            <span className="file-modal-name ellipsis" title={preview.rel}>{base}</span>
+            <span className="file-modal-meta mono t-xs faint">
+              {[formatBytes(size), lines ? t('fp.lines', { n: lines }) : '', dir].filter(Boolean).join('  ·  ')}
+            </span>
+          </span>
         </div>
 
         {(summary || busy) && (
           <div className="file-modal-summary">
-            <Icon name="zap" size={11} className="acc" />
+            <Icon name="sparkles" size={11} className="acc" />
             <span className="t-xs dim">{busy ? t('fp.describing') : summary}</span>
           </div>
         )}
@@ -318,7 +386,7 @@ export function FilePreviewModal(): React.ReactElement {
         <div className="file-modal-body">
           {err ? (
             <div className="t-xs err" style={{ padding: 14 }}>{err}</div>
-          ) : isImage ? (
+          ) : meta.kind === 'img' ? (
             body && <img src={body} alt={preview.rel} className="file-modal-img" />
           ) : (
             <pre className="file-modal-pre" data-wrap={wrap}>{body || t('fp.loading')}</pre>
@@ -326,34 +394,27 @@ export function FilePreviewModal(): React.ReactElement {
         </div>
 
         <div className="file-modal-actions">
-          <button className="btn primary sm" onClick={open}>
-            <Icon name="file" size={11} /> {t('fp.open')}
+          <button className="file-act primary" onClick={open}>
+            <Icon name="file" size={13} /> {t('fp.open')}
           </button>
-          <button className="btn ghost sm" onClick={() => window.comb.app.showItemInFolder(preview.path)}>
-            <Icon name="folder" size={11} /> {t('fp.reveal')}
+          <button className="file-act" onClick={() => window.comb.app.showItemInFolder(preview.path)}>
+            <Icon name="folder" size={13} /> {t('fp.reveal')}
           </button>
-          <button
-            className="btn ghost sm"
-            onClick={() => {
-              window.comb.clipboard.write(preview.path)
-              toast('ok', t('fp.copied'))
-            }}
-          >
-            <Icon name="copy" size={11} /> {t('fp.copyPath')}
+          <button className="file-act" onClick={() => copy(preview.path, t('fp.copied'))}>
+            <Icon name="copy" size={13} /> {t('fp.copyPath')}
           </button>
-          {!isImage && (
-            <>
-              <button className="btn ghost sm" onClick={() => setWrap((v) => !v)}>
-                {wrap ? t('fp.nowrap') : t('fp.wrap')}
-              </button>
-              <button className="btn ghost sm" onClick={() => window.comb.clipboard.write(body)} disabled={!body}>
-                <Icon name="copy" size={11} /> {t('fp.copyAll')}
-              </button>
-            </>
+          {meta.kind !== 'img' && (
+            <button className="file-act" onClick={() => copy(body, t('fp.copiedAll'))} disabled={!body}>
+              <Icon name="copy" size={13} /> {t('fp.copyAll')}
+            </button>
           )}
-          <span className="spacer" />
-          <button className="btn ghost sm" onClick={() => void describe()} disabled={busy || isImage}>
-            <Icon name="zap" size={11} /> {summary ? t('fp.redescribe') : t('fp.describe')}
+          {meta.kind !== 'img' && (
+            <button className="file-act" onClick={() => setWrap((v) => !v)}>
+              <Icon name="diff" size={13} /> {wrap ? t('fp.nowrap') : t('fp.wrap')}
+            </button>
+          )}
+          <button className="file-act" onClick={() => void describe()} disabled={busy}>
+            <Icon name="sparkles" size={13} /> {summary ? t('fp.redescribe') : t('fp.describe')}
           </button>
         </div>
       </div>

@@ -104,6 +104,8 @@ export interface Settings {
   /** let the agent read/write anywhere on the machine, not just open folders */
   fullDiskAccess: boolean
   alphaFeatures: boolean
+  /** let the model label the files it wrote, in the background */
+  describeFiles: boolean
   allowedTools: string[]
   locale: Locale
 }
@@ -138,6 +140,7 @@ export const DEFAULT_SETTINGS: Settings = {
   extraRoots: [],
   fullDiskAccess: false,
   alphaFeatures: false,
+  describeFiles: true,
   allowedTools: [],
   locale: 'en'
 }
@@ -344,6 +347,7 @@ export type AgentEvent =
   | { type: 'checkpoint'; runId: string; checkpoint: Checkpoint }
   | { type: 'step'; runId: string; step: number }
   | { type: 'files-changed'; runId: string; paths: string[] }
+  | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
   | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' }
 
@@ -362,6 +366,8 @@ export interface RunRequest {
   approvalPolicy: ApprovalPolicy
   maxSteps: number
   autoContext: boolean
+  /** label freshly written files with a one-liner (default on) */
+  describeFiles?: boolean
   customInstructions: string
   /** full prior conversation (without the new user message) */
   history: ChatMessage[]

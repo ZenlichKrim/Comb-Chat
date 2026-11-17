@@ -89,10 +89,16 @@ your machine and sent only to the endpoint you configure.
 - CodeMirror 6 editor with 20+ languages, custom Comb theme, search, folding, bracket matching, multi-cursor,
   selection → *attach to prompt*.
 - Explorer with search, file operations, rename/delete context menu, filter, auto-reload when the agent writes.
-- **AI file descriptions.** Right-click a file (or a whole folder) → *Describe this file* — the model writes one
-  line about what it is, shown under the name in the explorer and at the top of the preview. Descriptions are
-  cached in `file-summaries.json` in the app's user-data folder, keyed by path and invalidated by mtime + size,
-  so untouched files never cost a request. Text files only, nothing leaves the machine except to your own API key.
+- **AI file descriptions.** After a run the model looks at every file it created or rewrote and decides whether it
+  is worth a line at all — lockfiles, generated bundles and empty stubs are skipped, files that matter get one plain
+  sentence ("sliding-window rate limit, no dependencies"). Those arrive live in the explorer and at the top of the
+  file preview. You can also ask on demand: right-click a file or a whole folder → *describe*. Descriptions are
+  cached in `file-summaries.json` in user-data, keyed by path and invalidated by mtime + size, so untouched files
+  never cost a request. Text files only; nothing leaves the machine except to your own API key.
+  Settings → Agent → *Let the AI sign the files it writes* turns the background pass off.
+- **File preview** opens as a portrait card over a blurred backdrop: "Reading file · name.ext", a type tile with the
+  file's weight and line count, the content, then a grid of wide actions (open, reveal, copy path, copy all,
+  wrapping, describe).
 - Source control panel (stage/commit/log/diff) with real `git` integration.
 - Real terminal (xterm.js + node-pty, pipe-shell fallback) in the workspace directory.
 - Command palette (`Ctrl K`), quick open (`Ctrl P`), search in files (`Ctrl Shift F`),
