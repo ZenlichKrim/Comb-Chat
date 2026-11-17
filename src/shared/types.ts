@@ -4,7 +4,7 @@
  */
 
 export type ApprovalPolicy = 'ask' | 'auto-edit' | 'yolo'
-export type ThemeId = 'comb' | 'midnight' | 'graphite' | 'amber' | 'nord' | 'paper'
+export type ThemeId = 'comb' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
 export type Locale = 'en' | 'ru'
@@ -99,6 +99,10 @@ export interface Settings {
   customInstructions: string
   lastWorkspace: string | null
   recentWorkspaces: string[]
+  /** extra roots the agent may read/write besides lastWorkspace */
+  extraRoots: string[]
+  /** let the agent read/write anywhere on the machine, not just open folders */
+  fullDiskAccess: boolean
   alphaFeatures: boolean
   allowedTools: string[]
   locale: Locale
@@ -112,7 +116,8 @@ export const DEFAULT_SETTINGS: Settings = {
   maxTokens: 16384,
   approvalPolicy: 'ask',
   theme: 'comb',
-  accent: '#e8b14c',
+  /** 'auto' = the accent that belongs to the chosen theme */
+  accent: 'auto',
   fontSize: 13,
   uiScale: 1,
   fontLigatures: true,
@@ -130,6 +135,8 @@ export const DEFAULT_SETTINGS: Settings = {
   customInstructions: '',
   lastWorkspace: null,
   recentWorkspaces: [],
+  extraRoots: [],
+  fullDiskAccess: false,
   alphaFeatures: false,
   allowedTools: [],
   locale: 'en'
@@ -216,7 +223,7 @@ export interface ToolCall {
   raw?: string
 }
 
-export type ToolStatus = 'pending' | 'running' | 'awaiting-approval' | 'ok' | 'error' | 'denied' | 'aborted'
+export type ToolStatus = 'pending' | 'running' | 'awaiting-approval' | 'ok' | 'error' | 'denied' | 'aborted' | 'expired'
 
 export interface ToolResultView {
   id: string
@@ -288,6 +295,7 @@ export interface ChatMessage {
 }
 
 export interface Thread {
+  extraRoots?: string[]
   id: string
   title: string
   createdAt: number
@@ -333,6 +341,10 @@ export interface RunRequest {
   threadId: string
   messageId: string
   workspace: string | null
+  /** additional folders the agent may touch, beyond `workspace` */
+  extraRoots?: string[]
+  /** no sandbox: absolute paths anywhere on the machine are allowed */
+  fullDiskAccess?: boolean
   model: string
   temperature: number
   maxTokens: number

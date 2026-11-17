@@ -20,7 +20,7 @@ const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'comb', label: 'Comb' },
   { id: 'midnight', label: 'Midnight' },
   { id: 'graphite', label: 'Graphite' },
-  { id: 'amber', label: 'Amber' },
+  { id: 'electric', label: 'Electric' },
   { id: 'nord', label: 'Nord' },
   { id: 'paper', label: 'Paper' }
 ]
@@ -239,6 +239,13 @@ export function SettingsDialog(): React.ReactElement {
                 </div>
               </Row>
               <Toggle label={t('set.autoContext')} hint={t('set.autoContextHint')} value={settings.autoContext} onChange={(v) => void setSettings({ autoContext: v })} />
+
+              <Toggle
+                label={t('set.fullDisk')}
+                hint={t('set.fullDiskHint')}
+                value={settings.fullDiskAccess}
+                onChange={(v) => void setSettings({ fullDiskAccess: v })}
+              />
               <Toggle label={t('set.sendOnEnter')} hint={t('set.sendOnEnterHint')} value={settings.sendOnEnter} onChange={(v) => void setSettings({ sendOnEnter: v })} />
               <Toggle label={t('set.experimental')} hint={t('set.experimentalHint')} value={settings.alphaFeatures} onChange={(v) => void setSettings({ alphaFeatures: v })} />
               <Field label={t('set.customInstructions')} hint={t('set.customInstructionsHint')}>
@@ -283,6 +290,12 @@ export function SettingsDialog(): React.ReactElement {
               </Field>
               <Field label={t('set.accent')}>
                 <div className="swatches">
+                  <button
+                    className="swatch auto"
+                    data-active={settings.accent === 'auto'}
+                    title={t('set.accentAuto')}
+                    onClick={() => void setSettings({ accent: 'auto' })}
+                  />
                   {ACCENTS.map((c) => (
                     <button key={c} className="swatch" data-active={settings.accent === c} style={{ background: c }} onClick={() => void setSettings({ accent: c })} />
                   ))}

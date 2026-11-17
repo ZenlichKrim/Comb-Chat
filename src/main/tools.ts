@@ -17,6 +17,10 @@ import type { LlmToolSchema } from './llm'
 
 export interface ToolContext {
   workspace: string
+  /** every folder the session may touch: primary first, then extras */
+  roots: string[]
+  /** no sandbox: absolute paths anywhere on the machine are allowed */
+  fullDisk?: boolean
   /** Files touched during this run, used for checkpoints and the changed-files list. */
   touched: Set<string>
   beforeState: Map<string, string | null>
@@ -48,8 +52,26 @@ function clamp(s: string, n = MAX_OUTPUT): string {
   return s.slice(0, n) + `\n… [truncated ${s.length - n} chars]`
 }
 
-function makeDiff(ctx: { workspace: string }, abs: string, before: string | null, after: string | null): FileDiff {
-  const rel = toRel(ctx.workspace, abs)
+/** Roots for fs helpers that take an optional base for relative paths. */
+function rootsOf(ctx: ToolContext): string | string[] {
+  return ctx.roots.length ? ctx.roots : ctx.workspace
+}
+
+/** Relative to a root when inside one, otherwise the absolute path. */
+function relOrAbs(ctx: ToolContext, abs: string): string {
+  const roots = ctx.roots.length ? ctx.roots : [ctx.workspace]
+  for (const r of roots) {
+    const rr = path.resolve(r)
+    const a = path.resolve(abs)
+    if (a === rr) return '.'
+    if (a.startsWith(rr + path.sep)) return path.relative(rr, a).split(path.sep).join('/')
+  }
+  return abs
+}
+
+function makeDiff(ctx: ToolContext | { workspace: string; roots?: string[]; fullDisk?: boolean }, abs: string, before: string | null, after: string | null): FileDiff {
+  const full = ctx as ToolContext
+  const rel = full.roots ? relOrAbs(full, abs) : toRel(ctx.workspace, abs)
   const a = before ?? ''
   const b = after ?? ''
   let additions = 0
@@ -125,17 +147,17 @@ export async function executeTool(
 async function toolReadFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const rel = String(args.path || '')
   if (!rel) return { ok: false, error: 'path is required' }
-  const abs = safeJoin(ctx.workspace, rel)
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
   const st = await fs.stat(abs)
   if (st.isDirectory()) {
-    const entries = await listDir(abs, ctx.workspace)
+    const entries = await listDir(abs, rootsOf(ctx))
     return { ok: true, output: entries.map((e) => (e.isDir ? `${e.rel}/` : e.rel)).join('\n'), meta: { isDir: true } }
   }
   if (st.size > 1024 * 1024) {
-    const fc = await readFileSafe(abs, ctx.workspace)
+    const fc = await readFileSafe(abs, rootsOf(ctx))
     return { ok: true, output: clamp(fc.content), meta: { truncated: true, size: st.size } }
   }
-  const fc = await readFileSafe(abs, ctx.workspace)
+  const fc = await readFileSafe(abs, rootsOf(ctx))
   if (fc.language === 'binary') return { ok: true, output: `[binary file, ${st.size} bytes]`, meta: { binary: true } }
   const numbered = args.line_numbers !== false
   const from = Number(args.start_line || 1)
@@ -154,7 +176,7 @@ async function toolWriteFile(args: Record<string, any>, ctx: ToolContext): Promi
   const rel = String(args.path || '')
   const content = String(args.content ?? '')
   if (!rel) return { ok: false, error: 'path is required' }
-  const abs = safeJoin(ctx.workspace, rel)
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
   let before: string | null = null
   try {
     const prev = await fs.readFile(abs, 'utf8')
@@ -185,7 +207,7 @@ async function toolEditFile(args: Record<string, any>, ctx: ToolContext): Promis
   const replaceAll = Boolean(args.replace_all)
   if (!rel) return { ok: false, error: 'path is required' }
   if (!oldStr) return { ok: false, error: 'old_string is required (must match the file exactly, including indentation)' }
-  const abs = safeJoin(ctx.workspace, rel)
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
   let current: string
   try {
     current = norm(await fs.readFile(abs, 'utf8'))
@@ -239,8 +261,8 @@ async function toolMultiEdit(args: Record<string, any>, ctx: ToolContext): Promi
 
 async function toolListDir(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const rel = String(args.path || '.')
-  const abs = safeJoin(ctx.workspace, rel)
-  const entries = await listDir(abs, ctx.workspace)
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
+  const entries = await listDir(abs, rootsOf(ctx))
   const filtered = entries.filter((e) => !e.ignored || args.all)
   const lines = filtered.map((e) => (e.isDir ? `📁 ${e.rel}/` : `📄 ${e.rel} (${e.size}b)`))
   return { ok: true, output: lines.join('\n') || '(empty directory)', meta: { count: filtered.length } }
@@ -263,12 +285,27 @@ function globToRegex(glob: string): RegExp {
   return new RegExp(`^${re}$`, 'i')
 }
 
+/** Walk every attached root, tagging files with the root they came from. */
+async function walkAll(ctx: ToolContext, maxFiles: number): Promise<{ abs: string; rel: string; root: string }[]> {
+  const roots = ctx.roots.length ? ctx.roots : [ctx.workspace]
+  const out: { abs: string; rel: string; root: string }[] = []
+  for (const root of roots) {
+    if (out.length >= maxFiles) break
+    const files = await walk(root, { maxFiles: maxFiles - out.length })
+    for (const abs of files) out.push({ abs, rel: toRel(root, abs), root })
+  }
+  return out
+}
+
 async function toolGlob(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const pattern = String(args.pattern || '*')
-  const files = await walk(ctx.workspace, { maxFiles: 20000 })
+  const files = await walkAll(ctx, 20000)
   const re = globToRegex(pattern)
-  const matched = files.filter((f) => re.test(toRel(ctx.workspace, f))).slice(0, 400)
-  return { ok: true, output: matched.map((f) => toRel(ctx.workspace, f)).join('\n') || 'No files matched', meta: { count: matched.length } }
+  const matched = files.filter((f) => re.test(f.rel))
+  // with several roots the prefix matters, otherwise two README.md look identical
+  const multi = (ctx.roots.length || 1) > 1
+  const shown = matched.slice(0, 400).map((f) => (multi ? `${path.basename(f.root)}/${f.rel}` : f.rel))
+  return { ok: true, output: shown.join('\n') || 'No files matched', meta: { count: matched.length } }
 }
 
 async function toolGrep(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
@@ -281,17 +318,17 @@ async function toolGrep(args: Record<string, any>, ctx: ToolContext): Promise<To
     return { ok: false, error: `Invalid regex: ${e.message}` }
   }
   const max = Number(args.max_results || 100)
-  const files = await walk(ctx.workspace, { maxFiles: 8000 })
+  const files = await walkAll(ctx, 8000)
   const hits: string[] = []
   for (const f of files) {
     if (hits.length >= max) break
-    const rel = toRel(ctx.workspace, f)
+    const rel = f.rel
     if (args.glob && !globToRegex(String(args.glob)).test(rel)) continue
-    if (isProbablyBinary(f)) continue
+    if (isProbablyBinary(f.abs)) continue
     try {
-      const st = await fs.stat(f)
+      const st = await fs.stat(f.abs)
       if (st.size > 2 * 1024 * 1024) continue
-      const text = await fs.readFile(f, 'utf8')
+      const text = await fs.readFile(f.abs, 'utf8')
       if (!re.test(text)) continue
       re.lastIndex = 0
       const lines = text.split('\n')
@@ -350,7 +387,7 @@ export async function runCommand(
 async function toolRunCommand(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const command = String(args.command || '')
   if (!command) return { ok: false, error: 'command is required' }
-  const cwd = args.cwd ? safeJoin(ctx.workspace, String(args.cwd)) : ctx.workspace
+  const cwd = args.cwd ? safeJoin(ctx.roots, String(args.cwd), ctx.fullDisk) : ctx.workspace
   const res = await runCommand(command, cwd, {
     timeoutMs: Math.min(Number(args.timeout_ms) || 120000, 600000),
     signal: ctx.signal
@@ -359,15 +396,15 @@ async function toolRunCommand(args: Record<string, any>, ctx: ToolContext): Prom
     ok: res.ok,
     output: `$ ${command}\n${res.output}\n[exit ${res.exitCode}]`,
     error: res.ok ? undefined : `Command failed with exit code ${res.exitCode}`,
-    meta: { command, exitCode: res.exitCode, cwd: toRel(ctx.workspace, cwd) || '.' }
+    meta: { command, exitCode: res.exitCode, cwd: toRel(ctx.roots, cwd) || '.' }
   }
 }
 
 async function toolDelete(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const rel = String(args.path || '')
   if (!rel) return { ok: false, error: 'path is required' }
-  const abs = safeJoin(ctx.workspace, rel)
-  if (path.resolve(abs) === path.resolve(ctx.workspace)) return { ok: false, error: 'Refusing to delete the workspace root' }
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
+  if (ctx.roots.some((r) => path.resolve(abs) === path.resolve(r))) return { ok: false, error: 'Refusing to delete a workspace root' }
   const st = await fs.stat(abs).catch(() => null)
   if (!st) return { ok: false, error: `Not found: ${rel}` }
   let before: string | null = null
@@ -386,8 +423,8 @@ async function toolMove(args: Record<string, any>, ctx: ToolContext): Promise<To
   const from = String(args.from || '')
   const to = String(args.to || '')
   if (!from || !to) return { ok: false, error: 'from and to are required' }
-  const absFrom = safeJoin(ctx.workspace, from)
-  const absTo = safeJoin(ctx.workspace, to)
+  const absFrom = safeJoin(ctx.roots, from, ctx.fullDisk)
+  const absTo = safeJoin(ctx.roots, to, ctx.fullDisk)
   await fs.mkdir(path.dirname(absTo), { recursive: true })
   await fs.rename(absFrom, absTo)
   ctx.touched.add(absFrom)
@@ -420,7 +457,8 @@ function toolTodo(args: Record<string, any>, ctx: ToolContext): ToolOutcome {
 export async function previewTool(
   name: string,
   args: Record<string, any>,
-  workspace: string
+  workspace: string,
+  fullDisk = false
 ): Promise<FileDiff[] | undefined> {
   const readCurrent = async (abs: string): Promise<string | null> => {
     try {
@@ -431,7 +469,7 @@ export async function previewTool(
   }
   try {
     if (name === 'write_file') {
-      const abs = safeJoin(workspace, String(args.path || ''))
+      const abs = safeJoin(workspace, String(args.path || ''), fullDisk)
       const before = await readCurrent(abs)
       const after = String(args.content ?? '')
       if (before === after) return undefined
@@ -449,7 +487,7 @@ export async function previewTool(
             }))
       const byFile = new Map<string, { before: string | null; after: string }>()
       for (const e of edits) {
-        const abs = safeJoin(workspace, e.path)
+        const abs = safeJoin(workspace, e.path, fullDisk)
         const current = byFile.has(abs) ? byFile.get(abs)!.after : await readCurrent(abs)
         if (current === null) continue
         const target = norm(e.oldStr)
@@ -484,7 +522,10 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path relative to the workspace root' },
+          path: {
+            type: 'string',
+            description: 'Path relative to the workspace root, or an absolute path anywhere on disk when full-disk access is on'
+          },
           start_line: { type: 'integer', description: '1-based first line (optional)' },
           end_line: { type: 'integer', description: 'last line inclusive (optional)' },
           line_numbers: { type: 'boolean', description: 'prefix each line with its number (default true)' }
@@ -556,7 +597,8 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
     type: 'function',
     function: {
       name: 'list_dir',
-      description: 'List the entries of a directory in the workspace.',
+      description:
+        'List the entries of a directory. With several folders attached, prefix the path with the folder name (e.g. "api/src") or pass an absolute path inside one of them.',
       parameters: {
         type: 'object',
         properties: {

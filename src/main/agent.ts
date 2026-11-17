@@ -1,3 +1,4 @@
+import os from 'node:os'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { randomUUID } from 'node:crypto'
@@ -41,12 +42,14 @@ export function stopRun(runId: string): void {
 export function resolveApproval(runId: string, callId: string, decision: 'allow' | 'allow-always' | 'deny'): void {
   const run = active.get(runId)
   if (!run) return
-  if (decision === 'allow-always') run.autoApproved.add(callId.split(':')[0])
-  const fn = run.approvals.get(callId)
-  if (fn) {
-    run.approvals.delete(callId)
-    fn(decision)
-  }
+  // Approvals are keyed by `${tool}:${id}` so two calls with the same id never
+  // collide, but the renderer only knows the id — accept both shapes.
+  const key = run.approvals.has(callId) ? callId : [...run.approvals.keys()].find((k) => k.endsWith(`:${callId}`))
+  const fn = key ? run.approvals.get(key) : undefined
+  if (!fn || !key) return
+  if (decision === 'allow-always') run.autoApproved.add(key.split(':')[0])
+  run.approvals.delete(key)
+  fn(decision)
 }
 
 /* ------------------------------------------------------------------ */
@@ -55,18 +58,34 @@ export function resolveApproval(runId: string, callId: string, decision: 'allow'
 
 function systemPrompt(opts: {
   workspace: string | null
+  /** every attached folder; `workspace` is the first one */
+  roots?: string[]
   platform: string
   shell: string
   now: string
   approvalPolicy: string
+  fullDisk?: boolean
   custom: string
   contextFiles: string[]
   locale: string
 }): string {
-  const toolsGuide = opts.workspace
+  const extra = (opts.roots || []).slice(1)
+  const rootsLine = extra.length
+    ? `You have direct read/write access to ${extra.length + 1} folders:\n- \`${opts.workspace}\` (primary — bare paths resolve here)\n${extra.map((r) => `- \`${r}\` (address it with an absolute path, e.g. \`${r}/src/app.ts\`)`).join('\n')}`
+    : `You have direct read/write access to the user's project at \`${opts.workspace}\`. All paths you pass to tools are relative to that root.`
+  const toolsGuide = opts.fullDisk
     ? `
 # Tools
-You have direct read/write access to the user's project at \`${opts.workspace}\`. All paths you pass to tools are relative to that root.
+You have access to the WHOLE machine, not just the open project${opts.workspace ? ` (project root: \`${opts.workspace}\`)` : ''}. Absolute paths are allowed anywhere: \`/home/...\`, \`/etc/...\`, \`C:\\Users\\...\`.
+- Prefer the project root for code changes unless the user asks about something elsewhere.
+- Anything outside the project is still gated by the approval policy: writes, deletes and commands ask first.
+- Never read or print secrets (SSH keys, .env with credentials, browser profiles, keychains) unless the user explicitly points at them.
+- Do not wander: search purposefully, and say which paths outside the project you touched.
+- \`run_command\` is non-interactive and has network access; use \`todo_write\` for anything with more than 2 steps.`
+    : opts.workspace
+    ? `
+# Tools
+${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from extra folders come prefixed with the folder name.' : ''}
 - Explore before you edit: \`list_dir\`, \`glob\`, \`grep\`, \`read_file\`. Never guess file contents.
 - Change code with \`edit_file\` (exact string replacement). Include enough context lines so the match is unique. Use \`write_file\` only for new files or full rewrites.
 - Verify your work: run the project's type checker, tests or linter with \`run_command\` when they exist. Read package.json / Makefile / pyproject.toml first to learn the right commands.
@@ -184,8 +203,13 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const checkpoints: Checkpoint[] = []
 
   let approvalPolicy = req.approvalPolicy
+  const fullDisk = !!req.fullDiskAccess
+  const roots = [req.workspace, ...(req.extraRoots || [])].filter((r): r is string => !!r)
+  const extraRootNames = (req.extraRoots || []).filter(Boolean)
   const ctx: ToolContext = {
     workspace: req.workspace || '',
+    roots: roots.length ? roots : [os.homedir()],
+    fullDisk,
     touched,
     beforeState,
     todos,
@@ -196,17 +220,15 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     approvalPolicy,
     runId: req.runId,
     requestApproval: async (call) => {
-      const id = `${call.name}:${call.id}`
       if (run.autoApproved.has(call.name)) return 'allow'
       deps.emit({ type: 'tool-approval-request', runId: req.runId, call })
-      const prevPolicy = approvalPolicy
-      approvalPolicy = prevPolicy
+      const key = `${call.name}:${call.id}`
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          run.approvals.delete(call.id)
+          run.approvals.delete(key)
           resolve('deny')
         }, 15 * 60 * 1000)
-        run.approvals.set(call.id, (d) => {
+        run.approvals.set(key, (d) => {
           clearTimeout(timer)
           if (d === 'allow-always') {
             run.autoApproved.add(call.name)
@@ -225,6 +247,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   if (req.workspace && req.autoContext) {
     try {
       contextBlock = await buildContextBlock(req.workspace, (req.openFiles || []).map((f) => f.rel))
+      if (extraRootNames.length) {
+        contextBlock += `\n\n## Additional folders\n${extraRootNames.map((r) => `- ${r}`).join('\n')}\n(their files are not listed here — use list_dir/glob with an absolute path)`
+      }
     } catch {
       /* ignore context failures */
     }
@@ -232,10 +257,12 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
 
   const sys = systemPrompt({
     workspace: req.workspace,
+    roots,
     platform: `${process.platform} ${process.arch}`,
     shell: settings.shell || (process.platform === 'win32' ? 'PowerShell / cmd' : process.env.SHELL || '/bin/bash'),
     now: new Date().toISOString(),
     approvalPolicy: req.approvalPolicy,
+    fullDisk,
     custom: req.customInstructions || settings.customInstructions || '',
     contextFiles: (req.openFiles || []).map((f) => f.rel),
     locale: settings.locale || 'en'
@@ -252,7 +279,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   }
 
   const disabled = new Set(req.disabledTools || [])
-  const tools = req.workspace ? TOOL_SCHEMAS.filter((t) => !disabled.has(t.function.name)) : []
+  const tools = req.workspace || fullDisk ? TOOL_SCHEMAS.filter((t) => !disabled.has(t.function.name)) : []
 
   deps.emit({ type: 'run-start', runId: req.runId, threadId: req.threadId, messageId: req.messageId })
 
@@ -341,11 +368,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           continue
         }
 
-        const needsApproval = req.workspace && toolNeedsApproval(call.name, approvalPolicy)
+        const needsApproval = (req.workspace || fullDisk) && toolNeedsApproval(call.name, approvalPolicy)
         if (needsApproval) {
           view.status = 'awaiting-approval'
-          if (req.workspace && (call.name === 'write_file' || call.name === 'edit_file' || call.name === 'multi_edit')) {
-            view.diff = await previewTool(call.name, args, req.workspace)
+          if ((req.workspace || fullDisk) && (call.name === 'write_file' || call.name === 'edit_file' || call.name === 'multi_edit')) {
+            view.diff = await previewTool(call.name, args, req.workspace || os.homedir(), fullDisk)
           }
           deps.emit({ type: 'tool-call', runId: req.runId, call: view })
           const decision = await ctx.requestApproval(view)
@@ -366,7 +393,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
 
         const t0 = Date.now()
-        const outcome = await executeTool(call.name, args, { ...ctx, workspace: req.workspace || '' })
+        const outcome = await executeTool(call.name, args, ctx)
         const finished: ToolResultView = {
           ...view,
           status: outcome.ok ? 'ok' : 'error',

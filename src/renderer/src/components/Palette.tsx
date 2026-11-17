@@ -58,7 +58,7 @@ export function CommandPalette(): React.ReactElement {
       { id: 'yolo', label: t('cmd.policyYolo'), icon: 'zap', run: () => void st.setSettings({ approvalPolicy: 'yolo' }) },
       { id: 'git', label: t('cmd.git'), icon: 'git', run: () => void st.refreshGit() },
       { id: 'theme', label: t('cmd.theme'), icon: 'sun', run: () => {
-        const order = ['comb', 'midnight', 'graphite', 'amber', 'nord', 'paper'] as const
+        const order = ['comb', 'midnight', 'graphite', 'electric', 'nord', 'paper'] as const
         const idx = order.indexOf(st.settings.theme as any)
         void st.setSettings({ theme: order[(idx + 1) % order.length] })
       } },

@@ -56,6 +56,8 @@ interface State {
   threads: Thread[]
   activeThreadId: string | null
   workspace: string | null
+  /** extra folders attached to the current session */
+  extraRoots: string[]
   tabs: OpenTab[]
   activeTabPath: string | null
   expandedDirs: Set<string>
@@ -89,6 +91,9 @@ interface Actions {
   boot: () => Promise<void>
   setSettings: (patch: Partial<Settings>) => Promise<void>
   openWorkspace: (dir?: string) => Promise<void>
+  /** Attach another folder the agent may read and write, alongside the main one. */
+  addRoot: () => Promise<void>
+  removeRoot: (dir: string) => Promise<void>
   refreshTree: (dir?: string) => Promise<void>
   toggleDir: (dir: string) => Promise<void>
   openFile: (path: string, rel: string, opts?: { reuse?: boolean }) => Promise<void>
@@ -133,6 +138,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   threads: [],
   activeThreadId: null,
   workspace: null,
+  extraRoots: [],
   tabs: [],
   activeTabPath: null,
   expandedDirs: new Set(),
@@ -214,12 +220,36 @@ export const useStore = create<State & Actions>((set, get) => ({
   openWorkspace: async (dir) => {
     const target = dir || ((await window.comb.fs.pickFolder()) as string | null)
     if (!target) return
-    set({ workspace: target, dirCache: {}, expandedDirs: new Set(), diffPreview: null })
+    set({ workspace: target, extraRoots: [], dirCache: {}, expandedDirs: new Set(), diffPreview: null })
     await get().setSettings({ lastWorkspace: target })
     window.comb.fs.watch(target, 'workspace')
     await get().refreshTree(target)
     await get().refreshGit()
     get().toast('ok', tr('store.workspaceOpened'), target)
+  },
+
+  addRoot: async () => {
+    const dir = (await window.comb.fs.pickFolder()) as string | null
+    if (!dir) return
+    const main = get().workspace
+    if (main && (dir === main || dir.startsWith(main + '/') || dir.startsWith(main + '\\'))) {
+      get().toast('warn', tr('store.rootIsInside'))
+      return
+    }
+    if (get().extraRoots.includes(dir)) return
+    const roots = [...get().extraRoots, dir]
+    set({ extraRoots: roots, dirCache: {} })
+    await get().setSettings({ extraRoots: roots })
+    window.comb.fs.watch(dir, `root:${dir}`)
+    await get().refreshTree(dir)
+    get().toast('ok', tr('store.rootAdded'), dir)
+  },
+
+  removeRoot: async (dir) => {
+    const roots = get().extraRoots.filter((r) => r !== dir)
+    set({ extraRoots: roots })
+    await get().setSettings({ extraRoots: roots })
+    get().toast('ok', tr('store.rootRemoved'), dir)
   },
 
   refreshTree: async (dir) => {
@@ -313,6 +343,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       updatedAt: Date.now(),
       messages: [],
       workspace: get().workspace,
+      extraRoots: get().extraRoots,
       model: get().settings.model,
       usage: { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 },
       todos: []
@@ -392,6 +423,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       messages: [...thread.messages, userMsg, assistantMsg],
       updatedAt: Date.now(),
       workspace: get().workspace,
+      extraRoots: get().extraRoots,
       model: get().settings.model
     }
     set((s) => ({
@@ -412,6 +444,8 @@ export const useStore = create<State & Actions>((set, get) => ({
       threadId: threadId!,
       messageId: assistantMsg.id,
       workspace: get().workspace,
+      extraRoots: get().extraRoots,
+      fullDiskAccess: settings.fullDiskAccess,
       model: settings.model,
       temperature: settings.temperature,
       maxTokens: settings.maxTokens,
@@ -473,7 +507,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))
         break
       case 'tool-call':
-        updateAssistant((m) => ({ ...m, tools: [...(m.tools || []), e.call] }))
+        updateAssistant((m) => {
+          const tools = m.tools || []
+          const exists = tools.some((t) => t.id === e.call.id)
+          return { ...m, tools: exists ? tools.map((t) => (t.id === e.call.id ? { ...t, ...e.call } : t)) : [...tools, e.call] }
+        })
         break
       case 'tool-update':
         updateAssistant((m) => ({
@@ -483,6 +521,7 @@ export const useStore = create<State & Actions>((set, get) => ({
         break
       case 'tool-approval-request':
         set({ pendingApproval: e.call, approvalRunId: e.runId })
+        get().toast('info', tr('chat.awaitingApproval'), e.call.name)
         // make sure the call is visible in the transcript
         updateAssistant((m) => ({
           ...m,
@@ -515,8 +554,19 @@ export const useStore = create<State & Actions>((set, get) => ({
         get().toast('err', tr('store.agentError'), e.message)
         break
       case 'run-end': {
-        updateAssistant((m) => ({ ...m, streaming: false, stopped: e.reason === 'stopped' }))
+        // An approval that never got answered must not vanish without a trace:
+        // leave the card in the transcript marked as expired.
+        const stale = get().pendingApproval
+        updateAssistant((m) => ({
+          ...m,
+          streaming: false,
+          stopped: e.reason === 'stopped',
+          tools: stale
+            ? (m.tools || []).map((t) => (t.id === stale.id && t.status === 'awaiting-approval' ? { ...t, status: 'expired' } : t))
+            : m.tools
+        }))
         set({ running: false, pendingApproval: null })
+        if (stale) get().toast('warn', tr('chat.approvalExpired'))
         const t = get().threads.find((x) => x.id === threadId)
         if (t) get().persistThread({ ...t, updatedAt: Date.now() })
         if (e.reason === 'limit') get().toast('warn', tr('store.stepLimit'), tr('store.stepLimitHint'))
@@ -629,9 +679,20 @@ export function applyTheme(s: Settings): void {
   root.dataset.theme = s.theme
   root.dataset.motion = s.reducedMotion ? 'reduced' : 'full'
   root.dataset.ligatures = String(s.fontLigatures)
-  root.style.setProperty('--accent', s.accent)
-  root.style.setProperty('--accent-soft', `color-mix(in oklab, ${s.accent} 16%, transparent)`)
-  root.style.setProperty('--accent-line', `color-mix(in oklab, ${s.accent} 45%, transparent)`)
+  // Only override the theme's own accent when the user picked one explicitly.
+  // 'auto' (or a value equal to the default amber) means: follow the theme.
+  if (s.accent && s.accent !== 'auto') {
+    root.style.setProperty('--accent', s.accent)
+  } else {
+    root.style.removeProperty('--accent')
+  }
+  if (s.accent && s.accent !== 'auto') {
+    root.style.setProperty('--accent-soft', `color-mix(in oklab, ${s.accent} 16%, transparent)`)
+    root.style.setProperty('--accent-line', `color-mix(in oklab, ${s.accent} 45%, transparent)`)
+  } else {
+    root.style.removeProperty('--accent-soft')
+    root.style.removeProperty('--accent-line')
+  }
   root.style.setProperty('--fs-sm', `${s.fontSize - 1}px`)
   root.style.setProperty('--fs-md', `${s.fontSize}px`)
   root.style.setProperty('--fs-lg', `${s.fontSize + 2}px`)

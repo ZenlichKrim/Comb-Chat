@@ -59,6 +59,9 @@ function FileTree(): React.ReactElement {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; entry: DirEntry | null } | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
+  const extraRoots = useStore((s) => s.extraRoots)
+  const addRoot = useStore((s) => s.addRoot)
+  const removeRoot = useStore((s) => s.removeRoot)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -199,6 +202,9 @@ function FileTree(): React.ReactElement {
         <button className="icon-btn" data-tip={t('side.newFolder')} onClick={() => void doAction('new-folder', null)} style={{ width: 20, height: 20 }}>
           <Icon name="folder" size={12} />
         </button>
+        <button className="icon-btn" data-tip={t('side.addFolderTip')} onClick={() => void addRoot()} style={{ width: 20, height: 20 }}>
+          <Icon name="plus" size={11} />
+        </button>
         <button className="icon-btn" data-tip={t('common.refresh')} onClick={() => void refreshTree()} style={{ width: 20, height: 20 }}>
           <Icon name="refresh" size={11} />
         </button>
@@ -236,6 +242,33 @@ function FileTree(): React.ReactElement {
             ))
           : rootEntries.map((e) => renderEntry(e, 0))}
         {!filter && !rootEntries.length && <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.emptyFolder')}</div>}
+
+        {/* extra folders the agent may also touch */}
+        {extraRoots.map((root) => {
+          const entries = dirCache[root] || []
+          const label = root.split(/[\\/]/).filter(Boolean).pop() || root
+          return (
+            <div key={root} className="tree-extra-root">
+              <div className="sb-section-head">
+                <Icon name="folder" size={11} className="faint" />
+                <span className="cap ellipsis" title={root}>{label}</span>
+                <span className="spacer" />
+                <button
+                  className="icon-btn"
+                  data-tip={t('side.removeFolder')}
+                  style={{ width: 20, height: 20 }}
+                  onClick={() => void removeRoot(root)}
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </div>
+              {entries.map((e) => renderEntry(e, 0))}
+              {!entries.length && (
+                <div className="t-xs ghost" style={{ padding: '4px 12px 8px' }}>{t('side.emptyFolder')}</div>
+              )}
+            </div>
+          )
+        })}
       </div>
       {ctxMenu && (
         <>

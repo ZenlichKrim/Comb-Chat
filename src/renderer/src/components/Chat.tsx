@@ -91,6 +91,7 @@ export function ChatPane(): React.ReactElement {
   const setBottomPanel = useStore((s) => s.setBottomPanel)
   const bottomPanel = useStore((s) => s.bottomPanel)
 
+  const [approvalAge, setApprovalAge] = useState(0)
   const [input, setInput] = useState('')
   const [historyIdx, setHistoryIdx] = useState(-1)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -98,6 +99,17 @@ export function ChatPane(): React.ReactElement {
   const pinnedBottom = useRef(true)
   const messages = thread?.messages || []
   const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+
+  // tick the countdown while an approval waits
+  useEffect(() => {
+    if (!pendingApproval) {
+      setApprovalAge(0)
+      return
+    }
+    const started = Date.now()
+    const id = setInterval(() => setApprovalAge(Date.now() - started), 1000)
+    return () => clearInterval(id)
+  }, [pendingApproval])
 
   // approve with Enter when a approval is pending
   useEffect(() => {
@@ -278,7 +290,7 @@ export function ChatPane(): React.ReactElement {
       </div>
 
       {pendingApproval && (
-        <div className="approval-bar">
+        <div className="approval-bar" data-sticky>
           <Icon name="shield" size={13} className="warn" />
           <span className="approval-label">
             <span className="t-sm" style={{ fontWeight: 600 }}>{pendingApproval.name}</span>
@@ -315,6 +327,11 @@ export function ChatPane(): React.ReactElement {
           <button className="btn danger sm" onClick={() => void approve('deny')}>
             {t('chat.deny')}
           </button>
+          {/* A countdown makes it obvious the bar is not going away on its own,
+              which is what made the old one feel like it "blinked". */}
+          <span className="approval-timer" title={t('chat.approvalStays')}>
+            {Math.max(0, Math.round((15 * 60 * 1000 - approvalAge) / 1000))}s
+          </span>
         </div>
       )}
 

@@ -75,11 +75,11 @@
   --sidebar-w: 260px;
   --rail-w: 46px;
 
-  /* accent is overridden from settings */
-  --accent: #e8b14c;
+  /* accent: a manual pick wins, otherwise each theme supplies its own */
+  --accent: var(--theme-accent, #e8b14c);
   --accent-soft: color-mix(in oklab, var(--accent) 18%, transparent);
   --accent-line: color-mix(in oklab, var(--accent) 42%, transparent);
-  --accent-text: #1a1409;
+  --accent-text: var(--theme-accent-text, #1a1409);
 
   --ok: #6dcf8a;
   --warn: #e9b949;
@@ -116,6 +116,8 @@
   --fg-4: #4a463d;
   --user-bg: #1d1a12;
   --code-bg: #0e0d0a;
+  --theme-accent: #e8b14c;
+  --theme-accent-text: #1a1409;
 }
 
 [data-theme='midnight'] {
@@ -137,6 +139,8 @@
   --fg-4: #414857;
   --user-bg: #121620;
   --code-bg: #080a0e;
+  --theme-accent: #5b8cff;
+  --theme-accent-text: #05070d;
 }
 
 [data-theme='graphite'] {
@@ -158,27 +162,31 @@
   --fg-4: #474747;
   --user-bg: #191919;
   --code-bg: #0a0a0a;
+  --theme-accent: #c9c9c9;
+  --theme-accent-text: #111111;
 }
 
-[data-theme='amber'] {
-  --bg-0: #100c05;
-  --bg-1: #171208;
-  --bg-2: #1e170b;
-  --bg-3: #271e10;
-  --bg-4: #322715;
-  --bg-hover: #221a0d;
-  --bg-active: #2b2112;
-  --bg-inset: #0d0a04;
-  --line-1: #241c0e;
-  --line-2: #322713;
-  --line-3: #46371b;
-  --fg-0: #fbeecb;
-  --fg-1: #e6d3a4;
-  --fg-2: #b09b73;
-  --fg-3: #7e6d4e;
-  --fg-4: #54492f;
-  --user-bg: #20180a;
-  --code-bg: #0f0b04;
+[data-theme='electric'] {
+  --bg-0: #04070d;
+  --bg-1: #070c15;
+  --bg-2: #0b1220;
+  --bg-3: #101a2c;
+  --bg-4: #16233a;
+  --bg-hover: #0c1524;
+  --bg-active: #13203a;
+  --bg-inset: #030509;
+  --line-1: #101b2c;
+  --line-2: #17253c;
+  --line-3: #22354f;
+  --fg-0: #eaf4ff;
+  --fg-1: #c4d9f0;
+  --fg-2: #7f9dbf;
+  --fg-3: #5a7695;
+  --fg-4: #3c5573;
+  --user-bg: #0a1526;
+  --code-bg: #050a12;
+  --theme-accent: #38bdf8;
+  --theme-accent-text: #03121a;
 }
 
 [data-theme='nord'] {
@@ -200,6 +208,8 @@
   --fg-4: #525d6e;
   --user-bg: #2b313b;
   --code-bg: #1d2128;
+  --theme-accent: #88c0d0;
+  --theme-accent-text: #0b1016;
 }
 
 [data-theme='paper'] {
@@ -225,4 +235,6 @@
   --shadow-2: 0 4px 14px rgb(50 40 20 / 0.1);
   --shadow-3: 0 20px 48px rgb(50 40 20 / 0.16);
   --accent-text: #1a1409;
+  --theme-accent: #a9671a;
+  --theme-accent-text: #fdfbf6;
 }

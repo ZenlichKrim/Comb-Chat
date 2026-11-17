@@ -271,6 +271,14 @@
 .tree-filter input::placeholder {
   color: var(--fg-4);
 }
+.tree-extra-root {
+  border-top: 1px solid var(--line);
+  margin-top: 6px;
+  padding-top: 2px;
+}
+.tree-extra-root .sb-section-head .cap {
+  color: var(--fg-2);
+}
 .tree-scroll {
   flex: 1;
   overflow-y: auto;
@@ -1267,6 +1275,19 @@
 }
 
 /* composer */
+.approval-bar[data-sticky] {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  box-shadow: var(--shadow-2);
+}
+.approval-timer {
+  font-size: var(--fs-xs, 11px);
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
 .composer-wrap {
   flex: none;
   padding: 6px 12px 4px;
@@ -2408,6 +2429,16 @@ button.sb-item:hover {
 }
 .theme-graphite .tp-acc {
   background: #e8b14c;
+}
+/* replaces the old Amber theme (it duplicated Comb almost exactly) */
+.theme-electric {
+  background: #070c15;
+}
+.theme-electric .tp-line {
+  background: #22354f;
+}
+.theme-electric .tp-acc {
+  background: #38bdf8;
 }
 .theme-amber {
   background: #171208;

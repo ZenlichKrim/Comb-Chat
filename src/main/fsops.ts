@@ -105,7 +105,8 @@ export function isProbablyBinary(file: string, head?: Buffer): boolean {
   return false
 }
 
-export function safeJoin(root: string, rel: string): string {
+/** Join one root, refusing anything that walks out of it. */
+function joinInside(root: string, rel: string): string {
   const resolved = path.resolve(root, rel)
   const rootResolved = path.resolve(root)
   if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
@@ -114,14 +115,62 @@ export function safeJoin(root: string, rel: string): string {
   return resolved
 }
 
-export function toRel(root: string, p: string): string {
-  const rel = path.relative(path.resolve(root), path.resolve(p))
+/**
+ * Resolve a relative path against every attached root.
+ *
+ * With a single root this is the old sandbox: anything with `..` is refused.
+ * With several roots, a path is tried against each one in order, so an agent
+ * that needs two checkouts side by side can still be kept inside both.
+ * An absolute path is accepted only when it already sits inside a root.
+ */
+export function safeJoin(root: string | string[], rel: string, allowOutside = false): string {
+  const roots = Array.isArray(root) ? root : [root]
+
+  if (path.isAbsolute(rel)) {
+    const resolved = path.resolve(rel)
+    if (allowOutside) return resolved
+    for (const r of roots) {
+      const rr = path.resolve(r)
+      if (resolved === rr || resolved.startsWith(rr + path.sep)) return resolved
+    }
+    throw new Error(`Path is outside every open folder: ${rel}`)
+  }
+
+  if (!roots.length) {
+    if (allowOutside) return path.resolve(rel)
+    throw new Error('No workspace is open')
+  }
+  if (!rel || rel === '.') return path.resolve(roots[0])
+
+  for (const r of roots) {
+    const resolved = path.resolve(r, rel)
+    const rr = path.resolve(r)
+    if (resolved === rr || resolved.startsWith(rr + path.sep)) return resolved
+  }
+  throw new Error(`Path escapes workspace: ${rel}`)
+}
+
+/** Which root a path belongs to, longest match first (nested folders). */
+export function rootOf(roots: string | string[], p: string): string {
+  const list = (Array.isArray(roots) ? roots : [roots]).map((r) => path.resolve(r))
+  const abs = path.resolve(p)
+  let best = ''
+  for (const r of list) {
+    if ((abs === r || abs.startsWith(r + path.sep)) && r.length > best.length) best = r
+  }
+  return best || path.resolve(list[0] || '')
+}
+
+/** Path relative to the nearest root it belongs to. */
+export function toRel(root: string | string[], p: string): string {
+  const base = Array.isArray(root) ? rootOf(root, p) : root
+  const rel = path.relative(path.resolve(base), path.resolve(p))
   return rel.split(path.sep).join('/')
 }
 
-export async function listDir(dir: string, root?: string): Promise<DirEntry[]> {
+export async function listDir(dir: string, root?: string | string[]): Promise<DirEntry[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
-  const base = root || dir
+  const base: string | string[] = root || dir
   const out: DirEntry[] = await Promise.all(
     entries.map(async (e) => {
       const full = path.join(dir, e.name)
@@ -168,7 +217,7 @@ export async function readImageDataUrl(file: string, maxBytes = 20 * 1024 * 1024
   return `data:${mime};base64,${buf.toString('base64')}`
 }
 
-export async function readFileSafe(file: string, root?: string): Promise<FileContent> {
+export async function readFileSafe(file: string, root?: string | string[]): Promise<FileContent> {
   const st = await fs.stat(file)
   if (st.isDirectory()) throw new Error('Path is a directory')
   const handle = await fs.open(file, 'r')
