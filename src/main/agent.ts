@@ -136,6 +136,7 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - You have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
 - Use \`todo_write\` for anything with more than 2 steps, and keep it current.
+- Never ship a stub: no TODO comments as your work, no empty class that "will be filled later", no method that returns a hardcoded value where behaviour was asked for. If you cannot do a thing, say it in the summary instead of leaving a placeholder that pretends.
 - The user's spec is a contract, not a mood board. Every numbered item in it is work you owe them: implement it or say explicitly which ones you could not and why. Never call finish while a plan item is open.
 - "Compiles" is not "works" and neither is "the code looks right". For a real project: build it, read the errors, fix them. For code against a version you do not remember exactly, read the actual jar/lockfile in the project instead of guessing API names.
 - Go straight at the task. Do not turn into a detective: read what this step needs, then act. If the obvious way fails, try the next method in the same step instead of spending rounds investigating why the first failed. Finishing beats fully understanding the project.`
@@ -457,9 +458,32 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   let planStalls = 0
   /** successful commands, so \"готово\" can be judged by evidence, not claims */
   const okCommands: string[] = []
+  // The spec the user pasted is the contract. Every numbered section is a promise
+  // the run must keep, and a "done" that covers four of thirteen is the failure
+  // the user keeps screenshotting. Parsed once, checked before finish.
+  const specSections = (() => {
+    const raw = req.userMessage?.content || ''
+    if (raw.length < 800) return [] as { n: number; title: string; hits: number }[]
+    const out: { n: number; title: string; hits: number }[] = []
+    const lines = raw.split(/\r?\n/)
+    for (const line of lines) {
+      const plain = line.replace(/[═─=#*]/g, ' ').trim()
+      // spec sections look like \"1. ЯДРО: ХОЛОД, ТЕПЛО, ТЕЛО, МОКРОСТЬ\" — a short
+      // numbered header, not a sentence and not a list bullet
+      const m = plain.match(/^(\d{1,2})\.\s+([A-ZА-ЯЁ][^.]{3,60})$/)
+      if (!m) continue
+      const title = m[2].trim()
+      if (title.length < 4) continue
+      if (out.some((x) => x.title.toLowerCase() === title.toLowerCase())) continue
+      out.push({ n: Number(m[1]), title, hits: 0 })
+    }
+    return out.slice(0, 20)
+  })()
   /** set once the requested artifact is actually found on disk */
   let artifactFound = ''
   let artifactRefused = 0
+  let specPlanAsked = false
+  let scopeRefused = 0
   /** the user asked for a build and we have not found it on disk yet */
   const artifactMissing = (): boolean => !!wantedArtifact && !artifactFound && artifactRefused < 2
   /** the user asked for a build artifact (jar/exe/appimage...) — we must find it */
@@ -494,6 +518,27 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     // A task big enough to have a plan must be *built*, not described. If the
     // toolchain exists, the build command is the verification: "compiles" is the
     // only claim that means anything for code the model wrote from scratch.
+    if (specSections.length >= 4) {
+      verifyStage = 'running'
+      const open = todos.filter((x) => x.status !== 'done')
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'verify',
+        title: `Сверка со спекой: ${specSections.length - open.length}/${specSections.length} разделов закрыто`,
+        detail: open.length ? open.slice(0, 3).map((x) => String(x.text).slice(0, 50)).join(' · ') : undefined
+      })
+      history.push({
+        role: 'user',
+        content:
+          `[stable mode — spec coverage] The user's spec has ${specSections.length} sections: ` +
+          specSections.map((x) => x.title).join('; ') +
+          '.\nBefore calling finish: go through them one by one and check that each is actually implemented in code (not described, not stubbed, not "later"). ' +
+          'For every section that is missing, implement it now. ' +
+          'Then call finish with a summary that lists each section and its state — implemented or not, and why.'
+      })
+      return
+    }
     if (wantedArtifact) {
       verifyStage = 'running'
       const cmd = await pickVerifyCommand(req.verifyCommand || '', req.workspace || '', touched)
@@ -951,6 +996,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           }
         }
 
+        // A thirteen-section spec that produced four files is not a finished mod.
+        // Measure the scope the same way the user does: by what exists.
+        if (call.name === 'finish' && stableMode && specSections.length >= 6 && touched.size < Math.min(specSections.length, 10) && scopeRefused < 1) {
+          scopeRefused++
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'errors',
+            title: `Не принял «готово»: на ${specSections.length} разделов спеки только ${touched.size} файл(ов)`,
+            detail: 'Такой объём не покрывается парой классов — продолжаю работу.'
+          })
+          history.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: call.name,
+            content:
+              `Finish refused: the spec has ${specSections.length} sections and this run touched only ${touched.size} file(s). ` +
+              'Systems of this size live in many classes: core stats, weather, wind, snow, clothing, mobs, loot, machine, diseases, HUD, networking, localization. ' +
+              'Continue implementing the sections that are still missing — real code, one class per system, wired into the initializer. ' +
+              'Do not pad with empty files either: each file must hold working behaviour.'
+          })
+          continue
+        }
+
         if (call.name === 'finish' && stableMode && artifactMissing()) {
           const found = await findArtifact(req.workspace || '', wantedArtifact)
           if (!found) {
@@ -1188,6 +1257,21 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
             `[late answers] The user answered questions you had already proceeded past:\n` +
             late.map(([id, a]) => `- ${id}: ${a}`).join('\n') +
             `\nAdapt your plan to these answers if they change anything.`
+        })
+      }
+
+      // A pasted spec with sections: the plan must be those sections, not a
+      // vague three-step story. This runs before any exploring so the run has a
+      // shape from the start, and it names every section explicitly.
+      if (step === 1 && specSections.length >= 4 && !todos.length) {
+        specPlanAsked = true
+        history.push({
+          role: 'user',
+          content:
+            `[spec coverage] The user pasted a specification with ${specSections.length} numbered sections:\n` +
+            specSections.map((x) => `${x.n}. ${x.title}`).join('\n') +
+            '\n\nBuild the todo list from exactly these sections with todo_write — one item per section, same wording. ' +
+            'Then work through them in order. Do not start with a two-item plan; the user will judge the result by these sections.'
         })
       }
 
