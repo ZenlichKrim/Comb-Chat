@@ -136,6 +136,8 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - You have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
 - Use \`todo_write\` for anything with more than 2 steps, and keep it current.
+- The user's spec is a contract, not a mood board. Every numbered item in it is work you owe them: implement it or say explicitly which ones you could not and why. Never call finish while a plan item is open.
+- "Compiles" is not "works" and neither is "the code looks right". For a real project: build it, read the errors, fix them. For code against a version you do not remember exactly, read the actual jar/lockfile in the project instead of guessing API names.
 - Go straight at the task. Do not turn into a detective: read what this step needs, then act. If the obvious way fails, try the next method in the same step instead of spending rounds investigating why the first failed. Finishing beats fully understanding the project.`
     : `
 # No workspace open
@@ -448,6 +450,24 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   let roundProgressed = false
   /** last step at which the "stop reading" nudge was sent */
   let lastIdlePrompt = 0
+  /** how many times "I cannot, so I stopped" was accepted before we insisted */
+  let gaveUpRefused = 0
+  /** the plan as it stood at the last check, to catch a plan that never advances */
+  let lastPlanDone = -1
+  let planStalls = 0
+  /** successful commands, so \"готово\" can be judged by evidence, not claims */
+  const okCommands: string[] = []
+  /** set once the requested artifact is actually found on disk */
+  let artifactFound = ''
+  let artifactRefused = 0
+  /** the user asked for a build and we have not found it on disk yet */
+  const artifactMissing = (): boolean => !!wantedArtifact && !artifactFound && artifactRefused < 2
+  /** the user asked for a build artifact (jar/exe/appimage...) — we must find it */
+  const wantedArtifact = (() => {
+    const q = (req.userMessage?.content || '').toLowerCase()
+    const m = q.match(/\b(jar|exe|appimage|\.deb|apk|dmg|msi)\b/)
+    return m ? m[1].replace('.', '') : ''
+  })()
   /** the agent's own sentence for the round being executed */
   let roundNarration = ''
   /** the calls of the round being executed, reported to the UI as one step */
@@ -469,6 +489,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     // cost a round trip on every "what does this file do?" question.
     if (!touched.size) {
       verifyStage = 'done'
+      return
+    }
+    // A task big enough to have a plan must be *built*, not described. If the
+    // toolchain exists, the build command is the verification: "compiles" is the
+    // only claim that means anything for code the model wrote from scratch.
+    if (wantedArtifact) {
+      verifyStage = 'running'
+      const cmd = await pickVerifyCommand(req.verifyCommand || '', req.workspace || '', touched)
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'verify',
+        title: `Сборка перед «готово»: ${cmd || wantedArtifact}`,
+        detail: 'Пока артефакт не собрался, задача не закончена.'
+      })
+      history.push({
+        role: 'user',
+        content:
+          `[stable mode] The user asked for a built ${wantedArtifact.toUpperCase()}. A summary is not a build. ` +
+          (cmd ? `Run \`${cmd}\` now and fix every error it prints, one by one, until it succeeds.\n` : 'Run the project build command now and fix every error it prints.\n') +
+          'Do not stub things out to make it compile: wire the real API. If a class name is wrong for this Minecraft version, ' +
+          'read the actual jar in the project (javap / unzip -l) and use the name that exists there. ' +
+          'Only after the build succeeds and the artifact file exists, call finish and say where the file is.'
+      })
       return
     }
     verifyStage = 'running'
@@ -817,7 +861,10 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           deps.emit({ type: 'files-changed', runId: req.runId, paths: outcome.diff.map((d) => d.path) })
         }
 
-        if (call.name === 'run_command' && outcome.ok) ranAnyCommand = true
+        if (call.name === 'run_command' && outcome.ok) {
+          ranAnyCommand = true
+          okCommands.push(String(args.command || '').slice(0, 200))
+        }
         if (repeated && READ_ONLY_TOOLS.has(call.name) && outcome.ok) {
           // Re-reading the same file with the same arguments: it is already in the
           // history and in the transcript. Say so once so it stops orbiting.
@@ -904,7 +951,65 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           }
         }
 
+        if (call.name === 'finish' && stableMode && artifactMissing()) {
+          const found = await findArtifact(req.workspace || '', wantedArtifact)
+          if (!found) {
+            artifactRefused++
+            const label = wantedArtifact.toUpperCase()
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'errors',
+              title: `Не принял «готово»: сборки ${label} нет`,
+              detail: 'Скажите «готово», когда артефакт реально существует на диске.'
+            })
+            history.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              name: call.name,
+              content:
+                `Finish refused: the user asked for a built ${label} and there is no such file in the project. ` +
+                'A summary is not a build. Run the actual build command now (gradle build, npm run dist, maven package…), ' +
+                'fix the errors it prints one by one, and only then finish. ' +
+                'If the toolchain is genuinely missing on this machine, say exactly what is missing and where you looked.'
+            })
+            continue
+          }
+          artifactFound = found
+        }
+
         if (outcome.halt) {
+          // A todo list with four open items and a finish call is not a finish —
+          // it is a surrender dressed as success. The user sees "готово" and a
+          // half-built project. Refuse while the plan still has work left, unless
+          // the model explains a real blocker.
+          if (call.name === 'finish' && todos.length) {
+            const open = todos.filter((x) => x.status !== 'done')
+            const summary = String(args.summary || args.message || '')
+            const blocked = (args.work_done === false && summary.length > 40) || /(не могу|невозможно|cannot|blocked|нет доступа)/i.test(summary)
+            if (open.length && !blocked && gaveUpRefused < 2) {
+              gaveUpRefused++
+              deps.emit({
+                type: 'guard',
+                runId: req.runId,
+                kind: 'errors',
+                title: `Не принял «готово»: в плане ещё ${open.length} пункт(ов)`,
+                detail: open.slice(0, 3).map((x) => String(x.text).slice(0, 60)).join(' · ')
+              })
+              history.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                name: call.name,
+                content:
+                  `Finish refused: your own plan still has ${open.length} open item(s): ` +
+                  open.slice(0, 8).map((x) => `"${String(x.text).slice(0, 80)}"`).join(', ') +
+                  '. Do not stop here. Mark what is genuinely done with todo_write, then continue with the next open item ' +
+                  'and finish only when the plan is empty. If a specific item is truly impossible, say which one and why in one line, ' +
+                  'and call finish again — the user will be told exactly what is missing.'
+              })
+              continue
+            }
+          }
           // "готово" with nothing done is not a finish: it is the failure the user
           // screenshots. Refuse it once, make it do the work it promised.
           // the model itself says nothing was done: never show that as a success
@@ -1142,7 +1247,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         title: `файлов — ${touched.size}, шагов — ${step}, $${usage.cost.toFixed(4)}`,
         detail: verifyStage === 'done' ? 'Результат проверен перед тем, как сказать «готово».' : undefined
       })
-      notify('Задача выполнена', `${touched.size} файл(ов) изменено, ${step} шагов, $${usage.cost.toFixed(4)}`)
+      if (wantedArtifact) {
+        const built = artifactFound || (await findArtifact(req.workspace || '', wantedArtifact))
+        if (built) {
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'done',
+            title: `Собрано: ${path.basename(built)}`,
+            detail: built
+          })
+          notify('Сборка готова', path.basename(built))
+        } else {
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'errors',
+            title: `Сборки ${wantedArtifact.toUpperCase()} нет`,
+            detail: 'Файлы изменены, но артефакт не появился — задача не доведена до конца.'
+          })
+          notify('Прогон закончился без артефакта', `Правки есть, готового ${wantedArtifact} нет`, true)
+        }
+      } else {
+        notify('Задача выполнена', `${touched.size} файл(ов) изменено, ${step} шагов, $${usage.cost.toFixed(4)}`)
+      }
     } else if (finalReason === 'guard') {
       notify('Прогон остановлен защитой', 'Смотрите карточку в приложении — там причина.', true)
     } else if (finalReason === 'done' && !touched.size) {
@@ -1251,5 +1379,31 @@ export async function pickVerifyCommand(configured: string, workspace: string, t
     return 'echo "no wrapper here — verify with your IDE or install gradle/maven"'
   }
   if (await has('Makefile')) return 'make -n'
+  return ''
+}
+
+/**
+ * Find the artifact the user asked for (a jar, an exe, an AppImage…). Claims are
+ * cheap; a file on disk is not. Walks the build output folders first and stops at
+ * the first hit, skipping the dependency caches nobody ships.
+ */
+export async function findArtifact(workspace: string, ext: string): Promise<string> {
+  if (!workspace || !ext) return ''
+  const roots = ['build', 'dist', 'out', 'target', 'release', '.', 'libs', 'app/build']
+  const pending = roots.map((r) => path.join(workspace, r))
+  let budget = 4000
+  while (pending.length && budget-- > 0) {
+    const dir = pending.shift()!
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name === '.git' || e.name === '.gradle') continue
+      const abs = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        pending.push(abs)
+        continue
+      }
+      if (e.name.toLowerCase().endsWith(`.${ext}`)) return abs
+    }
+  }
   return ''
 }
