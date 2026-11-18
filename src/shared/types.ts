@@ -66,9 +66,23 @@ export function wireModel(id: string): string {
   return id === 'deepseek-flash-thinking' ? 'deepseek-flash' : id
 }
 
-/** Extra request fields a UI model id implies. */
-export function modelOptions(id: string): { thinking?: { type: 'enabled' | 'disabled' } } {
-  if (id === 'deepseek-flash-thinking') return { thinking: { type: 'enabled' } }
+/**
+ * Extra request fields a UI model id implies.
+ *
+ * The thinking variant gets a budget large enough to actually plan a system
+ * instead of a file: too small a budget and the model spends it on the first
+ * thought and then writes whatever fits, which is exactly the "made it in two
+ * minutes" behaviour. 8k thoughts costs a few thousand tokens per step — with
+ * DeepSeek pricing that is fractions of a cent, and it buys the difference
+ * between a stub and something with a shape.
+ */
+export function modelOptions(
+  id: string,
+  effort: 'balanced' | 'deep' = 'deep'
+): { thinking?: { type: 'enabled' | 'disabled'; budget_tokens?: number } } {
+  if (id === 'deepseek-flash-thinking') {
+    return { thinking: { type: 'enabled', budget_tokens: effort === 'deep' ? 8192 : 4096 } }
+  }
   if (id === 'deepseek-flash') return { thinking: { type: 'disabled' } }
   return {}
 }

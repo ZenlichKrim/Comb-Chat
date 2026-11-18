@@ -4578,3 +4578,14 @@ hr {
   font-size: var(--fs-2xs);
   color: var(--fg-4);
 }
+
+.setting-hint-card {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  margin: 10px 0;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
+  border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--line-1));
+}

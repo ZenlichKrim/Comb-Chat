@@ -74,6 +74,8 @@ export interface StreamArgs {
   onUsage?: (u: TokenUsage) => void
   /** called before a retry: the UI shows "reconnecting in 4s" instead of a dead run */
   onRetry?: (r: { attempt: number; max: number; waitMs: number; reason: string }) => void
+  /** how much room the model gets to think before it answers (thinking models only) */
+  effort?: 'balanced' | 'deep'
 }
 
 export function priceFor(model: string): { priceIn: number; priceInCached: number; priceOut: number; contextWindow: number; maxOutput: number } {
@@ -139,7 +141,7 @@ export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok:
  * Handles SSE framing, partial JSON lines, reasoning_content and tool-call deltas.
  */
 export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
-  const { apiKey, baseUrl, model, messages, tools, temperature, maxTokens, signal, onDelta } = args
+  const { apiKey, baseUrl, model, messages, tools, temperature, maxTokens, signal, onDelta, effort } = args
   const endpoint = normalizeBase(baseUrl)
 
   const body: Record<string, any> = {
@@ -149,7 +151,7 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
     stream_options: { include_usage: true },
     max_tokens: Math.max(256, Math.min(maxTokens || 16384, 384_000)),
     temperature,
-    ...modelOptions(model)
+    ...modelOptions(model, effort)
   }
   if (tools.length) {
     body.tools = tools

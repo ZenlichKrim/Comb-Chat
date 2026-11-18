@@ -682,6 +682,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         temperature: req.temperature,
         maxTokens: req.maxTokens,
         signal,
+        // A substantial task gets room to think; a quick question does not need
+        // to pay for it. This is the cheapest lever on quality there is.
+        effort: substantial || specSections.length >= 4 ? 'deep' : 'balanced',
         onDelta: (d) => {
           if (d.reasoning) deps.emit({ type: 'reasoning-delta', runId: req.runId, text: d.reasoning })
           if (d.content) deps.emit({ type: 'text-delta', runId: req.runId, text: d.content })
@@ -1017,9 +1020,12 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           }
         }
 
-        // A thirteen-section spec that produced four files is not a finished mod.
-        // Measure the scope the same way the user does: by what exists.
-        if (call.name === 'finish' && stableMode && specSections.length >= 6 && touched.size < Math.min(specSections.length, 10) && scopeRefused < 1) {
+        // A thirteen-section spec that produced three files is not a finished mod.
+        // This is a floor, not a quota: one refusal, and only when the output is
+        // absurdly small for the ask — not a lever that pushes towards padding.
+        if (call.name === 'finish' && stableMode && specSections.length >= 6
+            && touched.size < Math.min(5, Math.max(3, specSections.length / 3))
+            && scopeRefused < 1) {
           scopeRefused++
           deps.emit({
             type: 'guard',
@@ -1296,7 +1302,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         history.push({
           role: 'user',
           content:
-            '[author pass — do this before you start making anything]\n' +
+            '[author pass — before you start making anything]\n' +
+            'You have room here: this is your design as much as the request. Prefer the version you would be proud of over the smallest thing that satisfies the list — as long as it still runs and still fits what was asked.\n' +
             'You are the author of this, not a contractor filling an order. Before touching files, decide and write short and concrete:\n' +
             '1. WHAT THIS REALLY IS — one paragraph on what the user is actually asking for, in your words. If the request is vague or one part of it is impossible, say so here and say what you will do instead.\n' +
             '2. WHAT IT IS JUDGED ON — the three things that will make the user say "yes, that is it" (for code: does it run, does it fit the codebase, is the API shaped sensibly; for a document: structure, accuracy, voice; for a refactor: invariants kept, nothing broken; for a dataset: coverage and correctness).\n' +

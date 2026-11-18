@@ -149,6 +149,14 @@ export function SettingsDialog(): React.ReactElement {
                 </div>
               </Field>
 
+              <div className="setting-hint-card">
+                <Icon name="sparkles" size={12} className="acc" />
+                <div className="col" style={{ gap: 2 }}>
+                  <span className="t-sm">{t('set.thinkingTitle')}</span>
+                  <span className="t-xs faint">{t('set.thinkingHint')}</span>
+                </div>
+              </div>
+
               <Row label={t('set.temperature')} hint={t('set.temperatureHint', { v: settings.temperature })}>
                 <input
                   type="range"
