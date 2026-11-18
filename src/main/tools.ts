@@ -511,7 +511,7 @@ export async function runCommand(
   cwd: string,
   opts: { timeoutMs?: number; signal?: AbortSignal } = {}
 ): Promise<{ ok: boolean; output: string; exitCode: number }> {
-  const timeout = opts.timeoutMs ?? 180000
+  const timeout = opts.timeoutMs ?? 300000
   return new Promise((resolve) => {
     const isWin = process.platform === 'win32'
     const shell = isWin ? process.env.ComSpec || 'cmd.exe' : process.env.SHELL || '/bin/bash'
@@ -551,7 +551,7 @@ async function toolRunCommand(args: Record<string, any>, ctx: ToolContext): Prom
   if (!command) return { ok: false, error: 'command is required' }
   const cwd = args.cwd ? safeJoin(ctx.roots, String(args.cwd), ctx.fullDisk) : ctx.workspace
   const res = await runCommand(command, cwd, {
-    timeoutMs: Math.min(Number(args.timeout_ms) || 120000, 600000),
+    timeoutMs: Math.min(Number(args.timeout_ms) || 300000, 900000),
     signal: ctx.signal
   })
   const why = res.ok ? '' : await explainExit(res.exitCode, command, cwd)

@@ -4481,3 +4481,30 @@ hr {
   opacity: 0.7;
   min-width: 0;
 }
+
+/* a running tool must look alive: dots, ticking seconds, and why it takes long */
+.tool-running {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-xs);
+  color: var(--fg-3);
+}
+.tool-running[data-long='true'] {
+  color: var(--fg-2);
+}
+.tool-running-doing {
+  font-weight: 550;
+}
+.tool-running-time {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  font-size: var(--fs-2xs);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.tool-running-hint {
+  font-size: var(--fs-2xs);
+  opacity: 0.75;
+}

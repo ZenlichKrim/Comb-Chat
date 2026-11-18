@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { ToolResultView } from '../../../shared/types'
 import { Icon, type IconName } from './Icon'
 import { DiffView } from './CodeBlock'
@@ -180,9 +180,38 @@ export function ToolCard({ call, compact }: { call: ToolResultView; compact?: bo
               <span>{call.locale}</span>
             </div>
           )}
-          {call.status === 'running' && <div className="tool-running"><span className="spinner" /> {t(meta.verb)}…</div>}
+          {call.status === 'running' && <RunningLine call={call} />}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A long command must not look like a frozen window. Show the seconds ticking and
+ * say what it is waiting for, so "gradle build" reads as work, not as a hang.
+ */
+function RunningLine({ call }: { call: ToolResultView }): React.ReactElement {
+  const t = useT()
+  const meta = TOOL_META[call.name] || { icon: 'zap' as IconName, label: call.name as DictKey, verb: call.name as DictKey }
+  const started = useRef(Date.now())
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 500)
+    return () => clearInterval(id)
+  }, [])
+  const secs = Math.round((Date.now() - started.current) / 1000)
+  const mm = Math.floor(secs / 60)
+  const ss = String(secs % 60).padStart(2, '0')
+  const long = secs > 20
+  return (
+    <div className="tool-running" data-long={long ? 'true' : undefined}>
+      <span className="spinner" />
+      <span className="tool-running-doing">{t(meta.verb)}</span>
+      <span className="tool-running-time mono">{mm > 0 ? `${mm}:${ss}` : `${secs}s`}</span>
+      <span className="tool-running-hint faint">
+        {long ? t('tool.stillRunning') : t('tool.working')}
+      </span>
     </div>
   )
 }
