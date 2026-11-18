@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "minecraft:iron_ingot"
+    }
+  ],
+  "result": {
+    "id": "winter:frost_ward",
+    "count": 1
+  }
+}

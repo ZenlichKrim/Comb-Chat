@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "II",
+    "IT"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:ice"
+    },
+    "T": {
+      "item": "minecraft:torch"
+    }
+  },
+  "result": {
+    "id": "winter:ice_lantern",
+    "count": 1
+  }
+}

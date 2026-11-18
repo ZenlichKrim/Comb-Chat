@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "winter",
+  "version": "${version}",
+  "name": "Winter Atmosphere",
+  "description": "A coherent winter survival simulation: body heat, weather fronts, wind that respects your walls, snow that accumulates, clothes, illness and a coffee machine that is worth the walk.",
+  "authors": ["Comb"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/winter/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["com.comb.winter.WinterMod"],
+    "client": ["com.comb.winter.client.WinterClient"]
+  },
+  "mixins": ["winter.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.17.3",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}

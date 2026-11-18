@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "winter:artifact_shard"
+    },
+    {
+      "item": "minecraft:gold_ingot"
+    }
+  ],
+  "result": {
+    "id": "winter:winter_heart",
+    "count": 1
+  }
+}

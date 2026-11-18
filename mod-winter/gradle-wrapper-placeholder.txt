@@ -1,0 +1,2 @@
+This project needs Gradle 8.10+. On Windows run build.bat — it downloads a
+Gradle distribution next to the project if none is installed.
