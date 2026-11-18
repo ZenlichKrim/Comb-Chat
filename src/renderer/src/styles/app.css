@@ -4508,3 +4508,73 @@ hr {
   font-size: var(--fs-2xs);
   opacity: 0.75;
 }
+
+/* the run's deliverable, under the answer, as something you can click */
+.result-files {
+  margin: 10px 0 4px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-1);
+}
+.result-files-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-2xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--fg-4);
+  margin-bottom: 7px;
+}
+.result-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.result-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast);
+}
+.result-file:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+  transform: translateY(-1px);
+}
+.result-file[data-artifact='true'] {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg-2));
+  color: var(--accent);
+  font-weight: 600;
+}
+.result-file-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-file-dir {
+  font-size: var(--fs-2xs);
+  color: var(--fg-4);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-files-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  font-size: var(--fs-2xs);
+  color: var(--fg-4);
+}

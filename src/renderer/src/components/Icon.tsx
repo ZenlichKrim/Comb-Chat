@@ -38,6 +38,7 @@ export type IconName =
   | 'eye-off'
   | 'edit'
   | 'external'
+  | 'download'
   | 'pin'
   | 'more'
   | 'undo'
@@ -183,6 +184,7 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   edit: <path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5zM9.5 4l2.5 2.5" />,
+  download: <path d="M8 2v8m0 0l3-3m-3 3L5 7M3 12.5h10" />,
   external: <path d="M6.5 3H3v10h10V9.5M9 2h5v5M14 2L7.5 8.5" />,
   pin: <path d="M9.5 1.5l5 5-2 1-3 3 .5 3.5-2-2-4.5 2.5 2.5-4.5-2-2L7.5 7l.5-2z" />,
   more: (

@@ -975,6 +975,65 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
   )
 }
 
+/**
+ * The deliverable, one click away: every file the run wrote, plus whatever looks
+ * like a build artifact (jar, exe, zip…), with "open folder" for the latter.
+ */
+function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
+  const t = useT()
+  const openFile = useStore((s) => s.openFile)
+  const files = useMemo(() => {
+    const set = new Map<string, { rel: string; path?: string; artifact: boolean }>()
+    for (const c of msg.tools || []) {
+      const diffPaths = (c.diff || []).map((d) => d.path)
+      const one = [c.args?.path, c.args?.rel].filter((x) => typeof x === 'string') as string[]
+      for (const rel of [...diffPaths, ...one]) {
+        if (!rel || /[\\/]$/.test(rel)) continue
+        const artifact = /\.(jar|exe|msi|dmg|appimage|deb|zip|apk|aab)$/i.test(rel)
+        const mutated = ['write_file', 'edit_file', 'multi_edit', 'move_path'].includes(c.name)
+        if (!mutated && !artifact) continue
+        set.set(rel, { rel, path: undefined, artifact })
+      }
+      if (c.attach?.rel) set.set(c.attach.rel, { rel: c.attach.rel, path: c.attach.path, artifact: true })
+    }
+    return [...set.values()].slice(0, 40)
+  }, [msg])
+  if (!files.length) return null
+  const artifacts = files.filter((f) => f.artifact)
+  return (
+    <div className="result-files">
+      <div className="result-files-head">
+        <Icon name="layers" size={10} />
+        <span>{t('chat.resultFiles', { n: files.length })}</span>
+      </div>
+      <div className="result-files-list">
+        {files.map((f) => (
+          <button
+            key={f.rel}
+            className="result-file"
+            data-artifact={f.artifact ? 'true' : undefined}
+            onClick={() => {
+              if (f.path) window.comb.app.showItemInFolder(f.path)
+              else void openFile(`${useStore.getState().workspace?.replace(/[\\/]+$/, '')}/${f.rel}`, f.rel)
+            }}
+            title={f.rel}
+          >
+            <Icon name={f.artifact ? 'download' : 'file'} size={10} />
+            <span className="result-file-name">{f.rel.split(/[\\/]/).pop()}</span>
+            <span className="result-file-dir">{f.rel.split(/[\\/]/).slice(0, -1).join('/')}</span>
+          </button>
+        ))}
+      </div>
+      {artifacts.length > 0 && (
+        <div className="result-files-hint">
+          <Icon name="folder" size={10} />
+          {t('chat.artifactHint')}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean; index: number }): React.ReactElement {
   const t = useT()
   const [showReasoning, setShowReasoning] = useState(false)
@@ -1050,6 +1109,11 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
         )}
 
         {hasText && <Markdown text={msg.content} />}
+
+        {/* What the run actually produced, as something you can click. A finished
+            task that says "done" and leaves you hunting in the sidebar is a dead
+            end; these are the files and the artifact, right under the answer. */}
+        {!msg.streaming && (msg.tools?.length || 0) > 0 && <ResultFiles msg={msg} />}
 
         {(msg.guards || []).map((g) => (
           <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />

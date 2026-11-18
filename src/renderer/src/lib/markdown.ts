@@ -24,6 +24,13 @@ function inline(text: string): string {
   })
   // bare urls
   s = s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, (_m, pre, url) => `${pre}<a href="#" data-href="${url}">${url}</a>`)
+  // [text](path/to/file.ts#L42) — a link to a workspace file, opens in the editor
+  s = s.replace(/\[([^\]]+)\]\(((?!https?:)[^)\s]+)\)/g, (_m, label, target) => {
+    const m = String(target).match(/^(.+?)(?:[#:]L?(\d+))?$/)
+    const file = m ? m[1] : String(target)
+    const line = m && m[2] ? m[2] : ''
+    return `<a href="#" class="code-ref" data-file="${esc(file)}" data-line="${line}" title="${esc(target)}">${label}</a>`
+  })
   // bold / italic / strike
   s = s.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
