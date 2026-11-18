@@ -340,7 +340,30 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const history: LlmMessage[] = [{ role: 'system', content: sys }]
   const prior = toApiHistory(req.history, 70000)
   history.push(...prior)
+  // A user who asked a question wants an answer, not a work session. Detected
+  // from their message, because the model's own reply is exactly what cannot be
+  // trusted here: it reads its own plan out loud and mistakes it for a task.
+  const askedQuestion = (() => {
+    const q = (req.userMessage?.content || '').trim()
+    if (!q) return false
+    const lower = q.toLowerCase()
+    // explicit work verbs mean a task even with a question mark in it
+    const workVerb = /(сделай|создай|исправ|добав|реализуй|напиши|перепиш|удали|установи|запусти|собери|почини|make|create|fix|add|implement|write|build|run|install|remove)/i.test(lower)
+    if (workVerb) return false
+    if (/\?$/.test(q) || /\?\s*$/.test(lower)) return true
+    return /^(что|кто|где|когда|почему|зачем|как|сколько|можно ли|есть ли|ты|вы|why|what|who|where|when|how|is|are|did|do|does|can|could)\b/i.test(lower)
+  })()
   history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) + langNote })
+  if (askedQuestion) {
+    history.push({
+      role: 'user',
+      content:
+        '[this is a question, not a task] The user asked you something. Answer it in words, in full, and stop. ' +
+        'Do not start working: no file edits, no builds, no plans, no todo lists. ' +
+        'If answering honestly takes one quick look at a file, look and answer — but do not turn the look into a project tour. ' +
+        'A tool call here is a mistake unless you genuinely cannot answer without it.'
+    })
+  }
   if (req.notes?.length) {
     // notes the user wrote while the agent was busy last time: guidance, not an order
     history.push({
@@ -621,7 +644,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           /(сделаю|добавлю|провер[юи]|сейчас|начну|приступаю|исправ|перепиш|установл|создам|I'?ll|let me|now I|starting|going to)/i.test(
             result.content.slice(0, 600)
           )
-        if (stableMode && promisesWork && !touched.size && step < 10 && silentRounds < 3) {
+        if (stableMode && !askedQuestion && promisesWork && !touched.size && step < 10 && silentRounds < 3) {
           silentRounds++
           history.push({
             role: 'user',
@@ -975,7 +998,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         // it becomes the "slowly treading water" the user sees. Count it and push.
         if (!roundProgressed) {
           idleRounds++
-          if (idleRounds >= MAX_IDLE_ROUNDS && step - lastIdlePrompt >= MAX_IDLE_ROUNDS) {
+          if (!askedQuestion && idleRounds >= MAX_IDLE_ROUNDS && step - lastIdlePrompt >= MAX_IDLE_ROUNDS) {
             lastIdlePrompt = step
             deps.emit({
               type: 'guard',
