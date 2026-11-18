@@ -136,6 +136,8 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - You have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
 - Use \`todo_write\` for anything with more than 2 steps, and keep it current.
+- You are the author, not a clerk. Where the work is seen or felt — a UI, a world, an atmosphere, a game system — spend thought on composition, mood and feel that the request did not spell out, and do it. A compliant list of features with no craft reads as cheap, and the user will notice immediately.
+- Before finishing anything visual, do the check a designer does: what does the user see first, what is in the way, what is missing that would make this feel finished.
 - Never ship a stub: no TODO comments as your work, no empty class that "will be filled later", no method that returns a hardcoded value where behaviour was asked for. If you cannot do a thing, say it in the summary instead of leaving a placeholder that pretends.
 - The user's spec is a contract, not a mood board. Every numbered item in it is work you owe them: implement it or say explicitly which ones you could not and why. Never call finish while a plan item is open.
 - "Compiles" is not "works" and neither is "the code looks right". For a real project: build it, read the errors, fix them. For code against a version you do not remember exactly, read the actual jar/lockfile in the project instead of guessing API names.
@@ -461,6 +463,15 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // The spec the user pasted is the contract. Every numbered section is a promise
   // the run must keep, and a "done" that covers four of thirteen is the failure
   // the user keeps screenshotting. Parsed once, checked before finish.
+  // Does this task ask for something people will look at or play — a mod, a UI,
+  // a game, a visualization? Then the run needs a designer, not a clerk: mood,
+  // layout, extras of its own. Detected from the request, not by asking.
+  const wantsDesign = (() => {
+    const q = (req.userMessage?.content || '').toLowerCase()
+    if (q.length < 200) return false
+    const cues = /(мод|mod\b|игр|game|интерфейс|interface|ui\b|ux\b|дизайн|design|визуал|visual|анимац|animat|атмосфер|atmospher|погод|weather|снег|snow|туман|fog|mood|вайб|scene|сцен)/i
+    return cues.test(q)
+  })()
   const specSections = (() => {
     const raw = req.userMessage?.content || ''
     if (raw.length < 800) return [] as { n: number; title: string; hits: number }[]
@@ -484,6 +495,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   let artifactRefused = 0
   let specPlanAsked = false
   let scopeRefused = 0
+  let designPassed = false
   /** the user asked for a build and we have not found it on disk yet */
   const artifactMissing = (): boolean => !!wantedArtifact && !artifactFound && artifactRefused < 2
   /** the user asked for a build artifact (jar/exe/appimage...) — we must find it */
@@ -1257,6 +1269,31 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
             `[late answers] The user answered questions you had already proceeded past:\n` +
             late.map(([id, a]) => `- ${id}: ${a}`).join('\n') +
             `\nAdapt your plan to these answers if they change anything.`
+        })
+      }
+
+      // The thing that separates a professional from a clerk is the pass nobody
+      // asked for: what will this feel like, what is missing from the spec, what
+      // would make it good rather than compliant. One round, before code.
+      if (step === 1 && wantsDesign && !designPassed) {
+        designPassed = true
+        deps.emit({
+          type: 'guard',
+          runId: req.runId,
+          kind: 'steer',
+          title: 'Сначала дизайн-проход, потом код',
+          detail: 'Мудборд, композиция, что добавить сверх спеки.'
+        })
+        history.push({
+          role: 'user',
+          content:
+            '[design pass — do this before writing any code]\n' +
+            'You are the author of this thing, not a contractor filling an order. Before touching files, decide:\n' +
+            '1. MOOD — three concrete images of how it must feel (not adjectives: blue-grey fog at dawn, breath steaming, snow crunching under boots).\n' +
+            '2. WHAT THE SPEC LEFT OUT — the visual and feel details that make the difference between a mod and an atmosphere: fog density and colour, day/night length, particle density, depth of field, transitions, a long dusk, silence before a storm. Name at least five you will add, and add them for real.\n' +
+            '3. COMPOSITION / LAYOUT — if there is a screen, an overlay, a HUD or a panel: where each element sits, what the eye hits first, what is grouped, what is only shown when relevant. Do not stack bars in a corner because that is what the spec listed; design the screen.\n' +
+            '4. THE ONE MOMENT — the single thing a player will screenshot and show a friend. Build towards it.\n' +
+            'Write this as your own thinking to the user, short and concrete, then work. When you finish, say in the summary what you added beyond the spec — the user explicitly welcomes it.'
         })
       }
 
