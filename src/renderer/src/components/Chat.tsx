@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, type IconName } from './Icon'
+import { CombMark } from './TitleBar'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
 import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
@@ -354,7 +355,7 @@ export function ChatPane(): React.ReactElement {
           </div>
         </div>
       )}
-      <div className="chat-head">
+      <div className="chat-head" data-plain={isEmpty ? 'true' : undefined}>
         <div className="col" style={{ minWidth: 0, gap: 1 }}>
           <span className="t-sm ellipsis" style={{ fontWeight: 600, color: 'var(--fg-0)' }}>
             {thread.title}
@@ -370,9 +371,6 @@ export function ChatPane(): React.ReactElement {
             <Icon name="undo" size={11} /> {t('chat.undoRunShort')}
           </button>
         )}
-        <button className="btn ghost sm" onClick={() => newThread()} data-tip={t('chat.newTip')}>
-          <Icon name="plus" size={11} /> {t('chat.new')}
-        </button>
       </div>
 
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
@@ -834,8 +832,13 @@ export function ChatPane(): React.ReactElement {
           </div>
         </div>
         <div className="composer-foot">
-          <span className="t-xs ghost">
-            {model.label} · {t(model.blurbKey)}
+          {/* One short phrase. The full model blurb belongs in the picker and in
+              Settings, not under every composer: it was the single longest line
+              of text on the screen and it said the same thing every time. */}
+          <span className="t-xs ghost composer-model-hint">
+            {model.label}
+            {settings.capabilities?.planner !== 'off' && <span className="dot-sep">·</span>}
+            {settings.capabilities?.planner !== 'off' && t('chat.teamBadge')}
           </span>
           <span className="spacer" />
           <span className="t-xs ghost">
@@ -1344,64 +1347,60 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * The first screen.
+ *
+ * Claude's empty state is one line of greeting and four quiet rows: nothing is
+ * boxed, nothing shouts, and the only thing with a border is where you type. The
+ * old version here was a 2x2 grid of cards plus a dashed "new project" button —
+ * five boxes competing with the composer for the same job.
+ */
 function Onboarding({ workspace, onOpen }: { workspace: string | null; onOpen: () => void }): React.ReactElement {
   const t = useT()
   const sendMessage = useStore((s) => s.sendMessage)
-  const prompts = [
-    { icon: 'search' as const, title: t('onb.explainTitle'), body: t('onb.explainBody'), prompt: t('onb.explainPrompt') },
-    { icon: 'zap' as const, title: t('onb.bugTitle'), body: t('onb.bugBody'), prompt: '' },
-    { icon: 'sparkles' as const, title: t('onb.featureTitle'), body: t('onb.featureBody'), prompt: '' },
-    { icon: 'shield' as const, title: t('onb.reviewTitle'), body: t('onb.reviewBody'), prompt: t('onb.reviewPrompt') }
+  const openMenu = (): void => {
+    // the same ＋ menu the composer has: hints are useless if they are not where
+    // you already are
+    const btn = document.querySelector<HTMLButtonElement>('.composer-plus')
+    if (btn) btn.click()
+  }
+  const rows = [
+    { icon: 'search' as const, title: t('onb.explainTitle'), prompt: t('onb.explainPrompt') },
+    { icon: 'zap' as const, title: t('onb.bugTitle'), prompt: '' },
+    { icon: 'sparkles' as const, title: t('onb.featureTitle'), prompt: '' },
+    { icon: 'shield' as const, title: t('onb.reviewTitle'), prompt: t('onb.reviewPrompt') }
   ]
   return (
-    <div className="onboarding">
-      <div className="onb-head">
-        <span className="onb-mark">
-          <Icon name="bee" size={22} />
-        </span>
-        <div className="col" style={{ gap: 2 }}>
-          <h2 className="onb-title">{t('onb.title')}</h2>
-          <span className="t-sm faint">{workspace ? t('onb.subFull') : t('onb.subNoFolder')}</span>
-        </div>
+    <div className="onb-simple">
+      <div className="onb-simple-head">
+        <CombMark size={26} />
+        <h1 className="onb-simple-title">{t('onb.title')}</h1>
       </div>
-      <div className="onb-grid">
-        {prompts.map((p) => (
+      <p className="onb-simple-sub">{workspace ? t('onb.subFull') : t('onb.subNoFolder')}</p>
+
+      <div className="onb-rows">
+        {rows.map((r) => (
           <button
-            key={p.title}
-            className="onb-card"
+            key={r.title}
+            className="onb-row"
             onClick={() => {
-              if (!workspace && p.icon !== 'sparkles') onOpen()
-              else if (p.prompt) void sendMessage(p.prompt)
+              if (!workspace) onOpen()
+              else if (r.prompt) void sendMessage(r.prompt)
               else useStore.getState().toast('info', t('onb.typeRequest'))
             }}
           >
-            <Icon name={p.icon} size={13} className="acc" />
-            <span className="onb-card-title">{p.title}</span>
-            <span className="t-xs faint" style={{ lineHeight: 1.5 }}>{p.body}</span>
+            <Icon name={r.icon} size={12} className="onb-row-icon" />
+            <span>{r.title}</span>
+            <Icon name="arrow-right" size={11} className="onb-row-go" />
           </button>
         ))}
+        <button className="onb-row" onClick={openMenu}>
+          <Icon name="plus" size={12} className="onb-row-icon" />
+          <span>{t('onb.more')}</span>
+        </button>
       </div>
-      <button
-        className="onb-new"
-        onClick={async () => {
-          const folder = await window.comb.fs.pickFolder()
-          if (!folder) return
-          await useStore.getState().openWorkspace(folder)
-          void sendMessage(t('onb.scaffoldPrompt'))
-        }}
-      >
-        <Icon name="sparkles" size={12} className="acc" />
-        <span className="t-sm">{t('onb.scaffold')}</span>
-        <span className="spacer" />
-        <Icon name="arrow-right" size={12} className="faint" />
-      </button>
-      <div className="onb-foot t-xs faint">
-        {t('onb.foot')}
-        <br />
-        {t('onb.foot2').split('{undo}')[0]}
-        <kbd>{t('onb.footUndo')}</kbd>
-        {t('onb.foot2').split('{undo}')[1]}
-      </div>
+
+      <p className="onb-simple-foot">{t('onb.footShort')}</p>
     </div>
   )
 }

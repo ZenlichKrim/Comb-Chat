@@ -234,6 +234,7 @@ export const en = {
   'chat.permPlannerAuto': 'when needed',
   'chat.permPlannerAlways': 'always',
   'chat.permPlannerOff': 'off',
+  'chat.teamBadge': 'author + builder',
   'chat.roleAuthor': 'Author',
   'chat.roleBuilder': 'Builder',
   'chat.roleAuthorHint': 'thinks, discusses, writes the brief',
@@ -295,6 +296,8 @@ export const en = {
   'onb.scaffold': 'Start a project from an empty folder',
   'onb.scaffoldPrompt':
     'Scaffold this empty folder into a working project. First inspect what is already there (list_dir). If it is essentially empty, ask me one question about the stack only if my message did not say — otherwise pick a sensible stack, create the project skeleton, install dependencies, add a README and one passing test, then run the test suite and report the result.',
+  'onb.more': 'Attach a file, a screenshot or a folder',
+  'onb.footShort': 'Comb edits files in place, runs your tests, and asks before anything dangerous.',
   'onb.foot': 'comb edits files in place, runs your tests, and asks before anything destructive.',
   'onb.foot2': 'Every run is checkpointed — {undo} puts your files back.',
   'onb.footUndo': 'undo run',
@@ -948,6 +951,7 @@ export const ru: Dict = {
   'chat.permPlannerAuto': 'по нужде',
   'chat.permPlannerAlways': 'всегда',
   'chat.permPlannerOff': 'выкл',
+  'chat.teamBadge': 'автор + сборщик',
   'chat.roleAuthor': 'Автор',
   'chat.roleBuilder': 'Сборщик',
   'chat.roleAuthorHint': 'думает, обсуждает, пишет бриф',
@@ -1006,6 +1010,8 @@ export const ru: Dict = {
   'onb.scaffold': 'Создать проект в пустой папке',
   'onb.scaffoldPrompt':
     'Разверни в этой пустой папке рабочий проект. Сначала посмотри, что в ней уже есть (list_dir). Если она практически пуста — задай мне один вопрос про стек, только если в моём сообщении его нет, иначе выбери разумный стек, создай скелет проекта, установи зависимости, добавь README и один проходящий тест, затем прогони тесты и отчитайся о результате.',
+  'onb.more': 'Прикрепить файл, скриншот или папку',
+  'onb.footShort': 'comb правит файлы на месте, запускает ваши тесты и спрашивает перед опасным.',
   'onb.foot': 'comb правит файлы на месте, запускает ваши тесты и спрашивает перед опасными действиями.',
   'onb.foot2': 'Каждый прогон создаёт чекпоинт — {undo} вернёт файлы назад.',
   'onb.footUndo': 'откатить',

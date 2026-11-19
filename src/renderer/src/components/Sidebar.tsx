@@ -680,13 +680,13 @@ function ThreadsPanel(): React.ReactElement {
 
   return (
     <div className="col grow" style={{ minHeight: 0 }}>
-      <div className="sb-section-head">
-        <span className="cap">{t('side.sessions')}</span>
-        <span className="spacer" />
-        <button className="icon-btn" style={{ width: 20, height: 20 }} data-tip={t('side.newSession')} onClick={() => newThread()}>
-          <Icon name="plus" size={12} />
-        </button>
-      </div>
+      {/* Claude's sidebar: the new-session row sits above the list and looks like
+          a row of the list, not a header button. The list itself has no cards —
+          a session is one line of text and a dot. */}
+      <button className="sb-new-row" onClick={() => newThread()}>
+        <Icon name="plus" size={12} />
+        <span>{t('side.newSession')}</span>
+      </button>
       <div className="tree-filter">
         <Icon name="search" size={11} className="faint" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
@@ -694,15 +694,15 @@ function ThreadsPanel(): React.ReactElement {
       <div className="tree-scroll">
         {filtered.map((thread) => (
           <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>
-            <Icon name="chat" size={12} className={thread.id === activeId ? 'acc' : 'faint'} />
+            <span className="thread-dot" data-busy={thread.id === activeId ? 'true' : undefined} />
             <div className="col grow" style={{ gap: 1, minWidth: 0 }}>
-              <span className="ellipsis t-sm">{thread.title}</span>
-              <span className="t-xs ghost">
+              <span className="ellipsis t-sm thread-title">{thread.title}</span>
+              <span className="t-xs ghost thread-meta">
                 {t('side.msgs', { n: thread.messages.filter((m) => m.role === 'user').length })} · {timeAgo(thread.updatedAt)}
               </span>
             </div>
             <button
-              className="icon-btn"
+              className="icon-btn thread-del"
               style={{ width: 18, height: 18 }}
               onClick={(e) => {
                 e.stopPropagation()

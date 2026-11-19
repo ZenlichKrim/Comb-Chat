@@ -4929,3 +4929,160 @@ hr {
   background: var(--bg-4);
   color: var(--fg-0);
 }
+
+/* ---- first screen, the Claude lesson ---------------------------------
+   One greeting, four quiet rows, one line of small print. Nothing boxed:
+   the only bordered thing on this screen is the composer, which is exactly
+   where the user is supposed to look. */
+.onb-simple {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: clamp(48px, 12vh, 120px) 20px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.onb-simple-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.onb-simple-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--fg-0);
+}
+.onb-simple-sub {
+  margin: 6px 0 22px;
+  font-size: var(--fs-sm);
+  color: var(--fg-3);
+}
+.onb-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 1px;
+}
+.onb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: var(--r-md);
+  text-align: left;
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  transition: background var(--dur), color var(--dur);
+}
+.onb-row:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+.onb-row-icon {
+  color: var(--fg-3);
+  flex: none;
+}
+.onb-row:hover .onb-row-icon {
+  color: var(--accent);
+}
+.onb-row-go {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity var(--dur), transform var(--dur);
+  color: var(--fg-3);
+}
+.onb-row:hover .onb-row-go {
+  opacity: 1;
+  transform: translateX(2px);
+}
+.onb-simple-foot {
+  margin: 24px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-4);
+  line-height: 1.6;
+}
+
+/* ---- sidebar: rows, not cards ---------------------------------------- */
+.sb-new-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin: 4px 8px 6px;
+  padding: 7px 9px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  background: var(--bg-2);
+  transition: background var(--dur), color var(--dur);
+}
+.sb-new-row:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+.thread-row {
+  align-items: center;
+  gap: 9px;
+  padding: 6px 9px;
+  border-radius: var(--r-md);
+  border: none;
+  background: transparent;
+}
+.thread-row:hover {
+  background: var(--bg-2);
+}
+.thread-row[data-active='true'] {
+  background: var(--bg-3);
+}
+.thread-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--fg-4);
+  flex: none;
+}
+.thread-dot[data-busy='true'] {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.thread-title {
+  color: var(--fg-1);
+  font-weight: 450;
+}
+.thread-row[data-active='true'] .thread-title {
+  color: var(--fg-0);
+}
+.thread-meta {
+  opacity: 0.7;
+}
+.thread-del {
+  opacity: 0;
+  transition: opacity var(--dur);
+}
+.thread-row:hover .thread-del {
+  opacity: 1;
+}
+
+/* the empty screen has no title bar: there is exactly one thing to do, and a
+   half-transparent header above it is only noise */
+.chat-head[data-plain] {
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+}
+
+.composer-model-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.dot-sep {
+  opacity: 0.5;
+}
