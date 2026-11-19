@@ -4589,3 +4589,9 @@ hr {
   background: color-mix(in oklab, var(--accent) 8%, var(--bg-1));
   border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--line-1));
 }
+
+.btn[data-active='true'] {
+  background: color-mix(in oklab, var(--accent) 20%, var(--bg-2));
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--line-2));
+}

@@ -585,6 +585,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       extraRoots: get().extraRoots,
       fullDiskAccess: settings.fullDiskAccess,
       model: settings.model,
+      thoughtEffort: settings.thoughtEffort || 'deep',
       temperature: settings.temperature,
       maxTokens: settings.maxTokens,
       approvalPolicy: settings.approvalPolicy,

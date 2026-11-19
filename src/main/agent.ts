@@ -673,18 +673,25 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
 
       compactHistory(history)
 
+      // Model routing. Measured benchmarks say DeepSeek V4.1-Flash beats V4 Pro on
+      // agentic coding (DeepSWE 77.0 vs 62.7, Terminal-Bench 42.3 vs 12.4) and it is
+      // 3-7x cheaper, so Pro is the wrong default for editing files. Pro still wins
+      // on deep text reasoning and long factual recall, so that is where it goes.
+      const routed = pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
+
       const result = await streamChat({
         apiKey: settings.apiKey.trim(),
         baseUrl: settings.baseUrl,
-        model: req.model,
+        model: routed,
         messages: history,
         tools: tools as any,
         temperature: req.temperature,
         maxTokens: req.maxTokens,
         signal,
-        // A substantial task gets room to think; a quick question does not need
-        // to pay for it. This is the cheapest lever on quality there is.
-        effort: substantial || specSections.length >= 4 ? 'deep' : 'balanced',
+        // Thinking budget: the user's setting, but a one-line question never gets
+        // 32k of thought — a long think on a trivial ask is money burned for
+        // nothing. Substantial work and specs get the full setting.
+        effort: substantial || specSections.length >= 4 ? (req.thoughtEffort || 'deep') : 'fast',
         onDelta: (d) => {
           if (d.reasoning) deps.emit({ type: 'reasoning-delta', runId: req.runId, text: d.reasoning })
           if (d.content) deps.emit({ type: 'text-delta', runId: req.runId, text: d.content })
@@ -1574,4 +1581,30 @@ export async function findArtifact(workspace: string, ext: string): Promise<stri
     }
   }
   return ''
+}
+
+/**
+ * Which model does this step get?
+ *
+ * The benchmarks are unambiguous and they are not what "bigger is better" says:
+ * DeepSeek V4.1-Flash beats V4 Pro on agentic coding — DeepSWE v1.1 77.0 vs 62.7,
+ * Terminal-Bench 4.0 42.3 vs 12.4 — and costs 3.3x less on output. So Pro is not
+ * the default for writing code; it is the default for the thinking-heavy part:
+ * the opening pass where the plan is made, and long specs.
+ *
+ * The user's own choice always wins: pick Pro and every step is Pro.
+ */
+export function pickModelForStep(
+  req: { model: string; userMessage?: { content?: string } | null },
+  step: number,
+  info: { substantial: boolean; specSections: number; planning: boolean }
+): string {
+  const chosen = req.model
+  // explicit choice of a concrete model stays put
+  if (chosen === 'deepseek-v4-pro') return chosen
+  if (!chosen.startsWith('deepseek-')) return chosen
+
+  const wantsPro = info.substantial && (info.specSections >= 4 || info.planning)
+  // only ever upgrade, never silently downgrade a Pro pick
+  return wantsPro ? 'deepseek-v4-pro' : chosen
 }

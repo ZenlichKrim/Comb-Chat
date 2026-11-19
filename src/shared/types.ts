@@ -9,6 +9,9 @@ export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
 export type Locale = 'en' | 'ru'
 
+/** fast = 4k thoughts, balanced = 8k, deep = 16k, max = 32k (pro only) */
+export type ThoughtEffort = 'fast' | 'balanced' | 'deep' | 'max'
+
 export interface ModelInfo {
   id: string
   label: string
@@ -96,13 +99,14 @@ export function wireModel(id: string): string {
  * DeepSeek pricing that is fractions of a cent, and it buys the difference
  * between a stub and something with a shape.
  */
+const THOUGHT_BUDGET: Record<ThoughtEffort, number> = { fast: 4096, balanced: 8192, deep: 16384, max: 32768 }
+
 export function modelOptions(
   id: string,
-  effort: 'fast' | 'balanced' | 'deep' = 'deep'
+  effort: ThoughtEffort = 'deep'
 ): { thinking?: { type: 'enabled' | 'disabled'; budget_tokens?: number } } {
   if (id === 'deepseek-flash-thinking' || id === 'deepseek-v4-pro') {
-    const budget = effort === 'deep' ? 16384 : effort === 'balanced' ? 8192 : 4096
-    return { thinking: { type: 'enabled', budget_tokens: budget } }
+    return { thinking: { type: 'enabled', budget_tokens: THOUGHT_BUDGET[effort] } }
   }
   if (id === 'deepseek-flash') return { thinking: { type: 'disabled' } }
   return {}
@@ -119,6 +123,8 @@ export interface Settings {
   apiKey: string
   baseUrl: string
   model: string
+  /** how much room the thinking model gets before it answers */
+  thoughtEffort: ThoughtEffort
   temperature: number
   maxTokens: number
   approvalPolicy: ApprovalPolicy
@@ -171,7 +177,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
-  model: 'deepseek-flash',
+  model: 'deepseek-flash-thinking',
+  thoughtEffort: 'deep',
   temperature: 0.2,
   maxTokens: 16384,
   approvalPolicy: 'ask',
@@ -538,6 +545,7 @@ export interface RunRequest {
   /** no sandbox: absolute paths anywhere on the machine are allowed */
   fullDiskAccess?: boolean
   model: string
+  thoughtEffort?: ThoughtEffort
   temperature: number
   maxTokens: number
   approvalPolicy: ApprovalPolicy

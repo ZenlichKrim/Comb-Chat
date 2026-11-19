@@ -149,6 +149,21 @@ export function SettingsDialog(): React.ReactElement {
                 </div>
               </Field>
 
+              <Row label={t('set.thought')} hint={t('set.thoughtHint')}>
+                <div className="row gap-2">
+                  {(['fast', 'balanced', 'deep', 'max'] as const).map((level) => (
+                    <button
+                      key={level}
+                      className="btn ghost sm"
+                      data-active={(settings.thoughtEffort || 'deep') === level}
+                      onClick={() => void setSettings({ thoughtEffort: level })}
+                    >
+                      {level === 'fast' ? '4k' : level === 'balanced' ? '8k' : level === 'deep' ? '16k' : '32k'}
+                    </button>
+                  ))}
+                </div>
+              </Row>
+
               <div className="setting-hint-card">
                 <Icon name="sparkles" size={12} className="acc" />
                 <div className="col" style={{ gap: 2 }}>

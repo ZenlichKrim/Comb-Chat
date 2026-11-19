@@ -75,7 +75,7 @@ export interface StreamArgs {
   /** called before a retry: the UI shows "reconnecting in 4s" instead of a dead run */
   onRetry?: (r: { attempt: number; max: number; waitMs: number; reason: string }) => void
   /** how much room the model gets to think before it answers (thinking models only) */
-  effort?: 'fast' | 'balanced' | 'deep'
+  effort?: import('../shared/types').ThoughtEffort
 }
 
 export function priceFor(model: string): { priceIn: number; priceInCached: number; priceOut: number; contextWindow: number; maxOutput: number } {
