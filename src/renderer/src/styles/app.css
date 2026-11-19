@@ -4890,3 +4890,42 @@ hr {
   font-size: var(--fs-xs);
   letter-spacing: -0.01em;
 }
+
+/* ---- attachments: a thumbnail, a name, and two honest actions -------- */
+.attach-chip {
+  height: 30px;
+  padding: 2px 4px 2px 3px;
+  gap: 6px;
+  max-width: 240px;
+  border-radius: 999px;
+}
+.attach-chip[data-image='true'] {
+  padding-left: 2px;
+}
+.attach-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex: none;
+  border: 1px solid var(--hairline);
+}
+.attach-name {
+  min-width: 0;
+  max-width: 120px;
+  font-size: var(--fs-xs);
+}
+.attach-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  color: var(--fg-3);
+  flex: none;
+}
+.attach-act:hover {
+  background: var(--bg-4);
+  color: var(--fg-0);
+}

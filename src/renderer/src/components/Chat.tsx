@@ -591,10 +591,33 @@ export function ChatPane(): React.ReactElement {
           {contextFiles.length > 0 && (
             <div className="composer-context">
               {contextFiles.map((c) => (
-                <span key={c.id} className="ctx-chip">
-                  <Icon name={c.kind === 'selection' ? 'diff' : 'file'} size={10} />
-                  {c.name}
-                  <button onClick={() => removeContextFile(c.id)}>
+                <span
+                  key={c.id}
+                  className="ctx-chip attach-chip"
+                  data-image={c.kind === 'image' ? 'true' : undefined}
+                  title={`${c.rel || c.name}${c.content ? ` · ${Math.max(1, Math.round(c.content.length / 1024))} KB` : ''}`}
+                >
+                  {c.kind === 'image' && c.content ? (
+                    // the picture itself, so an attachment is not a filename you
+                    // have to trust
+                    <img className="attach-thumb" src={c.content} alt="" />
+                  ) : (
+                    <Icon name={c.kind === 'selection' ? 'diff' : 'file'} size={10} />
+                  )}
+                  <span className="attach-name ellipsis">{c.name}</span>
+                  {c.path && (
+                    <button
+                      className="attach-act"
+                      title={t('chat.attachOpen')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        window.comb.app.showItemInFolder(c.path!)
+                      }}
+                    >
+                      <Icon name="external" size={9} />
+                    </button>
+                  )}
+                  <button className="attach-act" title={t('common.delete')} onClick={() => removeContextFile(c.id)}>
                     <Icon name="close" size={9} />
                   </button>
                 </span>
