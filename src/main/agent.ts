@@ -969,11 +969,15 @@ export async function runAgent(
         if (call.name === 'ask_user') {
           const opts: string[] = Array.isArray(args.options) ? args.options.map(String).slice(0, 4) : []
           const preferred = String(args.recommend || opts[0] || 'yes')
+          // The author's question is the checkpoint before any work happens, so it
+          // waits like a person would: ten minutes, not ninety seconds. A builder
+          // question would be different, but the builder has no ask_user at all.
+          const waitDefault = role === 'author' ? 600 : 90
           voteWait = new Promise<string | null>((resolve) => {
             const timer = setTimeout(() => {
               run.votes.delete(call.id)
               resolve(null)
-            }, Math.max(15, Number(args.waitSeconds) || 90) * 1000)
+            }, Math.max(15, Number(args.waitSeconds) || waitDefault) * 1000)
             run.votes.set(call.id, (answer) => {
               clearTimeout(timer)
               resolve(answer)

@@ -233,7 +233,8 @@ export const useStore = create<State & Actions>((set, get) => ({
   dirCache: {},
   git: null,
   sidebarOpen: true,
-  rightPanel: 'plan',
+  // shut by default: a panel full of zeros is furniture, not information
+  rightPanel: 'none',
   bottomPanel: 'none',
   bottomPanelHeight: 240,
   palette: { open: false, mode: 'commands' },
