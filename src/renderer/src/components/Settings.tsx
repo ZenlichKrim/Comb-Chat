@@ -18,14 +18,17 @@ const TABS: { id: Tab; label: string; icon: Parameters<typeof Icon>[0]['name'] }
 
 const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'comb', label: 'Comb' },
+  { id: 'ember', label: 'Ember' },
+  { id: 'forest', label: 'Forest' },
+  { id: 'paper', label: 'Paper' },
   { id: 'midnight', label: 'Midnight' },
   { id: 'graphite', label: 'Graphite' },
   { id: 'electric', label: 'Electric' },
-  { id: 'nord', label: 'Nord' },
-  { id: 'paper', label: 'Paper' }
+  { id: 'nord', label: 'Nord' }
 ]
 
-const ACCENTS = ['#e8b14c', '#e0a44a', '#f0c04e', '#6aa9ef', '#6dcf8a', '#d98fd8', '#f2695f', '#7fd6c9']
+// 'auto' keeps each theme's own pair; these are manual overrides
+const ACCENTS = ['auto', '#ffb86b', '#c792ea', '#f2c14e', '#7cc8a6', '#e06b5c', '#7c9cff', '#8fd6d1']
 
 export function SettingsDialog(): React.ReactElement {
   const t = useT()
@@ -352,6 +355,7 @@ export function SettingsDialog(): React.ReactElement {
                         <span className="tp-line" />
                         <span className="tp-line short" />
                         <span className="tp-acc" />
+                        <span className="tp-acc2" style={{ background: 'var(--theme-accent-warm, var(--accent))' }} />
                       </span>
                       <span className="t-xs">{theme.label}</span>
                       {settings.theme === theme.id && <Icon name="check" size={10} className="acc" style={{ marginLeft: 'auto' }} />}
@@ -377,9 +381,22 @@ export function SettingsDialog(): React.ReactElement {
                     onClick={() => void setSettings({ accent: 'auto' })}
                   />
                   {ACCENTS.map((c) => (
-                    <button key={c} className="swatch" data-active={settings.accent === c} style={{ background: c }} onClick={() => void setSettings({ accent: c })} />
+                    <button
+                      key={c}
+                      className="swatch"
+                      data-auto={c === 'auto' ? 'true' : undefined}
+                      data-active={settings.accent === c}
+                      style={c === 'auto' ? undefined : { background: c }}
+                      title={c === 'auto' ? t('set.accentAuto') : c}
+                      onClick={() => void setSettings({ accent: c })}
+                    />
                   ))}
-                  <input type="color" className="swatch-input" value={settings.accent} onChange={(e) => void setSettings({ accent: e.target.value })} />
+                  <input
+                    type="color"
+                    className="swatch-input"
+                    value={settings.accent === 'auto' ? '#ffb86b' : settings.accent}
+                    onChange={(e) => void setSettings({ accent: e.target.value })}
+                  />
                 </div>
               </Field>
               <Row label={t('set.uiScale')} hint={`${Math.round(settings.uiScale * 100)}%`}>

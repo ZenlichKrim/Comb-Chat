@@ -35,7 +35,7 @@ export interface Brief {
   extra: string[]
   raw: string
 }
-export type ThemeId = 'comb' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
+export type ThemeId = 'comb' | 'ember' | 'forest' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
 export type Locale = 'en' | 'ru'

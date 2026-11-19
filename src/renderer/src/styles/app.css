@@ -5086,3 +5086,49 @@ hr {
 .dot-sep {
   opacity: 0.5;
 }
+
+/* ---- theme previews: show the character, not just the hue ------------ */
+.theme-preview {
+  position: relative;
+  height: 46px;
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+/* the preview now carries the two accents of its theme, so the grid reads as
+   eight different moods instead of eight greys */
+.theme-preview .tp-acc {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.theme-preview .tp-acc2 {
+  position: absolute;
+  right: 5px;
+  top: 17px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  opacity: 0.75;
+}
+.theme-comb { background: #16130f; }
+.theme-comb .tp-line { background: #3d3427; }
+.theme-comb .tp-acc { background: #ffb86b; }
+.theme-ember { background: #19100d; }
+.theme-ember .tp-line { background: #452b1f; }
+.theme-ember .tp-acc { background: #e06b5c; }
+.theme-forest { background: #101613; }
+.theme-forest .tp-line { background: #2f3d35; }
+.theme-forest .tp-acc { background: #7cc8a6; }
+.theme-midnight .tp-acc { background: #5b8cff; }
+.theme-graphite .tp-acc { background: #c9c9c9; }
+.theme-nord .tp-acc { background: #88c0d0; }
+.theme-paper .tp-acc { background: #a9671a; }
+.theme-electric .tp-acc { background: #38bdf8; }
+
+/* accent swatch: the "auto" one is a split chip of the theme's two colours */
+.swatch[data-auto='true'] {
+  background: linear-gradient(135deg, var(--accent) 0 50%, var(--accent-warm) 50% 100%);
+}
+.swatch[data-auto='true'][data-active='true']::after {
+  content: '';
+}

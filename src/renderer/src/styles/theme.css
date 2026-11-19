@@ -121,28 +121,94 @@
 /* Comb is cold graphite with one cool accent for thinking and one warm accent
    for doing. The old black-and-honey palette made every surface the same value,
    which is why the app read as unfinished: nothing could recede. */
+/* Comb — the house theme. Warm graphite, not cold: every grey carries a few
+   points of red and yellow in it, the way ink on paper does. Two accents with
+   different jobs: amber (#ffb86b) for the author thinking, honey-ink (#e8c37a)
+   for the worker doing. Text is bone, never pure white. */
 [data-theme='comb'] {
-  --bg-0: #0a0b0d;
-  --bg-1: #0f1114;
-  --bg-2: #14171b;
-  --bg-3: #1b1f24;
-  --bg-4: #23282f;
-  --bg-hover: #191d22;
-  --bg-active: #1f242b;
-  --bg-inset: #08090b;
-  --line-1: #191c21;
-  --line-2: #23272e;
-  --line-3: #333841;
-  --fg-0: #f1f3f6;
-  --fg-1: #ccd2da;
-  --fg-2: #8e96a1;
-  --fg-3: #616a75;
-  --fg-4: #454c56;
-  --user-bg: #171b21;
-  --code-bg: #0c0e11;
-  --theme-accent: #7c9cff;
-  --theme-accent-text: #060910;
-  --accent-warm: #ffb26b;
+  --bg-0: #100e0c;
+  --bg-1: #16130f;
+  --bg-2: #1c1813;
+  --bg-3: #241f18;
+  --bg-4: #2e281e;
+  --bg-hover: #211c16;
+  --bg-active: #292319;
+  --bg-inset: #0c0a08;
+  --line-1: #221d17;
+  --line-2: #2d261d;
+  --line-3: #3d3427;
+  --fg-0: #f4ece1;
+  --fg-1: #d8ccba;
+  --fg-2: #a2937f;
+  --fg-3: #6f6454;
+  --fg-4: #4d453a;
+  --user-bg: #1e1a14;
+  --code-bg: #0d0b09;
+  --theme-accent: #ffb86b;
+  --theme-accent-text: #1a1206;
+  --theme-accent-warm: #e8c37a;
+  --ok: #8fc79a;
+  --err: #e8836b;
+  --warn: #e8c37a;
+  --info: #9db4d8;
+}
+
+/* Ember — the same warmth, turned up: a workshop at night, oxide and brass. */
+[data-theme='ember'] {
+  --bg-0: #120c0a;
+  --bg-1: #19100d;
+  --bg-2: #201612;
+  --bg-3: #2a1c16;
+  --bg-4: #35241b;
+  --bg-hover: #241813;
+  --bg-active: #2f2018;
+  --bg-inset: #0d0807;
+  --line-1: #271711;
+  --line-2: #332017;
+  --line-3: #452b1f;
+  --fg-0: #f8e9dd;
+  --fg-1: #ddc7b6;
+  --fg-2: #a98d78;
+  --fg-3: #775f4e;
+  --fg-4: #553f33;
+  --user-bg: #231813;
+  --code-bg: #0f0907;
+  --theme-accent: #e06b5c;
+  --theme-accent-text: #1b0a07;
+  --theme-accent-warm: #f2a65a;
+  --ok: #93c98b;
+  --err: #e0574c;
+  --warn: #f2a65a;
+  --info: #a8a8d8;
+}
+
+/* Forest — cold ground, warm light: pine, moss and the one stripe of sunlight. */
+[data-theme='forest'] {
+  --bg-0: #0b100e;
+  --bg-1: #101613;
+  --bg-2: #151d19;
+  --bg-3: #1b2620;
+  --bg-4: #233029;
+  --bg-hover: #16201b;
+  --bg-active: #1d2823;
+  --bg-inset: #080c0a;
+  --line-1: #18211c;
+  --line-2: #212c26;
+  --line-3: #2f3d35;
+  --fg-0: #e9f0e8;
+  --fg-1: #c6d3c7;
+  --fg-2: #8e9f92;
+  --fg-3: #62746a;
+  --fg-4: #44534b;
+  --user-bg: #18211c;
+  --code-bg: #090d0b;
+  --theme-accent: #7cc8a6;
+  --theme-accent-text: #06120c;
+  --theme-accent-warm: #d8c06a;
+  --ok: #7cc8a6;
+  --err: #e08a7a;
+  --warn: #d8c06a;
+  --info: #8fb8d8;
 }
 
 [data-theme='midnight'] {
@@ -189,6 +255,7 @@
   --code-bg: #0a0a0a;
   --theme-accent: #c9c9c9;
   --theme-accent-text: #111111;
+  --theme-accent-warm: #9a9a9a;
 }
 
 [data-theme='electric'] {
@@ -212,6 +279,7 @@
   --code-bg: #050a12;
   --theme-accent: #38bdf8;
   --theme-accent-text: #03121a;
+  --theme-accent-warm: #a78bfa;
 }
 
 [data-theme='nord'] {
@@ -235,8 +303,10 @@
   --code-bg: #1d2128;
   --theme-accent: #88c0d0;
   --theme-accent-text: #0b1016;
+  --theme-accent-warm: #ebcb8b;
 }
 
+/* Paper — the daytime face of Comb: warm paper, ink, one stamped mark. */
 [data-theme='paper'] {
   --bg-0: #f4f2ec;
   --bg-1: #eeebe3;
@@ -262,4 +332,5 @@
   --accent-text: #1a1409;
   --theme-accent: #a9671a;
   --theme-accent-text: #fdfbf6;
+  --theme-accent-warm: #7a8f6a;
 }

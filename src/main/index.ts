@@ -440,9 +440,13 @@ function registerIpc(): void {
 
   /* theme */
   ipcMain.on('window:setTheme', (_e, theme: string, accent: string) => {
-    void theme
     void accent
-    nativeTheme.themeSource = 'dark'
+    // The paper theme is a light surface: native menus, dialogs and the window
+    // frame must follow it, or the app looks like a light page in a dark shell.
+    nativeTheme.themeSource = theme === 'paper' ? 'light' : 'dark'
+    if (mainWindow && process.platform !== 'darwin') {
+      mainWindow.setBackgroundColor(theme === 'paper' ? '#f4f2ec' : '#100e0c')
+    }
   })
 }
 
