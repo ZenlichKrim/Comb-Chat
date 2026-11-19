@@ -693,3 +693,15 @@ export interface AppInfo {
   homedir: string
   userData: string
 }
+
+/**
+ * What each entry in the picker is actually for, one line each, shown under the
+ * model cards. Facts, not marketing: Flash wins the agentic/coding benchmarks and
+ * is 3-7x cheaper; Pro wins deep text reasoning and factual recall and cannot see
+ * images; thinking is a per-request flag that buys planning, not knowledge.
+ */
+export function modelUse(id: string): 'chat' | 'agent' | 'reason' {
+  if (id === 'deepseek-v4-pro' || id === 'deepseek-v4-pro-thinking') return 'reason'
+  if (id.endsWith('-thinking')) return 'agent'
+  return 'chat'
+}

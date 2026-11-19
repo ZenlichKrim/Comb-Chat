@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, formatCost, totalUsage } from '../store'
-import { MODELS, type ApprovalPolicy, type ThemeId, type Locale } from '../../../shared/types'
+import { MODELS, modelUse, type ApprovalPolicy, type ThemeId, type Locale } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 type Tab = 'model' | 'agent' | 'appearance' | 'editor' | 'terminal' | 'shortcuts' | 'about'
@@ -141,6 +141,7 @@ export function SettingsDialog(): React.ReactElement {
                         {settings.model === m.id && <Icon name="check" size={11} className="acc" style={{ marginLeft: 'auto' }} />}
                       </div>
                       <span className="t-xs faint">{t(m.blurbKey)}</span>
+                      <span className="model-use">{t(`model.use.${modelUse(m.id)}` as any)}</span>
                       <span className="t-xs ghost">
                         {m.contextWindow / 1024}k · ${m.priceIn}/M {t('menu.context')} · ${m.priceOut}/M {t('menu.out')}
                       </span>

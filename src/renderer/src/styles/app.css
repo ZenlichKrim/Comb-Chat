@@ -4595,3 +4595,9 @@ hr {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 40%, var(--line-2));
 }
+
+.model-use {
+  font-size: var(--fs-2xs);
+  color: color-mix(in oklab, var(--accent) 70%, var(--fg-3));
+  line-height: 1.4;
+}
