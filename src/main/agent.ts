@@ -679,6 +679,9 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       // on deep text reasoning and long factual recall, so that is where it goes.
       const routed = pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
 
+      // one clock per step: when this burst of thought started
+      let thoughtStart = 0
+
       const result = await streamChat({
         apiKey: settings.apiKey.trim(),
         baseUrl: settings.baseUrl,
@@ -693,7 +696,21 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         // nothing. Substantial work and specs get the full setting.
         effort: substantial || specSections.length >= 4 ? (req.thoughtEffort || 'deep') : 'fast',
         onDelta: (d) => {
-          if (d.reasoning) deps.emit({ type: 'reasoning-delta', runId: req.runId, text: d.reasoning })
+          // Time the thought here, on one clock. The renderer used to guess the
+          // duration from the number of characters, which is why a 20-second think
+          // showed up as "212 s".
+          if (d.reasoning) {
+            if (thoughtStart === 0) thoughtStart = d.reasoningAt || Date.now()
+            deps.emit({
+              type: 'reasoning-delta',
+              runId: req.runId,
+              text: d.reasoning,
+              deltaMs: (d.reasoningAt || Date.now()) - thoughtStart
+            })
+          }
+          if (d.content && thoughtStart) {
+            thoughtStart = 0
+          }
           if (d.content) deps.emit({ type: 'text-delta', runId: req.runId, text: d.content })
         },
         onRetry: (r) => {

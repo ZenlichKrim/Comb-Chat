@@ -375,7 +375,12 @@ export function ChatPane(): React.ReactElement {
                 {changedFiles.length > 0 && (
                   <span className="pill acc t-xs">{t('chat.filesTouched', { n: changedFiles.length })}</span>
                 )}
-                {activity && <span className="faint t-xs tabular">{elapsed}s</span>}
+                {activity && (
+                  <span className="faint t-xs tabular" title={t('chat.runClockHint')}>
+                    {activity.thoughtMs ? t('chat.thoughtShort', { n: Math.round(activity.thoughtMs / 1000) }) + ' · ' : ''}
+                    {elapsed}s
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -1034,6 +1039,63 @@ function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
   )
 }
 
+/**
+ * The thinking block.
+ *
+ * Three things went wrong here before: the duration was guessed from the text
+ * length (4 chars per second — hence "212 s" after twenty), the collapsed label
+ * never moved while the model was still thinking, and the text itself was hidden
+ * until you clicked. Now: the number comes from the main process's clock, it ticks
+ * while it is live, and the tail of the thought streams in collapsed to a few
+ * lines — you see that it is thinking, about what, without a wall of text.
+ */
+function ReasoningBlock({
+  text,
+  thinkingMs,
+  live
+}: {
+  text: string
+  thinkingMs: number
+  live: boolean
+}): React.ReactElement {
+  const t = useT()
+  const [open, setOpen] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  // a live think keeps the collapsed preview glued to the last line written
+  useEffect(() => {
+    if (live && !open && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight
+  }, [text, live, open])
+
+  const secs = Math.max(0, Math.round(thinkingMs / 1000))
+  // Old threads predate the measured clock: no duration is better than "0 s".
+  const label = live
+    ? t('chat.thinkingNow')
+    : secs > 0
+      ? t('chat.thoughtFor', { n: secs })
+      : t('chat.thoughtDone')
+
+  return (
+    <div className="reasoning" data-live={live || undefined}>
+      <button className="reasoning-toggle" onClick={() => setOpen((v) => !v)}>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
+        <Icon name="brain" size={11} className={live ? 'acc pulse' : 'acc'} />
+        <span>{label}</span>
+        {live && <span className="spinner" style={{ marginLeft: 4 }} />}
+        <span className="reasoning-count">{t('chat.thoughtTokens', { n: Math.round(text.length / 4) })}</span>
+      </button>
+      <div
+        ref={bodyRef}
+        className="reasoning-body chat-text"
+        data-collapsed={!open || undefined}
+        hidden={!open && !live}
+      >
+        {text}
+      </div>
+    </div>
+  )
+}
+
 function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean; index: number }): React.ReactElement {
   const t = useT()
   const [showReasoning, setShowReasoning] = useState(false)
@@ -1088,15 +1150,11 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
       </div>
       <div className="msg-main">
         {msg.reasoning && (
-          <div className="reasoning">
-            <button className="reasoning-toggle" onClick={() => setShowReasoning((v) => !v)}>
-              <Icon name={showReasoning ? 'chevron-down' : 'chevron-right'} size={9} />
-              <Icon name="sparkles" size={10} className="acc" />
-              <span>{t('chat.thoughtFor', { n: (msg.reasoning.length / 4).toFixed(0) })}</span>
-              {msg.streaming && <span className="spinner" style={{ marginLeft: 4 }} />}
-            </button>
-            {showReasoning && <div className="reasoning-body chat-text">{msg.reasoning}</div>}
-          </div>
+          <ReasoningBlock
+            text={msg.reasoning}
+            thinkingMs={msg.thinkingMs || 0}
+            live={!!msg.streaming && !msg.content?.trim()}
+          />
         )}
 
         {/* The work goes first, the answer after it: you read what happened,

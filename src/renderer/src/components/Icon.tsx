@@ -62,6 +62,7 @@ export type IconName =
   | 'diff'
   | 'history'
   | 'sparkles'
+  | 'brain'
   | 'bee'
 
 export interface IconProps extends React.SVGProps<SVGSVGElement> {
@@ -281,6 +282,12 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   history: <path d="M13.5 8a5.5 5.5 0 10-5.5 5.5c1.6 0 3-.7 4-1.8M13.5 2.5v3h-3" />,
   sparkles: <path d="M6 1.5l1 3 3 1-3 1-1 3-1-3-3-1 3-1zM12 8l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />,
+  brain: (
+    <>
+      <path d="M6.4 2.2A2.4 2.4 0 0 0 4 4.6v.3a2.2 2.2 0 0 0-.6 4 2.2 2.2 0 0 0 .9 3.9 2.4 2.4 0 0 0 2.1 1.9V2.2z" />
+      <path d="M9.6 2.2A2.4 2.4 0 0 1 12 4.6v.3a2.2 2.2 0 0 1 .6 4 2.2 2.2 0 0 1-.9 3.9 2.4 2.4 0 0 1-2.1 1.9V2.2z" />
+    </>
+  ),
   bee: (
     <>
       <ellipse cx="8" cy="9.5" rx="4" ry="4.2" />

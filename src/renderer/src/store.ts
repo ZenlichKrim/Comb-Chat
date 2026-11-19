@@ -77,7 +77,7 @@ interface State {
   streamingMessageId: string | null
   pendingApproval: ToolResultView | null
   /** what the agent is doing right now, derived from the live tool stream */
-  activity: { step: number; label: string; since: number } | null
+  activity: { step: number; label: string; since: number; thoughtMs?: number } | null
   approvalRunId: string | null
   toasts: Toast[]
   searchOpen: boolean
@@ -719,12 +719,31 @@ export const useStore = create<State & Actions>((set, get) => ({
     switch (e.type) {
       case 'run-start':
         break
-      case 'reasoning-delta':
-        updateAssistant((m) => ({ ...m, reasoning: (m.reasoning || '') + e.text }))
+      case 'reasoning-delta': {
+        // The clock is main's, not ours: `deltaMs` is time since this burst of
+        // thought began, so the number can only grow and can never lie.
+        updateAssistant((m) => ({
+          ...m,
+          reasoning: (m.reasoning || '') + e.text,
+          thinkingMs: Math.max(m.thinkingMs || 0, e.deltaMs),
+          thinkingStartedAt: m.thinkingStartedAt || Date.now() - e.deltaMs
+        }))
+        // while it is thinking the header must say so, not keep the stale label
+        const prev = get().activity
+        if (prev) {
+          set({
+            activity: {
+              ...prev,
+              label: tr('chat.thinkingNow'),
+              thoughtMs: Math.max(prev.thoughtMs || 0, e.deltaMs)
+            }
+          })
+        }
         break
+      }
       case 'text-delta':
         set({
-          activity: { step: get().activity?.step || 1, label: tr('chat.stepWriting'), since: get().activity?.since || Date.now() },
+          activity: { step: get().activity?.step || 1, label: tr('chat.stepWriting'), since: get().activity?.since || Date.now(), thoughtMs: get().activity?.thoughtMs },
           retryInfo: null
         })
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))

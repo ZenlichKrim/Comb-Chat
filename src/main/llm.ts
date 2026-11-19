@@ -10,6 +10,8 @@ export interface LlmToolCall {
 export interface LlmDelta {
   content?: string
   reasoning?: string
+  /** arrival time of this chunk, stamped where it was parsed — not in the UI */
+  reasoningAt?: number
   toolCalls?: { index: number; id?: string; name?: string; argumentsDelta?: string }[]
 }
 
@@ -353,6 +355,7 @@ async function runOnce(opts: {
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
       reasoning += delta.reasoning_content
       d.reasoning = delta.reasoning_content
+      d.reasoningAt = Date.now()
     }
     if (typeof delta.content === 'string' && delta.content) {
       content += delta.content

@@ -4601,3 +4601,36 @@ hr {
   color: color-mix(in oklab, var(--accent) 70%, var(--fg-3));
   line-height: 1.4;
 }
+
+/* ---- thinking block ------------------------------------------------ */
+.reasoning-body[data-collapsed] {
+  max-height: calc(var(--fs-sm) * 1.65 * 3);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26%, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26%, #000 100%);
+  color: var(--fg-3);
+  font-style: italic;
+}
+.reasoning[data-live] .reasoning-body {
+  border-left-color: color-mix(in oklab, var(--accent) 45%, var(--line-1));
+}
+.reasoning[data-live] .reasoning-toggle {
+  color: var(--fg-2);
+}
+.reasoning-count {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  color: var(--fg-4, var(--fg-3));
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.reasoning-toggle {
+  width: 100%;
+}
+.pulse {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}

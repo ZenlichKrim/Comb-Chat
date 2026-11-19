@@ -417,6 +417,10 @@ export interface ChatMessage {
   role: Role
   content: string
   reasoning?: string
+  /** wall-clock ms actually spent thinking, measured on the main process's clock */
+  thinkingMs?: number
+  /** when the current burst of thought began (not persisted, display only) */
+  thinkingStartedAt?: number
   createdAt: number
   model?: string
   tools?: ToolResultView[]
@@ -474,7 +478,7 @@ export interface Checkpoint {
 
 export type AgentEvent =
   | { type: 'run-start'; runId: string; threadId: string; messageId: string }
-  | { type: 'reasoning-delta'; runId: string; text: string }
+  | { type: 'reasoning-delta'; runId: string; text: string; /** ms since this burst of thought began */ deltaMs: number }
   | { type: 'text-delta'; runId: string; text: string }
   | { type: 'tool-call'; runId: string; call: ToolResultView }
   | { type: 'tool-update'; runId: string; call: ToolResultView }
