@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 function on<T>(channel: string, cb: (payload: T) => void): () => void {
   const handler = (_e: Electron.IpcRendererEvent, payload: T): void => cb(payload)
@@ -36,6 +36,21 @@ const api = {
     save: (t: unknown) => ipcRenderer.invoke('threads:save', t),
     delete: (id: string) => ipcRenderer.invoke('threads:delete', id),
     clearAll: () => ipcRenderer.invoke('threads:clearAll')
+  },
+  /**
+   * The real path of a dropped File.
+   *
+   * Electron removed `File.path` in v32; every drag&drop handler that still reads
+   * it silently does nothing, which is exactly what "я переношу файлы, а они не
+   * переносятся" looked like. `webUtils.getPathForFile` is the supported way and
+   * it must be called in the preload, where the File object is still real.
+   */
+  dropPath: (file: File): string => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
   },
   fs: {
     pickFolder: () => ipcRenderer.invoke('fs:pickFolder'),

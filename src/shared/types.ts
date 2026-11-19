@@ -4,6 +4,37 @@
  */
 
 export type ApprovalPolicy = 'ask' | 'auto-edit' | 'yolo'
+
+/** Who may write files / run commands / plan, in words a person can act on. */
+export type EditPermission = 'ask' | 'auto' | 'off'
+export type RunPermission = 'ask' | 'auto' | 'off'
+/** The planner talks to the user and hands a brief to the builder. */
+export type PlannerMode = 'auto' | 'always' | 'off'
+
+export interface Capabilities {
+  edit: EditPermission
+  run: RunPermission
+  planner: PlannerMode
+}
+
+/**
+ * Two agents, one conversation.
+ *
+ * `author` is the one the user talks to: it reads, argues, invents and writes a
+ * brief. It cannot write files — that is not a promise in a prompt, it is the
+ * absence of write tools in its list. `builder` executes the brief with the full
+ * toolset and writes the report the author checks.
+ */
+export type AgentRole = 'author' | 'builder'
+
+/** What the author hands the builder: a paragraph of instruction, not a mood. */
+export interface Brief {
+  goal: string
+  points: string[]
+  check: string[]
+  extra: string[]
+  raw: string
+}
 export type ThemeId = 'comb' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
@@ -128,6 +159,8 @@ export interface Settings {
   temperature: number
   maxTokens: number
   approvalPolicy: ApprovalPolicy
+  /** the three human-facing switches; the source of truth for permissions */
+  capabilities?: Capabilities
   theme: ThemeId
   accent: string
   fontSize: number
@@ -172,6 +205,12 @@ export interface Settings {
   proposeVotes: boolean
   allowedTools: string[]
   locale: Locale
+  /** the author writes a brief before anyone touches a file */
+  planner: PlannerMode
+  /** the author reads the builder's report and diffs before the user does */
+  reviewPass: boolean
+  /** .comb/memory.md: decisions the author carries between sessions */
+  projectMemory: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -215,7 +254,11 @@ export const DEFAULT_SETTINGS: Settings = {
   attentionSound: true,
   proposeVotes: true,
   allowedTools: [],
-  locale: 'en'
+  locale: 'en',
+  capabilities: { edit: 'ask', run: 'ask', planner: 'auto' },
+  planner: 'auto',
+  reviewPass: true,
+  projectMemory: true
 }
 
 /* ------------------------------------------------------------------ */
@@ -478,6 +521,8 @@ export interface Checkpoint {
 
 export type AgentEvent =
   | { type: 'run-start'; runId: string; threadId: string; messageId: string }
+  /** who is speaking right now: the author talks to the user, the builder works */
+  | { type: 'role'; runId: string; role: AgentRole; phase: 'thinking' | 'working' | 'review' }
   | { type: 'reasoning-delta'; runId: string; text: string; /** ms since this burst of thought began */ deltaMs: number }
   | { type: 'text-delta'; runId: string; text: string }
   | { type: 'tool-call'; runId: string; call: ToolResultView }
@@ -553,6 +598,8 @@ export interface RunRequest {
   temperature: number
   maxTokens: number
   approvalPolicy: ApprovalPolicy
+  /** human-facing permissions; override approvalPolicy when present */
+  capabilities?: Capabilities
   maxSteps: number
   autoContext: boolean
   /** label freshly written files with a one-liner (default on) */
@@ -568,6 +615,14 @@ export interface RunRequest {
   disabledTools?: string[]
   /** stable = verification pass + guards; defaults to normal */
   mode?: RunMode
+  /** who is running: the author writes briefs, the builder executes them */
+  role?: AgentRole
+  /** 'single' keeps the old one-agent prompt: used when the planner is off */
+  roleMode?: 'single' | 'split'
+  /** the brief the author wrote, handed to the builder as its whole task */
+  brief?: Brief
+  /** the author reviews the builder's report before the user sees it */
+  review?: { report: string; changed: string[] }
   /** the user's notes for this task: the agent has to respect them */
   notes?: { text: string; target?: string }[]
   /** USD ceiling for this run (0 = off) */
@@ -594,6 +649,8 @@ export interface PtyCreateOptions {
 /* ------------------------------------------------------------------ */
 
 export interface CombApi {
+  /** absolute path of a File dropped on the window (Electron has no File.path) */
+  dropPath: (file: File) => string
   app: {
     platform: string
     version: string

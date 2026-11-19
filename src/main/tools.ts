@@ -182,6 +182,8 @@ export async function executeTool(
         }
       case 'attach_file':
         return await toolAttachFile(args, ctx)
+      case 'view_image':
+        return await toolViewImage(args, ctx)
       case 'finish':
         return { ok: true, output: args.summary || 'Task finished.', halt: 'done' }
       default:
@@ -676,6 +678,40 @@ export async function previewTool(
 /* Tool schemas exposed to the model                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Look at an image that lives on disk.
+ *
+ * Without this the model could only ever see images that the user dragged into
+ * the composer: a screenshot sitting in the project, a texture it just wrote, a
+ * generated icon — all invisible, so it guessed. The result carries a marker the
+ * agent loop turns into a real image block on the next request.
+ */
+async function toolViewImage(
+  args: Record<string, any>,
+  ctx: ToolContext
+): Promise<ToolOutcome> {
+  const rel = String(args.path || '')
+  if (!rel) return { ok: false, error: 'path is required' }
+  const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
+  const ext = path.extname(abs).toLowerCase()
+  if (!['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp'].includes(ext)) {
+    return { ok: false, error: `Not an image I can look at: ${ext || 'no extension'}. Supported: png, jpg, webp, gif, bmp.` }
+  }
+  try {
+    const st = await fs.stat(abs)
+    if (st.size > 12 * 1024 * 1024) return { ok: false, error: `Image is ${(st.size / 1e6).toFixed(1)} MB — too big to read in one turn (limit 12 MB).` }
+    const data = await fs.readFile(abs)
+    const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : ext === '.gif' ? 'image/gif' : ext === '.bmp' ? 'image/bmp' : 'image/jpeg'
+    return {
+      ok: true,
+      output: `Image attached: ${rel} (${st.size} bytes, ${mime}). It will be in your next message — look at it there, do not guess its content.`,
+      meta: { imageUrl: `data:${mime};base64,${data.toString('base64')}`, imageRel: rel }
+    }
+  } catch (e: any) {
+    return { ok: false, error: `Could not read ${rel}: ${e?.message || String(e)}` }
+  }
+}
+
 export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
@@ -963,6 +999,22 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
         properties: {
           path: { type: 'string', description: 'Path to the file, relative to the workspace or absolute' },
           note: { type: 'string', description: 'One line: why this file matters' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'view_image',
+      description:
+        'Look at an image file on disk (screenshot, texture, icon, photo, mockup). The image is added to your next message so you can actually see it. Use this instead of guessing what a picture contains.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Path to the image, relative to the workspace or absolute' },
+          note: { type: 'string', description: 'Optional one line: why you are looking at it' }
         },
         required: ['path']
       }

@@ -77,7 +77,9 @@ interface State {
   streamingMessageId: string | null
   pendingApproval: ToolResultView | null
   /** what the agent is doing right now, derived from the live tool stream */
-  activity: { step: number; label: string; since: number; thoughtMs?: number } | null
+  activity: { step: number; label: string; since: number; thoughtMs?: number; role?: 'author' | 'builder' } | null
+  /** who is speaking in the current run: author talks, builder works */
+  activeRole: 'author' | 'builder' | null
   approvalRunId: string | null
   toasts: Toast[]
   searchOpen: boolean
@@ -241,6 +243,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   pendingApproval: null,
   queued: [],
   activity: null,
+  activeRole: null,
   approvalRunId: null,
   toasts: [],
   searchOpen: false,
@@ -589,6 +592,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       temperature: settings.temperature,
       maxTokens: settings.maxTokens,
       approvalPolicy: settings.approvalPolicy,
+      capabilities: settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' },
       maxSteps: settings.maxAgentSteps,
       autoContext: settings.autoContext,
       describeFiles: settings.describeFiles,
@@ -718,6 +722,22 @@ export const useStore = create<State & Actions>((set, get) => ({
 
     switch (e.type) {
       case 'run-start':
+        break
+      case 'role':
+        // the pipeline announces who is at the table; the header says so
+        set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
+        updateAssistant((m) => ({
+          ...m,
+          steps: [
+            ...(m.steps || []),
+            {
+              id: uid('stp'),
+              step: (m.steps?.length || 0) + 1,
+              say: e.role === 'author' ? tr('chat.roleAuthorHint') : tr('chat.roleBuilderHint'),
+              actions: []
+            }
+          ].slice(-80)
+        }))
         break
       case 'reasoning-delta': {
         // The clock is main's, not ours: `deltaMs` is time since this burst of
@@ -905,7 +925,7 @@ export const useStore = create<State & Actions>((set, get) => ({
             : m.tools
           }
         })
-        set({ running: false, pendingApproval: null, activity: null, retryInfo: null })
+        set({ running: false, pendingApproval: null, activity: null, retryInfo: null, activeRole: null })
         void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         const t = get().threads.find((x) => x.id === threadId)

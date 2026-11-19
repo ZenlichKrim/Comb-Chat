@@ -4719,3 +4719,174 @@ hr {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- permission switches: three words each, no cryptic modes -------- */
+.composer-menu-label {
+  padding: 6px 10px 2px;
+  font-size: var(--fs-2xs);
+  color: var(--fg-3);
+  letter-spacing: 0.02em;
+}
+.perm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px;
+}
+.perm-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
+}
+.perm-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 999px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-1);
+}
+.perm-opt {
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  color: var(--fg-3);
+  transition: background var(--dur), color var(--dur);
+}
+.perm-opt:hover {
+  color: var(--fg-1);
+}
+.perm-opt[data-on='true'] {
+  background: color-mix(in oklab, var(--accent) 22%, var(--bg-2));
+  color: var(--fg-0);
+}
+
+/* who is speaking: one small chip, two quiet colours */
+.role-chip {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+  border: 1px solid var(--line-2);
+  color: var(--fg-2);
+}
+.role-chip[data-role='author'] {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2));
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.role-chip[data-role='builder'] {
+  border-color: color-mix(in oklab, var(--ok) 40%, var(--line-2));
+  color: color-mix(in oklab, var(--ok) 80%, var(--fg-1));
+}
+
+/* ==========================================================================
+   v63 — the surface pass
+   The old chrome was boxes inside boxes: every element had a border, every
+   border had the same weight, so nothing could be focused. Here surfaces get a
+   hierarchy — the transcript floats, the chrome recedes, only the thing you are
+   working on has a border.
+   ========================================================================== */
+
+:root {
+  --surface-raise: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.35);
+  --hairline: color-mix(in oklab, var(--fg-0) 7%, transparent);
+}
+
+/* the transcript sits on its own plane */
+.chat-pane {
+  background: var(--bg-0);
+}
+.msg.assistant .msg-main {
+  max-width: 76ch;
+}
+
+/* user messages: a quiet tinted block, no outline */
+.msg.user .msg-bubble,
+.msg.user .msg-main {
+  border-radius: var(--r-lg);
+}
+
+/* buttons: pill-ish, no border by default, hover lifts */
+.btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: var(--bg-3);
+  font-weight: 500;
+  transition: background var(--dur), border-color var(--dur), transform var(--dur-fast);
+}
+.btn:hover {
+  background: var(--bg-4);
+}
+.btn:active {
+  transform: scale(0.985);
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: transparent;
+}
+.btn.primary:hover {
+  background: color-mix(in oklab, var(--accent) 86%, white);
+}
+.btn.ghost {
+  background: transparent;
+  border-color: var(--hairline);
+}
+.btn.ghost:hover {
+  background: var(--bg-2);
+  border-color: var(--line-3);
+}
+
+/* inputs: a soft well instead of a rectangle with a stroke */
+.composer,
+.composer-shell {
+  border-radius: var(--r-xl);
+  border-color: var(--hairline);
+  background: var(--bg-1);
+  box-shadow: var(--surface-raise);
+}
+.composer:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2));
+}
+
+/* the model pill in the title bar: readable, not ornament */
+.model-pill,
+.tb-model {
+  border-radius: 999px;
+  border-color: transparent;
+  background: var(--bg-2);
+}
+.model-pill:hover,
+.tb-model:hover {
+  background: var(--bg-3);
+}
+
+/* scrollbars: barely there */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--fg-0) 12%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--fg-0) 22%, transparent);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* the thinking block reads as a whisper, in mono, on the left edge */
+.reasoning-body {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: -0.01em;
+}

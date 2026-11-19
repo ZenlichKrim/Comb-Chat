@@ -15,7 +15,7 @@ import type {
 } from '../shared/types'
 import * as store from './store'
 import * as fsops from './fsops'
-import { runAgent, stopRun, resolveApproval, answerVote, steerRun } from './agent'
+import { runTeam, stopRun, resolveApproval, answerVote, steerRun } from './agent'
 import { describeFile, getSummaries } from './describe'
 import { testApiKey } from './llm'
 import { createTerminal, writeTerminal, resizeTerminal, killTerminal, killAllTerminals } from './terminal'
@@ -358,7 +358,8 @@ function registerIpc(): void {
   ipcMain.handle('agent:run', async (_e, req: RunRequest) => {
     // approvals are dispatched by the agent loop through agent.ts' resolver;
     // the renderer answers via the 'agent:approve' channel below.
-    return runAgent(req, {
+    // the team, not a single agent: author -> builder -> author review
+    return runTeam(req, {
       emit,
       requestApproval: async () => 'deny'
     })

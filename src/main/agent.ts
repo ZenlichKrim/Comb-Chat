@@ -15,11 +15,44 @@ import type {
 import { streamChat, toApiHistory, type LlmContentPart, type LlmMessage } from './llm'
 import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, READ_ONLY_TOOLS, type ToolContext } from './tools'
 import { describeInBackground } from './describe'
+import {
+  authorPrompt,
+  builderPrompt,
+  modelForRole,
+  parseBrief,
+  planRoles,
+  resolvePolicy,
+  toolsForRole
+} from './roles'
+import type { AgentRole, Brief, Capabilities } from '../shared/types'
 
 /** never spend a request describing media, bundles or lockfiles */
 const SKIP_DESCRIBE = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|mp3|mp4|zip|tar|gz|7z|dmg|exe|dll|so|dylib|pdf|apk|jar)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/i
 import { IGNORED_DIRS, toRel } from './fsops'
 import { getSettings, saveCheckpoint, setSettings } from './store'
+
+/** `.comb/memory.md` — what the team decided, kept between sessions. */
+async function readMemory(workspace: string): Promise<string> {
+  try {
+    const raw = await fs.readFile(path.join(workspace, '.comb', 'memory.md'), 'utf8')
+    return raw.slice(-6000)
+  } catch {
+    return ''
+  }
+}
+
+export async function appendMemory(workspace: string, line: string): Promise<void> {
+  try {
+    const dir = path.join(workspace, '.comb')
+    await fs.mkdir(dir, { recursive: true })
+    const file = path.join(dir, 'memory.md')
+    const head = await fs.readFile(file, 'utf8').catch(() => '# Память проекта\n')
+    const stamp = new Date().toISOString().slice(0, 10)
+    await fs.writeFile(file, `${head.trimEnd()}\n- ${stamp}: ${line.trim()}\n`, 'utf8')
+  } catch {
+    /* memory is a convenience, never a reason to fail a run */
+  }
+}
 
 export interface AgentDeps {
   emit: (e: AgentEvent) => void
@@ -249,7 +282,16 @@ async function buildContextBlock(workspace: string, openFiles: string[]): Promis
 /* Main agent loop                                                     */
 /* ------------------------------------------------------------------ */
 
-export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: boolean; error?: string }> {
+/**
+ * One agent turn with one role. This is the loop that was always here; what is
+ * new is that the prompt, the tool list and the model follow `req.role`, so a
+ * builder cannot wander into a design discussion and an author cannot start
+ * editing files behind the user's back.
+ */
+export async function runAgent(
+  req: RunRequest,
+  deps: AgentDeps
+): Promise<{ ok: boolean; error?: string; finalText?: string }> {
   const settings = await getSettings()
   if (!settings.apiKey) {
     deps.emit({ type: 'error', runId: req.runId, message: 'No API key configured. Open Settings and paste your DeepSeek key.' })
@@ -272,7 +314,11 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   const usage: TokenUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 }
   const checkpoints: Checkpoint[] = []
 
-  let approvalPolicy = req.approvalPolicy
+  // capabilities are the human-facing truth; approvalPolicy is the legacy shape
+  const roleEarly: AgentRole = req.role || 'builder'
+  const capEarly: Capabilities = req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
+  const earlyPolicy = resolvePolicy(capEarly, req.approvalPolicy)
+  let approvalPolicy = earlyPolicy.approvalPolicy
   const fullDisk = !!req.fullDiskAccess
   const roots = [req.workspace, ...(req.extraRoots || [])].filter((r): r is string => !!r)
   const extraRootNames = (req.extraRoots || []).filter(Boolean)
@@ -291,7 +337,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       todos = marked
       deps.emit({ type: 'todos', runId: req.runId, todos: marked })
     },
-    approvalPolicy,
+    approvalPolicy: earlyPolicy.approvalPolicy,
     runId: req.runId,
     requestApproval: async (call) => {
       if (run.autoApproved.has(call.name)) return 'allow'
@@ -331,18 +377,43 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     }
   }
 
-  const sys = systemPrompt({
-    workspace: req.workspace,
-    roots,
-    platform: `${process.platform} ${process.arch}`,
-    shell: settings.shell || (process.platform === 'win32' ? 'PowerShell / cmd' : process.env.SHELL || '/bin/bash'),
-    now: new Date().toISOString(),
-    approvalPolicy: req.approvalPolicy,
-    fullDisk,
-    custom: req.customInstructions || settings.customInstructions || '',
-    contextFiles: (req.openFiles || []).map((f) => f.rel),
-    locale: settings.locale || 'en'
-  })
+  const role = roleEarly
+  const caps = capEarly
+  const policy = earlyPolicy
+
+  // Project memory: decisions the author carries between sessions, so a run
+  // starts from what was already agreed instead of re-litigating it.
+  const memory = settings.projectMemory && req.workspace ? await readMemory(req.workspace) : ''
+
+  const sys =
+    req.roleMode === 'single'
+      ? systemPrompt({
+          workspace: req.workspace,
+          roots,
+          platform: `${process.platform} ${process.arch}`,
+          shell: settings.shell || (process.platform === 'win32' ? 'PowerShell / cmd' : process.env.SHELL || '/bin/bash'),
+          now: new Date().toISOString(),
+          approvalPolicy: policy.approvalPolicy,
+          fullDisk,
+          custom: req.customInstructions || settings.customInstructions || '',
+          contextFiles: (req.openFiles || []).map((f) => f.rel),
+          locale: settings.locale || 'en'
+        })
+      : role === 'author'
+        ? authorPrompt({
+            locale: settings.locale || 'en',
+            workspace: req.workspace,
+            memory,
+            custom: req.customInstructions || settings.customInstructions || '',
+            history: ''
+          })
+        : builderPrompt({
+            locale: settings.locale || 'en',
+            workspace: req.workspace,
+            brief: req.brief || null,
+            memory,
+            caps
+          })
 
   // A last-line reminder in the user turn itself: models drift back to English
   // in long runs when every tool output is English.
@@ -396,8 +467,18 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
   // it works, attached to the call so the interface can show it above the card and
   // the model is not paying for a separate round trip to say one sentence.
   const NO_NOTE = new Set(['leave_note', 'finish', 'suggest'])
+  // The author cannot write: not "should not", cannot — its tool list has no
+  // write tool in it. Capabilities can take away what is left.
+  const roleAllowed = new Set(toolsForRole(req.role || 'builder', TOOL_SCHEMAS.map((t) => t.function.name)))
+  const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit', 'delete_path', 'move_path'])
   const tools = req.workspace || fullDisk
-    ? TOOL_SCHEMAS.filter((t) => !disabled.has(t.function.name)).map((t) =>
+    ? TOOL_SCHEMAS.filter(
+        (t) =>
+          !disabled.has(t.function.name) &&
+          roleAllowed.has(t.function.name) &&
+          !(policy.writesOff && WRITE_TOOLS.has(t.function.name)) &&
+          !(policy.commandsOff && t.function.name === 'run_command')
+      ).map((t) =>
         NO_NOTE.has(t.function.name)
           ? t
           : {
@@ -421,9 +502,17 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     : []
 
   deps.emit({ type: 'run-start', runId: req.runId, threadId: req.threadId, messageId: req.messageId })
+  deps.emit({
+    type: 'role',
+    runId: req.runId,
+    role,
+    phase: role === 'author' ? 'thinking' : 'working'
+  })
 
   let step = 0
   let finalReason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' = 'done'
+  /** the last prose the model produced: the brief for the author, the report for the builder */
+  let finalText = ''
 
   /* --- stable-mode state ------------------------------------------------ */
   // Stability is the baseline of this build, not a switch at the bottom of the
@@ -677,7 +766,14 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
       // agentic coding (DeepSWE 77.0 vs 62.7, Terminal-Bench 42.3 vs 12.4) and it is
       // 3-7x cheaper, so Pro is the wrong default for editing files. Pro still wins
       // on deep text reasoning and long factual recall, so that is where it goes.
-      const routed = pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
+      // The role decides the model before the step does. The author thinks — it
+      // is writing a brief someone will be held to. The builder executes, so it
+      // gets the cheap non-thinking pass unless the user forced Pro.
+      const roleModel = modelForRole(role, req.model, req.thoughtEffort || 'deep')
+      const routed =
+        role === 'author'
+          ? roleModel.model
+          : pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
 
       // one clock per step: when this burst of thought started
       let thoughtStart = 0
@@ -694,7 +790,12 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         // Thinking budget: the user's setting, but a one-line question never gets
         // 32k of thought — a long think on a trivial ask is money burned for
         // nothing. Substantial work and specs get the full setting.
-        effort: substantial || specSections.length >= 4 ? (req.thoughtEffort || 'deep') : 'fast',
+        effort:
+          role === 'author'
+            ? roleModel.effort
+            : substantial || specSections.length >= 4
+              ? req.thoughtEffort || 'deep'
+              : 'fast',
         onDelta: (d) => {
           // Time the thought here, on one clock. The renderer used to guess the
           // duration from the number of characters, which is why a 20-second think
@@ -728,6 +829,7 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         }
       })
 
+      if (result.content?.trim()) finalText = result.content.trim()
       // record assistant turn
       const assistantMsg: LlmMessage = {
         role: 'assistant',
@@ -982,6 +1084,19 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
           ? String(outcome.output ?? 'ok')
           : `ERROR: ${outcome.error || 'tool failed'}${outcome.output ? `\n${outcome.output}` : ''}`
         history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: toolContent.slice(0, 30000) })
+        // An image the model asked to look at: the tool result is text, so the
+        // bytes ride on a follow-up user message where every vision API expects
+        // them. Without this, view_image returned a polite sentence about a
+        // picture nobody could see.
+        if (outcome.meta?.imageUrl) {
+          history.push({
+            role: 'user',
+            content: [
+              { type: 'text' as const, text: `Image from ${outcome.meta.imageRel || 'disk'} (you asked to see it):` },
+              { type: 'image_url' as const, image_url: { url: String(outcome.meta.imageUrl), detail: 'original' as const } }
+            ]
+          })
+        }
 
         roundTools.push({ id: call.id, name: call.name, ok: outcome.ok, error: outcome.error || outcome.output || '', args })
         if (stableMode) {
@@ -1499,7 +1614,8 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })
   }
 
-  return { ok: true }
+  lastFinalText.set(req.runId, finalText)
+  return { ok: true, finalText }
 }
 
 /**
@@ -1625,3 +1741,126 @@ export function pickModelForStep(
   // only ever upgrade, never silently downgrade a Pro pick
   return wantsPro ? 'deepseek-v4-pro' : chosen
 }
+
+
+/* ------------------------------------------------------------------ */
+/* The team: author -> builder -> author review                        */
+/* ------------------------------------------------------------------ */
+
+export interface TeamResult {
+  ok: boolean
+  error?: string
+  brief?: Brief | null
+  roles: AgentRole[]
+}
+
+/**
+ * Who does what, and in which order.
+ *
+ * The old design had one agent trying to be a colleague and a compiler at the
+ * same time, which is why it answered a request for a mod with a README and a
+ * request for an explanation with a plan. Splitting them fixes the behaviour at
+ * the root: the author has no write tools, so it cannot "just start", and the
+ * builder has no questions, so it cannot drift.
+ *
+ * Nothing here is a straight line: the author sees the builder's report and the
+ * files it touched, and can send it back once. That is the review the user was
+ * missing, and it costs one cheap round instead of a broken deliverable.
+ */
+export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamResult> {
+  const settings = await getSettings()
+  const caps: Capabilities =
+    req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
+  const text = req.userMessage?.content || ''
+  const plan = planRoles({ text, planner: caps.planner, substantial: text.length > 400 })
+
+  // questions are answered by the author alone; with the planner off, everything
+  // is the old single agent
+  if (plan.roles.length === 1 && plan.roles[0] === 'author') {
+    return runAuthorOnly(req, deps)
+  }
+  if (plan.roles[0] === 'builder' && caps.planner === 'off') {
+    return { ok: (await runAgent({ ...req, roleMode: 'single', role: 'builder' }, deps)).ok, roles: ['builder'] }
+  }
+  if (plan.roles[0] === 'builder') {
+    // small mechanical work: straight to the hands, with the old prompt so the
+    // builder still knows how to talk about what it did
+    return { ok: (await runAgent({ ...req, role: 'builder', roleMode: 'split' }, deps)).ok, roles: ['builder'] }
+  }
+
+  // 1. the author thinks, talks and writes the brief
+  const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split' }, deps)
+  if (!authorRes.ok) return { ok: false, error: authorRes.error, roles: ['author'] }
+  const brief = parseBrief(authorRes.finalText || '')
+  if (!brief) {
+    // The author answered in prose without a brief: that is a conversation, not
+    // a task, so the builder is not started on a guess. But the user may simply
+    // have asked for work and got an opinion, which would be exactly the old bug
+    // — so say it out loud instead of ending quietly.
+    deps.emit({
+      type: 'guard',
+      runId: req.runId,
+      kind: 'steer',
+      title: 'Автор ответил словами, без брифа',
+      detail: 'Если это была задача, а не вопрос — включите «Планировщик: всегда» или скажите «сделай».'
+    })
+    return { ok: true, roles: ['author'], brief: null }
+  }
+
+  // 2. the builder executes it
+  const buildReq: RunRequest = {
+    ...req,
+    runId: `${req.runId}:build`,
+    messageId: `${req.messageId}:build`,
+    role: 'builder',
+    roleMode: 'split',
+    brief,
+    history: [],
+    userMessage: { ...req.userMessage, content: brief.raw }
+  }
+  const buildRes = await runAgent(buildReq, deps)
+  const report = buildRes.finalText || ''
+
+  // 3. the author checks the result and speaks to the user about it
+  if (settings.reviewPass && buildRes.ok) {
+    const reviewReq: RunRequest = {
+      ...req,
+      runId: `${req.runId}:review`,
+      messageId: `${req.messageId}:review`,
+      role: 'author',
+      roleMode: 'split',
+      brief,
+      history: [],
+      userMessage: {
+        ...req.userMessage,
+        content:
+          `Бриф:
+${brief.raw}
+
+Отчёт сборщика:
+${report.slice(0, 4000)}
+
+` +
+          'Проверь результат по коду (read_file по изменённым файлам, если нужно) и ответь пользователю: что сделано, что проверено, что осталось. ' +
+          'Если что-то сделано неверно или не по брифу — скажи честно и конкретно, что не так. Без нового брифа.'
+      }
+    }
+    await runAgent(reviewReq, deps)
+  }
+
+  return { ok: buildRes.ok, roles: ['author', 'builder', 'author'], brief }
+}
+
+/** A question: the author answers, no builder, no tools beyond reading. */
+async function runAuthorOnly(req: RunRequest, deps: AgentDeps): Promise<TeamResult> {
+  const res = await runAgent({ ...req, role: 'author', roleMode: 'split' }, deps)
+  return { ok: res.ok, error: res.error, roles: ['author'] }
+}
+
+/** The assistant text of the last turn, for the pipeline's stage handoff. */
+function lastAssistantText(req: RunRequest): string {
+  return lastFinalText.get(req.runId) || ''
+}
+
+/** runAgent keeps its last prose here so runTeam can hand it to the next stage. */
+const lastFinalText = new Map<string, string>()

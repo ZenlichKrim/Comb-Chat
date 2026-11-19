@@ -141,12 +141,23 @@ export function TitleBar(): React.ReactElement {
   )
 }
 
+/**
+ * The mark: three combs of a honeycomb, drawn as strokes rather than a bee.
+ * A hexagon with an S-curve inside reads as "cell" at 16px and as "comb" at 64,
+ * and it stays legible when the accent colour changes with the theme.
+ */
 export function CombMark({ size = 16 }: { size?: number }): React.ReactElement {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="1" y="1" width="22" height="22" rx="6" fill="var(--bg-3)" stroke="var(--line-3)" />
-      <path d="M7 15.5V9.5l5-3 5 3v6l-5 3z" stroke="var(--accent)" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M12 9v9M7 12.5l5 3 5-3" stroke="var(--accent)" strokeWidth="1.2" strokeLinejoin="round" opacity="0.75" />
+      <rect x="0.6" y="0.6" width="22.8" height="22.8" rx="7" fill="var(--bg-3)" stroke="var(--line-2)" />
+      <path
+        d="M12 4.6l6.4 3.7v7.4L12 19.4l-6.4-3.7V8.3z"
+        stroke="var(--accent)"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M12 8.2l3.2 1.85v3.7L12 15.6l-3.2-1.85v-3.7z" fill="var(--accent)" opacity="0.9" />
+      <path d="M8.8 10.05h6.4M8.8 13.75h6.4" stroke="var(--bg-3)" strokeWidth="1.1" />
     </svg>
   )
 }

@@ -9,6 +9,32 @@ import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
 import { MODELS } from '../../../shared/types'
 
+/** One permission switch: a label and three words, the chosen one lit. */
+function PermRow({
+  label,
+  value,
+  options,
+  onChange
+}: {
+  label: string
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (v: string) => void
+}): React.ReactElement {
+  return (
+    <div className="perm-row">
+      <span className="perm-label">{label}</span>
+      <span className="perm-seg">
+        {options.map((o) => (
+          <button key={o.value} className="perm-opt" data-on={value === o.value} onClick={() => onChange(o.value)}>
+            {o.label}
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+}
+
 export function ChatPane(): React.ReactElement {
   const t = useT()
   const [dragging, setDragging] = useState(false)
@@ -37,8 +63,13 @@ export function ChatPane(): React.ReactElement {
     const st = useStore.getState()
     let attached = 0
     for (const file of Array.from(e.dataTransfer.files).slice(0, 12)) {
-      const full = (file as File & { path?: string }).path
-      if (!full) continue
+      // Electron 32+ dropped File.path: ask the preload for the real path, and if
+      // it cannot give one, still attach the bytes by name instead of skipping.
+      const full = window.comb.dropPath(file) || (file as File & { path?: string }).path || ''
+      if (!full) {
+        st.toast('err', t('chat.dropNoPath'), file.name)
+        continue
+      }
       const rel = workspace && full.startsWith(workspace) ? full.slice(workspace.length + 1).replace(/\\/g, '/') : full.split(/[\\/]/).pop() || full
       const isImage = /\.(png|jpe?g|gif|webp)$/i.test(full)
       const isVector = /\.svg$/i.test(full)
@@ -94,6 +125,7 @@ export function ChatPane(): React.ReactElement {
   const bottomPanel = useStore((s) => s.bottomPanel)
 
   const activity = useStore((s) => s.activity)
+  const activeRole = useStore((s) => s.activeRole)
   const lastPrompt = useStore((s) => s.lastPrompt)
   const changedFiles = useStore((s) => s.changedFiles)
   const [elapsed, setElapsed] = useState(0)
@@ -109,6 +141,7 @@ export function ChatPane(): React.ReactElement {
   const pinnedBottom = useRef(true)
   const messages = thread?.messages || []
   const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+  const caps = settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
 
   // seconds spent on the current step, so a long read does not look frozen
   useEffect(() => {
@@ -364,6 +397,11 @@ export function ChatPane(): React.ReactElement {
             {running && (
               <div className="thinking-row">
                 <span className="spinner" />
+                {activeRole && (
+                  <span className="role-chip" data-role={activeRole}>
+                    {activeRole === 'author' ? t('chat.roleAuthor') : t('chat.roleBuilder')}
+                  </span>
+                )}
                 <span className="faint t-xs ellipsis" style={{ minWidth: 0 }}>
                   {activity ? `${t('chat.stepLabel', { n: activity.step })} · ${activity.label}` : t('chat.working')}
                 </span>
@@ -678,21 +716,41 @@ export function ChatPane(): React.ReactElement {
                       <Icon name="terminal" size={12} /> {t('chat.terminal')}
                     </button>
                     <div className="composer-menu-sep" />
-                    <button
-                      className="composer-menu-item"
-                      onClick={() => {
-                        setMenu(false)
-                        const order: ApprovalPolicy[] = ['ask', 'auto-edit', 'yolo']
-                        const next = order[(order.indexOf(settings.approvalPolicy) + 1) % order.length]
-                        void setSettings({ approvalPolicy: next })
-                      }}
-                    >
-                      <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : settings.approvalPolicy === 'auto-edit' ? 'edit' : 'shield'} size={12} className={settings.approvalPolicy === 'yolo' ? 'err' : settings.approvalPolicy === 'auto-edit' ? 'warn' : 'ok'} />
-                      {t('chat.approvalPolicy')}
-                      <span className="composer-menu-state">
-                        {settings.approvalPolicy === 'ask' ? t('chat.policyAsk') : settings.approvalPolicy === 'auto-edit' ? t('chat.policyAuto') : t('chat.policyYolo')}
-                      </span>
-                    </button>
+                    {/* Three switches in words, not three cryptic modes. Each one
+                        states its consequence right there: what may be written,
+                        what may be run, and whether someone thinks first. */}
+                    <div className="composer-menu-label">{t('chat.permTitle')}</div>
+                    <PermRow
+                      label={t('chat.permEdit')}
+                      value={caps.edit}
+                      options={[
+                        { value: 'ask', label: t('chat.permAsk') },
+                        { value: 'auto', label: t('chat.permAuto') },
+                        { value: 'off', label: t('chat.permOff') }
+                      ]}
+                      onChange={(v) => void setSettings({ capabilities: { ...caps, edit: v as 'ask' | 'auto' | 'off' } })}
+                    />
+                    <PermRow
+                      label={t('chat.permRun')}
+                      value={caps.run}
+                      options={[
+                        { value: 'ask', label: t('chat.permAsk') },
+                        { value: 'auto', label: t('chat.permAuto') },
+                        { value: 'off', label: t('chat.permOff') }
+                      ]}
+                      onChange={(v) => void setSettings({ capabilities: { ...caps, run: v as 'ask' | 'auto' | 'off' } })}
+                    />
+                    <PermRow
+                      label={t('chat.permPlanner')}
+                      value={caps.planner}
+                      options={[
+                        { value: 'auto', label: t('chat.permPlannerAuto') },
+                        { value: 'always', label: t('chat.permPlannerAlways') },
+                        { value: 'off', label: t('chat.permPlannerOff') }
+                      ]}
+                      onChange={(v) => void setSettings({ capabilities: { ...caps, planner: v as 'auto' | 'always' | 'off' } })}
+                    />
+                    <div className="composer-menu-sep" />
                     <button
                       className="composer-menu-item"
                       data-on={settings.stableMode}
