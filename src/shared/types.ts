@@ -23,7 +23,7 @@ export interface ModelInfo {
   priceOut: number
   /** accepts image input */
   vision: boolean
-  blurbKey: 'model.blurbFlash' | 'model.blurbPro'
+  blurbKey: 'model.blurbFlash' | 'model.blurbPro' | 'model.blurbV4Pro'
 }
 
 /**
@@ -58,12 +58,32 @@ export const MODELS: ModelInfo[] = [
     priceOut: 1.2,
     vision: true,
     blurbKey: 'model.blurbPro'
+  },
+  {
+    /**
+     * The heavy one. Same 1M context and 384k output, ~4x the price of flash and
+     * text-only, for work where the answer has to hold together as a whole
+     * system rather than a patch. Priced peak/off-peak by DeepSeek, we quote peak.
+     */
+    id: 'deepseek-v4-pro',
+    label: 'deepseek-v4-pro · thinking',
+    family: 'deepseek',
+    reasoning: true,
+    contextWindow: 1_000_000,
+    maxOutput: 384_000,
+    priceIn: 1.32,
+    priceInCached: 0.044,
+    priceOut: 3.96,
+    vision: false,
+    blurbKey: 'model.blurbV4Pro'
   }
 ]
 
 /** Wire model name for a UI model id — thinking is a request flag, not a model. */
 export function wireModel(id: string): string {
-  return id === 'deepseek-flash-thinking' ? 'deepseek-flash' : id
+  if (id === 'deepseek-flash-thinking') return 'deepseek-flash'
+  if (id === 'deepseek-v4-pro-thinking') return 'deepseek-v4-pro'
+  return id
 }
 
 /**
@@ -78,10 +98,11 @@ export function wireModel(id: string): string {
  */
 export function modelOptions(
   id: string,
-  effort: 'balanced' | 'deep' = 'deep'
+  effort: 'fast' | 'balanced' | 'deep' = 'deep'
 ): { thinking?: { type: 'enabled' | 'disabled'; budget_tokens?: number } } {
-  if (id === 'deepseek-flash-thinking') {
-    return { thinking: { type: 'enabled', budget_tokens: effort === 'deep' ? 8192 : 4096 } }
+  if (id === 'deepseek-flash-thinking' || id === 'deepseek-v4-pro') {
+    const budget = effort === 'deep' ? 16384 : effort === 'balanced' ? 8192 : 4096
+    return { thinking: { type: 'enabled', budget_tokens: budget } }
   }
   if (id === 'deepseek-flash') return { thinking: { type: 'disabled' } }
   return {}
@@ -467,6 +488,8 @@ export type AgentEvent =
       actions: { id: string; name: string; ok: boolean; error?: string; args?: Record<string, any> }[]
     }
   | { type: 'files-changed'; runId: string; paths: string[] }
+  /** files this run produced, handed to the chat so the user can take them */
+  | { type: 'attachments'; runId: string; attachments: Attachment[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
   | { type: 'error'; runId: string; message: string }
   | {

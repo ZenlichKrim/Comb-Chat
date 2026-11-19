@@ -728,6 +728,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         })
         updateAssistant((m) => ({ ...m, content: (m.content || '') + e.text }))
         break
+      case 'attachments':
+        updateAssistant((m) => ({
+          ...m,
+          attachments: [...(m.attachments || []), ...e.attachments.filter((a) => !(m.attachments || []).some((x) => x.path === a.path))]
+        }))
+        break
       case 'step-note':
         // The prose of this round now lives in the trace, so drop it from the
         // message body — otherwise every sentence is printed twice.

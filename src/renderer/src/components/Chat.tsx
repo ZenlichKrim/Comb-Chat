@@ -1110,6 +1110,24 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
 
         {hasText && <Markdown text={msg.content} />}
 
+        {!!msg.attachments?.length && (
+          <div className="msg-attachments">
+            {msg.attachments.map((a) => (
+              <button
+                key={a.id}
+                className="ctx-chip acc"
+                title={a.path || a.rel || a.name}
+                onClick={() => {
+                  if (a.path) window.comb.app.showItemInFolder(a.path)
+                  else if (a.rel) void useStore.getState().openFile(`${useStore.getState().workspace?.replace(/[\\/]+$/, '')}/${a.rel}`, a.rel)
+                }}
+              >
+                <Icon name="paperclip" size={10} /> {a.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* What the run actually produced, as something you can click. A finished
             task that says "done" and leaves you hunting in the sidebar is a dead
             end; these are the files and the artifact, right under the answer. */}

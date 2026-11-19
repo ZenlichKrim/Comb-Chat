@@ -31,6 +31,12 @@ function inline(text: string): string {
     const line = m && m[2] ? m[2] : ''
     return `<a href="#" class="code-ref" data-file="${esc(file)}" data-line="${line}" title="${esc(target)}">${label}</a>`
   })
+  // Bare paths in prose become links too: `src/main/App.java:42` written without
+  // backticks still opens. Models forget the markup; the renderer should not
+  // depend on them remembering.
+  s = s.replace(/(^|[\s(])((?:[\w.-]+[\\/]){1,}[\w.-]+\.(?:java|kt|tsx?|jsx?|json|gradle|properties|md|css|html|py|rs|go|ya?ml|c|cpp|h|sh|bat|toml|mod|jar))(:(\d+))?/g,
+    (_m, pre, file, _c, line) =>
+      `${pre}<a href="#" class="code-ref" data-file="${file}" data-line="${line || ''}" title="${file}">${file}${line ? ':' + line : ''}</a>`)
   // bold / italic / strike
   s = s.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')

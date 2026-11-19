@@ -1379,6 +1379,34 @@ export async function runAgent(req: RunRequest, deps: AgentDeps): Promise<{ ok: 
         detail: 'Агент описал план, но ничего не сделал. Продолжите — он начнёт с первого шага.'
       })
     }
+    // Hand over the result whether or not the model remembered to: every file this
+    // run wrote, plus a built artifact if one exists, arrives in the chat with a
+    // path and an open button. Asking the model to do this did not work reliably,
+    // so the app does it.
+    if (touched.size) {
+      const attachments: Attachment[] = []
+      const artifact = wantedArtifact ? await findArtifact(req.workspace || '', wantedArtifact) : ''
+      if (artifact) {
+        attachments.push({
+          id: randomUUID(),
+          name: path.basename(artifact),
+          kind: 'file',
+          content: '',
+          path: artifact,
+          rel: path.relative(req.workspace || artifact, artifact) || path.basename(artifact)
+        })
+      }
+      for (const abs of [...touched].slice(0, 8)) {
+        if (attachments.length >= 9) break
+        const rel = path.relative(req.workspace || abs, abs) || abs
+        if (attachments.some((a) => a.path === abs)) continue
+        attachments.push({ id: randomUUID(), name: path.basename(abs), kind: 'file', content: '', path: abs, rel })
+      }
+      if (attachments.length) {
+        deps.emit({ type: 'attachments', runId: req.runId, attachments })
+      }
+    }
+
     if (finalReason === 'done' && touched.size) {
       deps.emit({
         type: 'guard',
