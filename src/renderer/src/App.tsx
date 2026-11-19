@@ -24,7 +24,20 @@ export function App(): React.ReactElement {
   const [dragging, setDragging] = useState(false)
   const [chatCollapsed, setChatCollapsed] = useState(false)
   // the welcome screen on the left is not something you need every minute
-  const [editorHidden, setEditorHidden] = useState(false)
+  // The editor panel is furniture until there is a file to show. Opening the app
+  // on an empty session gave a half-empty split: a blank "Comb." screen on the
+  // left of a blank editor. It opens by itself when a file, a diff or a build
+  // result arrives, and stays closed until then.
+  const [editorPinned, setEditorPinned] = useState(false)
+  const tabs = useStore((s) => s.tabs)
+  // Derived, not remembered: with no file open and no conversation yet there is
+  // nothing to edit, and a blank pane on the left of a blank welcome screen is
+  // half the window wasted. The user can still pin it open by hand.
+  // Only an open file justifies the editor column. A conversation alone does
+  // not: the previous rule split the window in two to show a second welcome
+  // screen next to the first one.
+  const editorHidden = !editorPinned && tabs.length === 0
+  const setEditorHidden = (v: boolean): void => setEditorPinned(!v)
 
   useEffect(() => {
     void boot()
@@ -178,7 +191,11 @@ export function App(): React.ReactElement {
               </button>
             </div>
             )}
-            <div className="chat-col" style={{ flex: chatCollapsed ? 0 : editorHidden ? 1 : 1 - splitter, display: chatCollapsed ? 'none' : 'flex' }}>
+            <div
+              className="chat-col"
+              data-solo={editorHidden ? 'true' : undefined}
+              style={{ flex: chatCollapsed ? 0 : editorHidden ? 1 : 1 - splitter, display: chatCollapsed ? 'none' : 'flex' }}
+            >
               <ChatPane />
             </div>
             {rightPanel !== 'none' && <RightPanel />}

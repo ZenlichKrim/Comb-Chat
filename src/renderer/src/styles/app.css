@@ -813,14 +813,16 @@
   justify-content: center;
 }
 .chat-head {
-  height: 42px;
+  height: 38px;
   flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 10px 0 14px;
-  border-bottom: 1px solid var(--line-1);
-  background: var(--bg-1);
+  padding: 0 10px 0 16px;
+  /* No border and no panel colour: the header is a label on the page, not a
+     toolbar. The old strip cut the window in two with a line at the top. */
+  border-bottom: none;
+  background: transparent;
 }
 .chat-scroll {
   flex: 1;
@@ -861,12 +863,14 @@
 .msg-user-body {
   max-width: 88%;
   background: var(--user-bg);
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-md) var(--r-md) var(--r-xs) var(--r-md);
-  padding: 8px 11px;
+  /* no outline: the tinted block is enough, and a border on every bubble is
+     what made the transcript look like a form */
+  border: none;
+  border-radius: var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);
+  padding: 10px 14px;
   color: var(--fg-0);
-  font-size: var(--fs-md);
-  line-height: var(--lh-snug);
+  font-size: calc(var(--fs-md) + 1px);
+  line-height: 1.65;
 }
 .msg-user-text {
   white-space: pre-wrap;
@@ -5110,13 +5114,13 @@ hr {
   border-radius: 3px;
   opacity: 0.75;
 }
-.theme-comb { background: #16130f; }
+.theme-comb { background: #1a1613; --tp-warm: #e8c37a; }
 .theme-comb .tp-line { background: #3d3427; }
 .theme-comb .tp-acc { background: #ffb86b; }
-.theme-ember { background: #19100d; }
+.theme-ember { background: #19100d; --tp-warm: #f2a65a; }
 .theme-ember .tp-line { background: #452b1f; }
 .theme-ember .tp-acc { background: #e06b5c; }
-.theme-forest { background: #101613; }
+.theme-forest { background: #101613; --tp-warm: #d8c06a; }
 .theme-forest .tp-line { background: #2f3d35; }
 .theme-forest .tp-acc { background: #7cc8a6; }
 .theme-midnight .tp-acc { background: #5b8cff; }
@@ -5132,3 +5136,38 @@ hr {
 .swatch[data-auto='true'][data-active='true']::after {
   content: '';
 }
+
+/* ---- reading comfort -------------------------------------------------
+   The answer is the reason the window is open; the chrome is not. Text is one
+   step larger than the interface and set on a 1.75 line, with a measure of
+   about 72 characters. On a solo chat column it is centred, not stretched. */
+.chat-col[data-solo='true'] .messages,
+.chat-col[data-solo='true'] .chat-empty {
+  max-width: 860px;
+  margin-inline: auto;
+  width: 100%;
+}
+.messages .chat-text,
+.messages .md,
+.messages .msg-main > div {
+  line-height: 1.75;
+}
+.messages {
+  font-size: calc(var(--fs-md) + 1px);
+}
+.trace-say > .chat-text {
+  font-size: var(--fs-sm);
+}
+
+/* the "follow the theme" swatch: a split chip of both accents, no fill */
+.swatch[data-auto='true'] {
+  background: linear-gradient(135deg, var(--accent) 0 46%, var(--bg-1) 46% 54%, var(--accent-warm) 54% 100%);
+}
+.theme-comb .tp-acc2 { background: #e8c37a; }
+.theme-ember .tp-acc2 { background: #f2a65a; }
+.theme-forest .tp-acc2 { background: #d8c06a; }
+.theme-paper .tp-acc2 { background: #7a8f6a; }
+.theme-midnight .tp-acc2 { background: #a78bfa; }
+.theme-graphite .tp-acc2 { background: #7d7d7d; }
+.theme-electric .tp-acc2 { background: #a78bfa; }
+.theme-nord .tp-acc2 { background: #ebcb8b; }

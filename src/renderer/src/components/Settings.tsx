@@ -355,7 +355,7 @@ export function SettingsDialog(): React.ReactElement {
                         <span className="tp-line" />
                         <span className="tp-line short" />
                         <span className="tp-acc" />
-                        <span className="tp-acc2" style={{ background: 'var(--theme-accent-warm, var(--accent))' }} />
+                        <span className="tp-acc2" />
                       </span>
                       <span className="t-xs">{theme.label}</span>
                       {settings.theme === theme.id && <Icon name="check" size={10} className="acc" style={{ marginLeft: 'auto' }} />}

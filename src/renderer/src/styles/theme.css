@@ -126,17 +126,17 @@
    different jobs: amber (#ffb86b) for the author thinking, honey-ink (#e8c37a)
    for the worker doing. Text is bone, never pure white. */
 [data-theme='comb'] {
-  --bg-0: #100e0c;
-  --bg-1: #16130f;
-  --bg-2: #1c1813;
-  --bg-3: #241f18;
-  --bg-4: #2e281e;
-  --bg-hover: #211c16;
-  --bg-active: #292319;
-  --bg-inset: #0c0a08;
-  --line-1: #221d17;
-  --line-2: #2d261d;
-  --line-3: #3d3427;
+  --bg-0: #14110e;
+  --bg-1: #1a1613;
+  --bg-2: #211c17;
+  --bg-3: #2a241d;
+  --bg-4: #342d24;
+  --bg-hover: #26201a;
+  --bg-active: #2e271e;
+  --bg-inset: #0f0d0a;
+  --line-1: #292319;
+  --line-2: #342c21;
+  --line-3: #453a2c;
   --fg-0: #f4ece1;
   --fg-1: #d8ccba;
   --fg-2: #a2937f;

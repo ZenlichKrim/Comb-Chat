@@ -5,6 +5,11 @@ import './styles/theme.css'
 import './styles/base.css'
 import './styles/markdown.css'
 import './styles/app.css'
+import { useStore } from './store'
+
+// The store on `window`: screenshots and the devtools console both need a handle
+// on live state, and a build flag is cheaper than guessing from React internals.
+;(window as unknown as { __store: typeof useStore }).__store = useStore
 
 const el = document.getElementById('root')
 if (!el) throw new Error('root element missing')
