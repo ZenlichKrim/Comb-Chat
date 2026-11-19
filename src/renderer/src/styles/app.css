@@ -4634,3 +4634,88 @@ hr {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 1; }
 }
+
+/* ---- quiet transcript: the trace is a ribbon, not a wall ------------- */
+.trace {
+  margin: 6px 0 10px;
+}
+.trace-head {
+  color: var(--fg-3);
+}
+.trace-body {
+  gap: 8px;
+  margin-top: 6px;
+  padding-left: 14px;
+}
+.trace-body::before {
+  left: 2px;
+  opacity: 0.32;
+}
+.trace-step {
+  gap: 4px;
+}
+.trace-step::before {
+  left: -13px;
+  width: 5px;
+  height: 5px;
+  opacity: 0.55;
+}
+/* One step's prose: two lines, clamped. Full text on click. */
+.trace-say {
+  cursor: pointer;
+}
+.trace-say > .chat-text {
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--fg-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color var(--dur);
+}
+.trace-say[data-wide] > .chat-text {
+  -webkit-line-clamp: unset;
+  display: block;
+  color: var(--fg-1);
+}
+.trace-say:hover > .chat-text {
+  color: var(--fg-1);
+}
+.trace-body[data-compact] .trace-step::before {
+  background: var(--fg-3);
+}
+/* Actions as chips, wrapped, mono, tiny — no column of rows. */
+.trace-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 16px;
+}
+.trace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-1);
+  background: var(--bg-1);
+  color: var(--fg-3);
+  font-size: var(--fs-2xs);
+  min-width: 0;
+}
+.trace-chip:hover {
+  color: var(--fg-1);
+  border-color: var(--line-2);
+}
+.trace-chip[data-bad='true'] {
+  color: var(--err);
+  border-color: color-mix(in oklab, var(--err) 35%, var(--line-1));
+}
+.trace-chip-name {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

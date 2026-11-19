@@ -931,48 +931,58 @@ function actionLabel(name: string, args?: Record<string, any>): string {
 
 function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; live: boolean }): React.ReactElement {
   const t = useT()
-  const [open, setOpen] = useState(true)
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const visible = open ? steps : steps.slice(-1)
+  // Closed by default. A run is 10-40 steps; printing every paragraph of them
+  // turns the transcript into a wall you have to scroll past to reach the answer.
+  const [open, setOpen] = useState(false)
+  const [wide, setWide] = useState<Set<string>>(new Set())
+  const actions = steps.reduce((n, s) => n + s.actions.length, 0)
+  const last = steps[steps.length - 1]
+  const visible = open ? steps : last ? [last] : []
+
+  const toggleWide = (id: string): void =>
+    setWide((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
   return (
     <div className="trace" data-open={open}>
       <button className="trace-head" onClick={() => setOpen((v) => !v)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
-        <span>{t('trace.title', { n: steps.length })}</span>
+        <span>{t('trace.summary', { n: steps.length, m: actions })}</span>
         {live && <span className="spinner" />}
       </button>
-      <div className="trace-body">
-        {visible.map((s, si) => (
-          <div className="trace-step" key={s.id} style={{ animationDelay: `${Math.min(si, 10) * 30}ms` }}>
+      <div className="trace-body" data-compact={open ? undefined : 'true'}>
+        {visible.map((s) => (
+          <div className="trace-step" key={s.id}>
             {s.say && (
-              <div className="trace-say">
+              <div
+                className="trace-say"
+                data-wide={wide.has(s.id) ? 'true' : undefined}
+                onClick={() => open && toggleWide(s.id)}
+                title={open ? undefined : t('trace.expand')}
+              >
                 <span className="trace-caret">&gt;&gt;</span>
                 <div className="chat-text">
                   <Markdown text={s.say} />
                 </div>
               </div>
             )}
-            <div className="trace-actions" data-empty={s.actions.length ? undefined : 'true'}>
-              {s.actions.map((a) => {
-                const bad = !a.ok
-                const isOpen = expanded === a.id
-                return (
-                  <button
-                    key={a.id}
-                    className="trace-action"
-                    data-bad={bad ? 'true' : undefined}
-                    onClick={() => setExpanded(isOpen ? null : a.id)}
-                    title={bad ? a.error : undefined}
-                  >
-                    <span className="trace-bar">|&gt;</span>
-                    <Icon name={bad ? 'alert' : (ACTION_ICON[a.name] || 'layers')} size={10} />
-                    <span className="trace-action-name">{actionLabel(a.name, a.args)}</span>
-                    {bad && <span className="trace-action-err ellipsis">{a.error}</span>}
-                  </button>
-                )
-              })}
-              {!s.actions.length && <span className="t-xs faint">{t('trace.noActions')}</span>}
-            </div>
+            {!!s.actions.length && (
+              <div className="trace-actions">
+                {s.actions.map((a) => {
+                  const bad = !a.ok
+                  return (
+                    <span key={a.id} className="trace-chip" data-bad={bad ? 'true' : undefined} title={bad ? a.error : actionLabel(a.name, a.args)}>
+                      <Icon name={bad ? 'alert' : (ACTION_ICON[a.name] || 'layers')} size={9} />
+                      <span className="trace-chip-name">{actionLabel(a.name, a.args)}</span>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
           </div>
         ))}
       </div>
