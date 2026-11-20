@@ -314,12 +314,7 @@ export function SettingsDialog(): React.ReactElement {
                   onChange={(e) => void setSettings({ verifyCommand: e.target.value })}
                 />
               </Field>
-              <Toggle
-                label={t('set.autoContinue')}
-                hint={t('set.autoContinueHint')}
-                value={settings.autoContinue !== false}
-                onChange={(v) => void setSettings({ autoContinue: v })}
-              />
+              
               <Toggle
                 label={t('set.notifyDesktop')}
                 hint={t('set.notifyDesktopHint')}

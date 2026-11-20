@@ -1212,6 +1212,9 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
   const t = useT()
   const [showReasoning, setShowReasoning] = useState(false)
   const copy = (): void => window.comb.clipboard.write(msg.content)
+  // Continue is a user action, not a reflex: it sends one line that the
+  // transcript records as theirs, and only when they click.
+  const continueRun = (): void => void useStore.getState().sendMessage(t('chat.continuePrompt'))
   const regenerate = (): void => {
     const st = useStore.getState()
     const thread = st.threads.find((t) => t.id === st.activeThreadId)
@@ -1346,6 +1349,15 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             {hasText && (
               <button className="msg-action" onClick={copy} data-tip={t('common.copy')}>
                 <Icon name="copy" size={11} />
+              </button>
+            )}
+            {/* A run that ran out of steps says so, with the one thing that is
+                actually needed: a click to carry on. The old version did this by
+                itself, typing a sentence into the chat as if the user wrote it. */}
+            {isLast && msg.stopped && (
+              <button className="msg-action" onClick={continueRun} data-tip={t('chat.continue')}>
+                <Icon name="arrow-right" size={11} />
+                <span className="t-xs">{t('chat.continue')}</span>
               </button>
             )}
             {isLast && (

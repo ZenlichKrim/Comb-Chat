@@ -91,7 +91,6 @@ interface State {
   /** the request currently in flight, shown by the "agent is working" row */
   lastPrompt: string
   /** how many times this task resumed itself after hitting the step budget */
-  autoContinues?: number
   /** stable-mode guard notes for the current run */
   guards: { id: string; kind: string; title: string; detail?: string }[]
   /** sticky notes: project task list the agent also reads */
@@ -142,7 +141,7 @@ interface Actions {
   queueMessage: (text: string) => void
   dropQueued: (index: number) => void
   flushQueue: () => Promise<void>
-  sendMessage: (text: string, attachments?: Attachment[], opts?: { auto?: boolean }) => Promise<boolean>
+  sendMessage: (text: string, attachments?: Attachment[]) => Promise<boolean>
   stopRun: () => Promise<void>
   /** answer an agent question: records the pick and starts the next turn */
   answerVote: (answer: string) => Promise<void>
@@ -516,7 +515,7 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   /* ---------------------------------------------------------------- */
-  sendMessage: async (text, attachments = [], opts) => {
+  sendMessage: async (text, attachments = []) => {
     const state = get()
     if (state.running) return false
     let threadId = state.activeThreadId
@@ -575,7 +574,6 @@ export const useStore = create<State & Actions>((set, get) => ({
       retryInfo: null,
       lastPrompt: text,
       guards: [],
-      autoContinues: opts?.auto ? get().autoContinues || 0 : 0,
       contextFiles: []
     }))
     get().persistThread(updated)
@@ -691,6 +689,8 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   stopRun: async () => {
     const id = get().runId
+    // A stop stays a stop: nothing queued or scheduled may start the next turn.
+    set({ queued: [] })
     if (id) await window.comb.agent.stop(id)
   },
 
@@ -1104,37 +1104,23 @@ export const useStore = create<State & Actions>((set, get) => ({
         // "walk away for two hours": hitting the step budget mid-task is a pause,
         // not a failure — pick the run back up by itself, a bounded number of times.
         // What the user typed while the agent was busy goes out now, in order.
+        // What the user typed while the agent was busy goes out when the run is
+        // over — on a stop too, because those lines are theirs and they wrote
+        // them. The queue is cleared by `stopRun`, so pressing Stop means the
+        // queue is dropped with it: nothing starts behind their back.
         const queuedNow = get().queued
         if (queuedNow.length) {
-          set({ queued: [] })
+          set({ queued: queuedNow.slice(1) })
           const next = queuedNow[0]
           setTimeout(() => {
             if (!get().running) void get().sendMessage(next)
           }, 400)
-          if (queuedNow.length > 1) set({ queued: queuedNow.slice(1) })
         }
-        const runs = get().autoContinues || 0
-        // A run that died on a network/server error after all retries is also a
-        // pause, not the end: pick it back up once or twice before giving up.
-        if (e.reason === 'error' && get().settings.autoContinue !== false && runs < 2) {
-          set({ autoContinues: runs + 1 })
-          // Say it in the transcript, not only in a toast that disappears: the
-          // run visibly stopped, and silence makes it look like the app forgot
-          // to answer. Then pick it up again by itself.
-          const errMsg = 'Связь с API оборвалась — ответ не дописан. Пробую ещё раз.'
-          updateAssistant((m) => ({ ...m, error: m.error || errMsg }))
-          get().toast('warn', tr('store.autoRetry'), tr('store.autoRetryHint'))
-          setTimeout(() => {
-            if (!get().running) void get().sendMessage(tr('store.autoContinuePrompt'), undefined, { auto: true })
-          }, 2500)
-        }
-        if (e.reason === 'limit' && get().settings.autoContinue !== false && runs < 3) {
-          set({ autoContinues: runs + 1 })
-          get().toast('info', tr('store.autoContinue'), tr('store.autoContinueCount', { n: runs + 1 }))
-          setTimeout(() => {
-            if (!get().running) void get().sendMessage(tr('store.autoContinuePrompt'), undefined, { auto: true })
-          }, 900)
-        }
+        // A run that stopped, stopped. The old behaviour sent a scripted
+        // "Продолжай с того места" message into the chat on its own — a sentence
+        // the user never wrote, appearing under their name while they were still
+        // typing. That is the app talking as the user, and it is gone: continuing
+        // is one click (or one line) away, and it is the user's to make.
         break
       }
       default:

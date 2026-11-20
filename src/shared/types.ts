@@ -197,7 +197,6 @@ export interface Settings {
   /** command the stable mode runs before claiming success, e.g. `npm test` (empty = auto) */
   verifyCommand: string
   /** pick up a run by itself after an approval or a guard, instead of waiting for the user */
-  autoContinue: boolean
   /** desktop notifications for finished tasks, blockers and decisions */
   notifyDesktop: boolean
   /** slide a card over the screen when a run ends while the window is in the background */
@@ -254,7 +253,6 @@ export const DEFAULT_SETTINGS: Settings = {
   goalRounds: 4,
   costCap: 0.5,
   verifyCommand: '',
-  autoContinue: true,
   notifyDesktop: true,
   attentionOverlay: true,
   attentionSound: true,
