@@ -52,7 +52,7 @@ export interface LlmToolSchema {
 
 export class LlmError extends Error {
   status?: number
-  kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted' | 'truncated'
+  kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted' | 'truncated' | 'reasoning'
   /** what the server told us to wait, in ms */
   retryAfterMs?: number
   constructor(message: string, kind: LlmError['kind'], status?: number, retryAfterMs?: number) {
@@ -183,6 +183,8 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
 
   let attempt = 0
   let lastErr: any = null
+  /** one shot at recovering a thinking-mode 400 by dropping reasoning_content */
+  let strippedReasoning = false
   const MAX_ATTEMPTS = 6
 
   while (attempt < MAX_ATTEMPTS) {
@@ -191,9 +193,33 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
       return await runOnce({ endpoint, apiKey, body, signal, onDelta, model, onUsage: args.onUsage, attempt })
     } catch (e: any) {
       lastErr = e
+      // The server refuses history without reasoning_content. If some turn still
+      // lacks it — an old thread, a compaction, a provider that disagrees — drop
+      // the thoughts from the whole request and try again: a chat must not die
+      // because of a field, and the user is told what happened.
+      if (e instanceof LlmError && e.kind === 'reasoning' && !strippedReasoning) {
+        strippedReasoning = true
+        let dropped = 0
+        for (const m of body.messages || []) {
+          if (m && typeof m === 'object' && 'reasoning_content' in m) {
+            delete m.reasoning_content
+            dropped++
+          }
+        }
+        args.onRetry?.({
+          attempt,
+          max: MAX_ATTEMPTS,
+          waitMs: 0,
+          reason:
+            dropped > 0
+              ? 'сервер не принял историю мыслей — продолжаю без них, ответ не потерян'
+              : 'сервер требует мысли в истории — повторяю без них'
+        })
+        continue
+      }
       // permanent: retrying cannot help, and a run you walked away from should
       // stop with a clear reason instead of hammering the API
-      if (e instanceof LlmError && (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'bad-request')) {
+      if (e instanceof LlmError && (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'bad-request' || e.kind === 'reasoning')) {
         throw e
       }
       if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
@@ -256,6 +282,8 @@ function describeRetry(e: any): string {
       return 'сервер просит подождать (429)'
     case 'network':
       return 'обрыв связи с API'
+    case 'reasoning':
+      return 'сервер отклонил историю мыслей — повторяю без них'
     default:
       return e.status ? `ответ сервера ${e.status}` : 'сбой запроса'
   }
@@ -312,6 +340,10 @@ async function runOnce(opts: {
           res.status
         )
       }
+      // The thinking-mode handshake: history lost its reasoning_content. Retrying
+      // the same body is pointless, but the run is not lost — the caller can drop
+      // the thoughts and send the transcript again.
+      if (/reasoning_content/i.test(msg)) throw new LlmError(`Bad request: ${msg}`, 'reasoning', res.status)
       throw new LlmError(`Bad request: ${msg}`, 'bad-request', res.status)
     }
     throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status, retryAfter)
@@ -520,6 +552,11 @@ export function toApiHistory(history: ChatMessage[], budget = 60000): LlmMessage
       out.push({
         role: 'assistant',
         content: msg.content || (toolCalls.length ? null : ''),
+        // Thinking mode requires every assistant turn to carry back the reasoning
+        // it produced. Replaying a transcript without it is rejected outright with
+        // "The `reasoning_content` in the thinking mode must be passed back to the
+        // API" — every retry, every continuation, the whole thread dead.
+        ...(msg.reasoning ? { reasoning_content: msg.reasoning } : {}),
         tool_calls: toolCalls.length ? toolCalls : undefined
       } as LlmMessage)
       // Every id in `tool_calls` must get exactly one tool message, or the API

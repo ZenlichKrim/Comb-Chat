@@ -854,6 +854,9 @@ export async function runAgent(
       const assistantMsg: LlmMessage = {
         role: 'assistant',
         content: result.content || null,
+        // Carry the thought back: in thinking mode the API refuses a follow-up
+        // request whose assistant turns have lost their reasoning_content.
+        ...(result.reasoning ? { reasoning_content: result.reasoning } : {}),
         tool_calls: result.toolCalls.length
           ? result.toolCalls.map((c) => ({ id: c.id, type: 'function' as const, function: { name: c.name, arguments: c.arguments } }))
           : undefined
@@ -1831,6 +1834,13 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
     req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
   const text = req.userMessage?.content || ''
   const plan = planRoles({ text, planner: caps.planner, substantial: text.length > 400 })
+  // Main has no dictionary of its own: the two strings the app itself narrates
+  // come from here so they read in the user's language like everything else.
+  const ru = (settings.locale || 'ru') === 'ru'
+  const labels = {
+    specWriting: ru ? 'Пишу контракт приёмки (SPEC.md)' : 'Writing the acceptance contract (SPEC.md)',
+    specChecking: ru ? 'Проверяю работу по вашим критериям' : 'Checking the work against your criteria'
+  }
 
   // questions are answered by the author alone; with the planner off, everything
   // is the old single agent
@@ -1852,6 +1862,9 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
   let contract = ''
   const wantsContract = settings.stableMode !== false && needsSpec(req.userMessage?.content || '')
   if (wantsContract) {
+    // Writing the spec takes a model round trip of its own: without this the
+    // header stays blank for a minute and the run looks hung.
+    deps.emit({ type: 'activity', runId: req.runId, step: 0, label: labels.specWriting })
     const spec = await ensureSpec({
       workspace: req.workspace,
       request: req.userMessage?.content || '',
@@ -1877,18 +1890,49 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
   // 1. the author thinks, talks and writes the brief
   const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split', spec: contract }, deps)
   if (!authorRes.ok) return { ok: false, error: authorRes.error, roles: ['author'] }
-  const brief = parseBrief(authorRes.finalText || '')
+  let brief = parseBrief(authorRes.finalText || '')
   if (!brief) {
-    // The author answered in prose without a brief: that is a conversation, not
-    // a task, so the builder is not started on a guess. But the user may simply
-    // have asked for work and got an opinion, which would be exactly the old bug
-    // — so say it out loud instead of ending quietly.
+    // The author narrated a whole design and forgot the block. Ending here throws
+    // that work away — and this is not a conversation, it is a job left unstarted.
+    // Ask once, plainly, for the brief it was supposed to write.
     deps.emit({
       type: 'guard',
       runId: req.runId,
       kind: 'steer',
-      title: 'Автор ответил словами, без брифа',
-      detail: 'Если это была задача, а не вопрос — включите «Планировщик: всегда» или скажите «сделай».'
+      title: 'Прошу бриф ещё раз',
+      detail: 'Автор расписал задачу словами, но не выдал блок brief — повторяю запрос.'
+    })
+    const retry = await runAgent(
+      {
+        ...req,
+        runId: `${req.runId}:brief`,
+        messageId: `${req.messageId}:brief`,
+        role: 'author',
+        roleMode: 'split',
+        spec: contract,
+        history: [],
+        userMessage: {
+          ...req.userMessage,
+          content:
+            `Задача:\n"""${(req.userMessage?.content || '').slice(0, 6000)}"""\n\n` +
+            (contract ? `Контракт (критерии приёмки):\n${contract.slice(0, 4000)}\n\n` : '') +
+            'Ты уже разобрался в задаче и написал разбор, но забыл сам бриф. Сейчас нужен ТОЛЬКО блок в формате:\n' +
+            '```brief\nЦЕЛЬ: …\nСДЕЛАТЬ:\n- …\nПРОВЕРИТЬ:\n- …\nДОБАВИТЬ:\n- …\n```\n' +
+            'В СДЕЛАТЬ — конкретные файлы и классы, не темы. Если задача большая, перечисли этапы и скажи, какой делаем сейчас.'
+        }
+      },
+      deps
+    )
+    brief =
+      parseBrief(retry.finalText || '') || parseBrief(`${authorRes.finalText || ''}\n${retry.finalText || ''}`)
+  }
+  if (!brief) {
+    deps.emit({
+      type: 'guard',
+      runId: req.runId,
+      kind: 'steer',
+      title: 'Бриф не получен, задача не начата',
+      detail: 'Дважды не пришёл блок brief. Напишите «сделай по плану» — Автор повторит, уже без разбора.'
     })
     return { ok: true, roles: ['author'], brief: null }
   }
@@ -1922,6 +1966,7 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
   let goalRounds = 1
   if (contract && buildRes.ok) {
     const roundCheck = async (round: number): Promise<SpecReport | null> => {
+      deps.emit({ type: 'activity', runId: req.runId, step: round, label: labels.specChecking })
       const c = await checkAgainstSpec({
         request: req.userMessage?.content || '',
         spec: contract,

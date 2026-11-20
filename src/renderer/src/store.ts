@@ -907,6 +907,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         void get().refreshTree()
         break
       }
+      case 'activity':
+        // The app itself is busy (writing the spec, checking the work): keep the
+        // header alive instead of leaving the last label from three steps ago.
+        set({ activity: { step: e.step, label: e.label, since: Date.now() }, retryInfo: null })
+        break
       case 'goal-round': {
         // The run is not over: it is continuing, and the user should see that
         // instead of a stopped transcript that looks abandoned.
@@ -951,6 +956,17 @@ export const useStore = create<State & Actions>((set, get) => ({
       }
       case 'spec-check': {
         // The evidence behind «готово»: what was checked and what it rests on.
+        // A refused check is not the end — the goal opens another round — so the
+        // header must say that instead of freezing on the old label.
+        if (e.refused) {
+          set((s) => ({
+            activity: {
+              step: s.activity?.step || 1,
+              label: tr('goal.specRefused'),
+              since: s.activity?.since || Date.now()
+            }
+          }))
+        }
         updateAssistant((m) => ({
           ...m,
           specReport: e.report,

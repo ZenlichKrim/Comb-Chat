@@ -622,6 +622,8 @@ export type AgentEvent =
     }
   /** the contract check came back: this is the evidence behind «готово» */
   | { type: 'spec-check'; runId: string; report: SpecReport; attempt: number; refused: boolean }
+  /** what the app itself is doing between model calls: a live header, not a hung screen */
+  | { type: 'activity'; runId: string; step: number; label: string }
   /** the goal opened another round: the run is not over, it is continuing */
   | {
       type: 'goal-round'
