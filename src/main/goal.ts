@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { AgentEvent, RunRequest, SpecReport } from '../shared/types'
 import { runAgent, type AgentDeps } from './agent'
 import { readSpec, specCriteria } from './spec'
@@ -18,6 +19,23 @@ import { readSpec, specCriteria } from './spec'
  */
 
 export type GoalStop = 'contract-met' | 'rounds-used' | 'no-progress' | 'failed' | 'off'
+
+/**
+ * The ledger every round inherits.
+ *
+ * A fresh context per round keeps the model sharp, but a fresh context with no
+ * memory of what was already settled makes it redo the same four edits and
+ * re-litigate the same three files. So each round writes down what it
+ * established, and the next round opens with that list instead of the whole
+ * transcript. Evidence, not narration: a fact earns its line by being something
+ * a later round would otherwise have to rediscover.
+ */
+export interface RoundLedger {
+  /** one line per settled fact: a file that exists, a command that passes */
+  done: string[]
+  /** things proven impossible on this machine, so no round repeats them */
+  ruledOut: string[]
+}
 
 export interface GoalOutcome {
   rounds: number
@@ -49,6 +67,37 @@ export function shouldContinue(contract: string, report: SpecReport | null, todo
   return null
 }
 
+/**
+ * Fold one finished round into the ledger.
+ *
+ * Only claims that a later round would otherwise have to re-derive are kept:
+ * files this round actually wrote, and blockers the round stated in its own
+ * words. Everything is de-duplicated and the list stays short — a ledger that
+ * grows without bound is just the transcript again.
+ */
+export function mergeLedger(
+  ledger: RoundLedger,
+  round: { touched?: string[]; report?: string; workspace?: string | null; verdict?: string | null }
+): RoundLedger {
+  const cap = 14
+  const done = [...ledger.done]
+  for (const abs of round.touched || []) {
+    const rel = round.workspace ? path.relative(round.workspace, abs) || path.basename(abs) : abs
+    const line = `${rel} — записан этим прогоном`
+    if (!done.includes(line)) done.push(line)
+  }
+  const ruledOut = [...ledger.ruledOut]
+  const blocker = (round.report || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => /(невозможно|не могу|cannot|blocked|нет доступа|not available)/i.test(l))
+  if (blocker) {
+    const line = blocker.slice(0, 200)
+    if (!ruledOut.some((r) => r === line)) ruledOut.push(line)
+  }
+  return { done: done.slice(-cap), ruledOut: ruledOut.slice(-6) }
+}
+
 /** The prompt that opens round N: a handoff, not a history dump. */
 export function roundPrompt(opts: {
   objective: string
@@ -57,6 +106,9 @@ export function roundPrompt(opts: {
   signal: ContinueSignal
   criteria: string[]
   attemptsSoFar: number
+  ledger?: RoundLedger
+  /** the previous round's own prose, trimmed: what it claims it did */
+  previousReport?: string
 }): string {
   const items = [
     opts.signal.unmet.length
@@ -67,6 +119,15 @@ export function roundPrompt(opts: {
       : '',
     opts.criteria.length
       ? `# Критерии приёмки целиком (${opts.criteria.length})\n${opts.criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
+      : '',
+    opts.ledger?.done.length
+      ? `# Уже сделано и проверено в прошлых раундах\n${opts.ledger.done.map((c) => `- ${c}`).join('\n')}`
+      : '',
+    opts.ledger?.ruledOut.length
+      ? `# Уже выяснено, что не работает — не повторяй\n${opts.ledger.ruledOut.map((c) => `- ${c}`).join('\n')}`
+      : '',
+    opts.previousReport
+      ? `# Отчёт прошлого раунда (его слова, не проверка)\n${opts.previousReport.slice(0, 1200)}`
       : ''
   ]
     .filter(Boolean)
@@ -77,6 +138,7 @@ export function roundPrompt(opts: {
     `Продолжай работу в этом же проекте: состояние на диске — источник правды, читай файлы, а не память о них. ` +
     `Сделай следующий настоящий шаг: реальный код в реальных файлах, подключённый туда, где он должен работать. ` +
     `Не переписывай то, что уже подтверждено, и не описывай план вместо работы. ` +
+    `В конце раунда — одной строкой каждое: что теперь реально существует (путь, команда, сборка) и что проверил. ` +
     `Это ${opts.attemptsSoFar === 0 ? 'первая' : 'не первая'} попытка довести цель до конца — если что-то объективно невозможно на этой машине, ` +
     `скажи одной строкой, что именно, и доведи остальное.`
   )
@@ -104,6 +166,8 @@ export async function driveGoal(opts: {
   let lastCheck: SpecReport | null = null
   let lastText = ''
   let signal = opts.signal
+  let ledger: RoundLedger = { done: [], ruledOut: [] }
+  let previousReport = ''
   let stalled = 0
   const maxRounds = Math.max(opts.usedRounds, opts.maxRounds)
 
@@ -129,12 +193,17 @@ export async function driveGoal(opts: {
         spec: opts.contract,
         specAttempt: rounds,
         history: [],
-        userMessage: { ...opts.req.userMessage, content: roundPrompt({ objective: opts.req.userMessage.content, round, maxRounds, signal, criteria, attemptsSoFar: rounds }) }
+        userMessage: {
+          ...opts.req.userMessage,
+          content: roundPrompt({ objective: opts.req.userMessage.content, round, maxRounds, signal, criteria, attemptsSoFar: rounds, ledger, previousReport })
+        }
       },
       opts.deps
     )
     rounds = round
     lastText = res.finalText || lastText
+    previousReport = (res.finalText || '').trim()
+    ledger = mergeLedger(ledger, { touched: res.touched, report: previousReport, workspace: opts.req.workspace })
     if (!res.ok) return { rounds, stop: 'failed', lastCheck, lastText }
 
     const check = await opts.afterRound(round)

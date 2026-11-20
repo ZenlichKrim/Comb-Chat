@@ -986,6 +986,28 @@ export async function runAgent(
         const callSig = `${call.name}:${call.arguments}`
         const repeated = seenCallSignatures.has(callSig)
         seenCallSignatures.add(callSig)
+        const repeatCount = (exactCalls.get(callSig) || 0) + 1
+        exactCalls.set(callSig, repeatCount)
+        // Same call, same arguments, third time. Not a veto — the call still runs —
+        // but the model is told, in the middle of its own turn, that this exact
+        // string has already been tried twice and the result will not change.
+        // Thresholds mirror the harness guard: a nudge at 3, then one at 6.
+        if (repeatCount === 3 || repeatCount === 6) {
+          deps.emit({
+            type: 'guard',
+            runId: req.runId,
+            kind: 'stuck',
+            title: repeatCount === 3 ? `Повторяю тот же вызов: ${call.name}` : `Тот же вызов уже ${repeatCount} раза: ${call.name}`,
+            detail: String(call.arguments || '').slice(0, 160)
+          })
+          history.push({
+            role: 'user',
+            content:
+              `[repeated call] You have now called \`${call.name}\` with these exact arguments ${repeatCount} times in this run. ` +
+              'The result will not change. Read the last result again: either use different arguments, take a different approach, ' +
+              'or, if this is genuinely what blocks you, say it in one line and finish with work_done=false.'
+          })
+        }
 
         const view: ToolResultView = {
           id: call.id,

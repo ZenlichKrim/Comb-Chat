@@ -60,6 +60,38 @@ function clamp(s: string, n = MAX_OUTPUT): string {
   return s.slice(0, n) + `\n… [truncated ${s.length - n} chars]`
 }
 
+/**
+ * Oversized output is not thrown away.
+ *
+ * Cutting a build log at 24k chars taught the model to re-run the same command
+ * and squint at the same first page forever — the failure lines are always at the
+ * end. So the full text is written to a file inside the project's cache folder,
+ * and the model gets a head, a tail and a path it can read with an offset. The
+ * bytes stay reachable; the context stays small.
+ */
+const SPILL_DIR = '.comb'
+
+export async function spillText(ctx: ToolContext, label: string, text: string, n: number, keepTail = 120): Promise<string> {
+  const head = text.slice(0, n)
+  const tail = keepTail > 0 ? text.slice(-keepTail) : ''
+  try {
+    const dir = path.join(ctx.workspace, SPILL_DIR, 'output')
+    await fs.mkdir(dir, { recursive: true })
+    const safe = label.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 40) || 'output'
+    const file = path.join(dir, `${Date.now().toString(36)}-${safe}.txt`)
+    await fs.writeFile(file, text, 'utf8')
+    const rel = path.relative(ctx.workspace, file)
+    return (
+      head +
+      `\n… [output trimmed: ${text.length - n} chars not shown]\n` +
+      (tail ? `[last ${tail.length} chars]\n${tail}\n` : '') +
+      `[full output (${text.length} chars) saved to ${rel} — read it with read_file({"path":"${rel}","offset":1}) or grep it instead of re-running the command]`
+    )
+  } catch {
+    return clamp(text, n)
+  }
+}
+
 /** Roots for fs helpers that take an optional base for relative paths. */
 function rootsOf(ctx: ToolContext): string | string[] {
   return ctx.roots.length ? ctx.roots : ctx.workspace
@@ -188,6 +220,8 @@ export async function executeTool(
         return await toolWebSearch(args)
       case 'read_url':
         return await toolReadUrl(args)
+      case 'tool_help':
+        return toolHelp(args)
       case 'finish':
         return { ok: true, output: args.summary || 'Task finished.', halt: 'done' }
       default:
@@ -205,6 +239,63 @@ export function toolNote(args: Record<string, any>): string {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * A help page the model can ask for in the middle of a run. Agents do not know
+ * the details of the tools they were handed — which arguments matter, what the
+ * limits are, how to hand a big output back without drowning the context — and
+ * guessing costs a whole failed call. This is the reference, kept in one place so
+ * a new tool cannot be added without its own line here.
+ */
+function toolHelp(args: Record<string, any>): ToolOutcome {
+  const brief = toolHelpText().split('\n\n')
+  const name = String(args.name || '').trim()
+  if (!name) {
+    const titles = brief.map((b) => b.split('\n')[0]).join('\n')
+    return { ok: true, output: `Tools in this run (\`tool_help({"name":"..."})\` for the full entry):\n${titles}` }
+  }
+  const hit = brief.find((b) => b.startsWith(name + ' —') || b.startsWith(name + '\n'))
+  if (!hit) return { ok: false, error: `No tool named ${name}. Known: ${brief.map((b) => b.split(/[\s—]/)[0]).join(', ')}` }
+  return { ok: true, output: hit }
+}
+
+function toolHelpText(): string {
+  return `read_file — read one file (or up to 8 with \`paths\`). \`offset\`/\`limit\` in lines for a big file; the answer tells you when a file was truncated, so ask for the next range instead of guessing.
+
+write_file — create a file or rewrite it whole. Creates parent folders.
+
+edit_file — exact string replacement. Include enough surrounding lines for a unique match; pass the old text verbatim, indentation included.
+
+multi_edit — several edits in one call, each with path/old/new. Use it instead of five separate rounds.
+
+list_dir — names in a folder, one level. \`recursive\` for a tree; hidden files are skipped unless asked.
+
+glob — path patterns like \`src/**/*.ts\`, newest first.
+
+grep — regex search with file and line numbers; \`glob\` narrows the files.
+
+run_command — non-interactive shell, network allowed, 5 min default, pass \`timeout_ms\` (max 900000) for builds. Big output is saved to .comb/output and you get the path — read or grep that file instead of re-running the command. Workaround: \`GIT_PAGER=cat\`, no vim, no watchers, no servers that never exit.
+
+todo_write — replaces the whole plan. Keep it short and honest: an item you cannot close in this run does not belong there.
+
+attach_file — put a real file into the chat with a path and an open button.
+
+view_image — look at a screenshot or texture; the picture is added to your next message.
+
+web_search — live search, supports site:, -site:, ""phrase"", lang:, after:YYYY-MM-DD.
+
+read_url — one page as markdown.
+
+ask_user — a real fork in the road; you keep working with \`recommend\` while it waits.
+
+leave_note — a sticky note for something the user must know later.
+
+suggest — 2-4 clickable next steps under the answer.
+
+notify_user — desktop ping when the user is probably away.
+
+finish — after the work, never after the plan; the summary is read as your report.`
+}
 
 async function toolAttachFile(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const rel = String(args.path || '')
@@ -618,9 +709,13 @@ async function toolRunCommand(args: Record<string, any>, ctx: ToolContext): Prom
     signal: ctx.signal
   })
   const why = res.ok ? '' : await explainExit(res.exitCode, command, cwd)
+  // A big log is evidence, not noise: keep the head and the tail, spill the rest.
+  const body = res.output.length > MAX_CMD_OUTPUT
+    ? await spillText(ctx, command.split(/\s+/)[0], res.output, MAX_CMD_OUTPUT, 4000)
+    : res.output
   return {
     ok: res.ok,
-    output: `$ ${command}\n${res.output}\n[exit ${res.exitCode}]`,
+    output: `$ ${command}\n${body}\n[exit ${res.exitCode}]`,
     error: res.ok ? undefined : `Command failed with exit code ${res.exitCode}`,
     locale: why || undefined,
     meta: { command, exitCode: res.exitCode, cwd: toRel(ctx.roots, cwd) || '.' }
@@ -1204,6 +1299,18 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'tool_help',
+      description:
+        'Read the reference for a tool before using it: exact arguments, limits, and the workarounds this environment needs. Call with no name for the list. Cheaper than a failed call.',
+      parameters: {
+        type: 'object',
+        properties: { name: { type: 'string', description: 'Tool name; omit for the list of tools' } }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'finish',
       description:
         'Call when the task is fully complete — after the work, never after the plan. Provide a concise summary of what changed and how it was verified.',
@@ -1225,6 +1332,7 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
 // Looking things up is reading, not acting: a search never needs a confirmation
 // and never counts against the write permission.
 export const READ_ONLY_TOOLS = new Set([
+  'tool_help',
   'read_file',
   'list_dir',
   'glob',
