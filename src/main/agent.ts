@@ -24,16 +24,16 @@ import {
   resolvePolicy,
   toolsForRole
 } from './roles'
-import type { AgentRole, Brief, Capabilities } from '../shared/types'
+import type { AgentRole, Brief, Capabilities, FileSummary, SpecReport } from '../shared/types'
 import {
   changedFileExcerpts,
   checkAgainstSpec,
   ensureSpec,
   needsSpec,
-  readSpec,
   reworkBrief,
   specForBuilder
 } from './spec'
+import { driveGoal, shouldContinue, type GoalOutcome } from './goal'
 
 /** never spend a request describing media, bundles or lockfiles */
 const SKIP_DESCRIBE = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|mp3|mp4|zip|tar|gz|7z|dmg|exe|dll|so|dylib|pdf|apk|jar)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/i
@@ -301,7 +301,7 @@ async function buildContextBlock(workspace: string, openFiles: string[]): Promis
 export async function runAgent(
   req: RunRequest,
   deps: AgentDeps
-): Promise<{ ok: boolean; error?: string; finalText?: string; touched?: string[] }> {
+): Promise<{ ok: boolean; error?: string; finalText?: string; touched?: string[]; todos?: TodoItem[] }> {
   const settings = await getSettings()
   if (!settings.apiKey) {
     deps.emit({ type: 'error', runId: req.runId, message: 'No API key configured. Open Settings and paste your DeepSeek key.' })
@@ -548,6 +548,9 @@ export async function runAgent(
   // retrying variations of it dozens of times while narrating plans. Two rounds
   // that fail the same tools with the same arguments are one attempt, repeated.
   const roundSignatures = new Map<string, number>()
+  /** exact name+args counts across the whole run: the repeat reminder reads this */
+  const exactCalls = new Map<string, number>()
+  let repeatNudged = false
   const seenCallSignatures = new Set<string>()
   /** true when this round repeats calls already made — no new attempt at all */
   const noNewCallsThisRound = (calls: { name: string; arguments: string }[]): boolean =>
@@ -1565,6 +1568,40 @@ export async function runAgent(
       if (attachments.length) {
         deps.emit({ type: 'attachments', runId: req.runId, attachments })
       }
+      // The hand-over: what this run produced, with one line on what each file
+      // is. Snapshotting before the description call matters — the list must not
+      // depend on prose succeeding.
+      const presented = new Map<string, { path: string; rel: string; kind: 'file' | 'artifact' }>()
+      if (artifact) {
+        presented.set(artifact, {
+          path: artifact,
+          rel: path.relative(req.workspace || artifact, artifact) || path.basename(artifact),
+          kind: 'artifact'
+        })
+      }
+      for (const abs of [...touched].slice(0, 24)) {
+        if (presented.has(abs)) continue
+        presented.set(abs, {
+          path: abs,
+          rel: path.relative(req.workspace || abs, abs) || path.basename(abs),
+          kind: /\.(jar|exe|msi|dmg|appimage|deb|zip|apk|aab)$/i.test(abs) ? 'artifact' : 'file'
+        })
+      }
+      if (presented.size) {
+        const list = [...presented.values()]
+        deps.emit({ type: 'present', runId: req.runId, files: list })
+        if (req.describeFiles !== false && settings.describeFiles !== false) {
+          // Background on purpose: the hand-over list is already on screen, and
+          // the one-line labels can arrive as they are written.
+          describeInBackground(
+            list.filter((f) => !SKIP_DESCRIBE.test(f.path)).slice(0, 8).map((f) => ({ path: f.path, note: 'the agent produced this file during the task above' })),
+            {
+              task: (req.userMessage?.content || '').slice(0, 600),
+              onEach: (summary) => deps.emit({ type: 'file-summaries', runId: req.runId, summaries: [summary] })
+            }
+          )
+        }
+      }
     }
 
     if (finalReason === 'done' && touched.size) {
@@ -1636,7 +1673,7 @@ export async function runAgent(
   }
 
   lastFinalText.set(req.runId, finalText)
-  return { ok: true, finalText, touched: [...touched] }
+  return { ok: true, finalText, touched: [...touched], todos }
 }
 
 /**
@@ -1874,62 +1911,66 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
 
   // 2b. the independent check. Not the author's opinion and not the builder's
   // report: a separate pass reads the criteria against the changed files and can
-  // fail the work once. This is the step that would have caught "тебя просили
-  // мод, а ты сделал частицы на пауков".
-  if (contract && buildRes.ok && buildRes.touched?.length) {
-    const check = await checkAgainstSpec({
-      request: req.userMessage?.content || '',
-      spec: contract,
-      report,
-      files: changedFileExcerpts(req.workspace, buildRes.touched),
-      apiKey: settings.apiKey,
-      baseUrl: settings.baseUrl,
-      model: 'deepseek-flash'
-    })
-    if (check) {
-      deps.emit({
-        type: 'spec-check',
-        runId: req.runId,
-        report: check,
-        attempt: 1,
-        refused: check.verdict === 'rework'
+  // fail the work. This is the step that would have caught "тебя просили мод, а
+  // ты сделал частицы на пауков".
+  //
+  // A failed check does not end the run either: the goal below keeps opening
+  // rounds until the criteria are actually met, the work stalls, or the round
+  // budget is spent. That is the difference between "остановился на середине" and
+  // "довёл до конца".
+  let lastCheck: SpecReport | null = null
+  let goalRounds = 1
+  if (contract && buildRes.ok) {
+    const roundCheck = async (round: number): Promise<SpecReport | null> => {
+      const c = await checkAgainstSpec({
+        request: req.userMessage?.content || '',
+        spec: contract,
+        report,
+        files: changedFileExcerpts(req.workspace, buildRes.touched || []),
+        apiKey: settings.apiKey,
+        baseUrl: settings.baseUrl,
+        model: 'deepseek-flash'
       })
-      if (check.verdict === 'rework') {
-        const reworkReq: RunRequest = {
-          ...buildReq,
-          runId: `${req.runId}:rework`,
-          messageId: `${req.messageId}:rework`,
-          specAttempt: 1,
-          history: [],
-          brief: buildReq.brief ? { ...buildReq.brief, extra: [...buildReq.brief.extra, reworkBrief(check)] } : buildReq.brief,
-          userMessage: {
-            ...buildReq.userMessage,
-            content: `${brief.raw}\n\n${reworkBrief(check)}`
-          }
-        }
-        // The builder has to see the refusal as its task, not as advice in a
-        // report it may ignore.
-        buildRes = await runAgent(reworkReq, deps)
-        report = buildRes.finalText || report
-        const recheck = await checkAgainstSpec({
-          request: req.userMessage?.content || '',
-          spec: contract,
-          report,
-          files: changedFileExcerpts(req.workspace, buildRes.touched || []),
-          apiKey: settings.apiKey,
-          baseUrl: settings.baseUrl,
-          model: 'deepseek-flash'
-        })
-        if (recheck) {
-          deps.emit({
-            type: 'spec-check',
-            runId: req.runId,
-            report: recheck,
-            attempt: 2,
-            refused: false
-          })
-        }
+      if (c) {
+        lastCheck = c
+        deps.emit({ type: 'spec-check', runId: req.runId, report: c, attempt: round, refused: c.verdict === 'rework' })
       }
+      return c
+    }
+
+    lastCheck = await roundCheck(1)
+    const maxRounds = Math.max(1, settings.goalRounds || 1)
+    const signal = shouldContinue(contract, lastCheck, buildRes.todos || [])
+    if (signal && maxRounds > 1) {
+      const outcome = await driveGoal({
+        req: { ...buildReq, userMessage: { ...req.userMessage, content: req.userMessage.content } },
+        deps,
+        signal,
+        maxRounds,
+        usedRounds: 1,
+        contract,
+        afterRound: roundCheck
+      })
+      goalRounds = outcome.rounds
+      lastCheck = outcome.lastCheck || lastCheck
+      report = outcome.lastText || report
+      if (outcome.stop === 'rounds-used') {
+        deps.emit({
+          type: 'guard',
+          runId: req.runId,
+          kind: 'rework',
+          title: `Цель не закрыта за ${outcome.rounds} раунд(а)`,
+          detail: 'Критерии всё ещё не подтверждены — продолжите, и я возьму следующий раунд с того же места.'
+        })
+      }
+    } else if (signal) {
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'rework',
+        title: 'Критерии не подтверждены',
+        detail: 'Авто-раунды выключены (Настройки → раунды цели). Работа не закончена.'
+      })
     }
   }
 

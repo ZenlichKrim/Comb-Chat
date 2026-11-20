@@ -273,7 +273,16 @@ export const useStore = create<State & Actions>((set, get) => ({
   /* ---------------------------------------------------------------- */
   boot: async () => {
     const [settings, threads] = await Promise.all([window.comb.settings.get(), window.comb.threads.list()])
-    const sorted = (threads as Thread[]).sort((a, b) => b.updatedAt - a.updatedAt)
+    // Old threads carry empty steps from stage announcements that used to be
+    // written into the trace; they render as a stray "0". Clean on load.
+    const sorted = (threads as Thread[])
+      .map((t) => ({
+        ...t,
+        messages: (t.messages || []).map((m) =>
+          m.steps?.length ? { ...m, steps: m.steps.filter((st) => !!st.say?.trim() || st.actions.length > 0) } : m
+        )
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
     set({
       settings,
       threads: sorted,
@@ -734,6 +743,28 @@ export const useStore = create<State & Actions>((set, get) => ({
         set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
         void stageKey
         updateAssistant((m) => (m.streaming ? { ...m, streaming: false } : m))
+        // Each stage announces itself at least twice (author → builder → author)
+        // and the goal opens new builder rounds. A stage that produced nothing is
+        // not a new bubble: it would render as a stray avatar with an empty trace.
+        const cur = get().threads.find((t) => t.id === threadId)?.messages.find((m) => m.id === get().streamingMessageId)
+        const curEmpty =
+          !!cur &&
+          !cur.content?.trim() &&
+          !cur.reasoning?.trim() &&
+          !(cur.tools || []).length &&
+          !(cur.steps || []).length &&
+          !cur.specReport
+        if (curEmpty && cur && cur.roleOf === e.role) {
+          updateAssistant((m) => ({ ...m, streaming: true }))
+          break
+        }
+        if (curEmpty && cur) {
+          set((s) => ({
+            threads: s.threads.map((t) =>
+              t.id !== threadId ? t : { ...t, messages: t.messages.filter((m) => m.id !== cur.id) }
+            )
+          }))
+        }
         const fresh: ChatMessage = {
           id: uid('msg'),
           role: 'assistant',
@@ -752,18 +783,9 @@ export const useStore = create<State & Actions>((set, get) => ({
             t.id === threadId ? { ...t, messages: [...t.messages, fresh], updatedAt: Date.now() } : t
           )
         }))
-        updateAssistant((m) => ({
-          ...m,
-          steps: [
-            ...(m.steps || []),
-            {
-              id: uid('stp'),
-              step: (m.steps?.length || 0) + 1,
-              say: e.role === 'author' ? tr('chat.roleAuthorHint') : tr('chat.roleBuilderHint'),
-              actions: []
-            }
-          ].slice(-80)
-        }))
+        // Who is speaking is already said by the stage chip and the avatar; the
+        // stage announcement itself is not a step. Empty steps rendered as a lone
+        // ">>" and then as a stray number once the trace compacted.
         break
       }
       case 'reasoning-delta': {
@@ -885,6 +907,48 @@ export const useStore = create<State & Actions>((set, get) => ({
         void get().refreshTree()
         break
       }
+      case 'goal-round': {
+        // The run is not over: it is continuing, and the user should see that
+        // instead of a stopped transcript that looks abandoned.
+        set((s) => ({
+          activity: {
+            step: e.round,
+            since: Date.now(),
+            label:
+              (e.reason === 'criteria' ? tr('goal.roundCriteria') : tr('goal.roundPlan')) +
+              ` · ${e.round}/${e.maxRounds}` +
+              (e.detail ? ` · ${e.detail}` : '')
+          }
+        }))
+        updateAssistant((m) => ({
+          ...m,
+          guards: [
+            ...(m.guards || []),
+            {
+              id: uid('guard'),
+              kind: 'goal',
+              title: tr('goal.roundTitle', { n: String(e.round), max: String(e.maxRounds) }),
+              detail: e.detail || (e.reason === 'criteria' ? tr('goal.roundCriteria') : tr('goal.roundPlan'))
+            }
+          ]
+        }))
+        break
+      }
+      case 'goal-end': {
+        const label =
+          e.stop === 'contract-met'
+            ? tr('goal.met', { n: String(e.rounds) })
+            : e.stop === 'rounds-used'
+              ? tr('goal.roundsUsed', { n: String(e.rounds) })
+              : e.stop === 'no-progress'
+                ? tr('goal.stalled', { n: String(e.rounds) })
+                : tr('goal.failed')
+        updateAssistant((m) => ({
+          ...m,
+          guards: [...(m.guards || []), { id: uid('guard'), kind: e.stop === 'contract-met' ? 'done' : 'rework', title: label }]
+        }))
+        break
+      }
       case 'spec-check': {
         // The evidence behind «готово»: what was checked and what it rests on.
         updateAssistant((m) => ({
@@ -943,6 +1007,15 @@ export const useStore = create<State & Actions>((set, get) => ({
         showAttention(e.urgent ? 'error' : 'done', e.title, e.body)
         break
       }
+      case 'present':
+        updateAssistant((m) => ({
+          ...m,
+          presented: [
+            ...(m.presented || []),
+            ...e.files.filter((f) => !(m.presented || []).some((x) => x.path === f.path))
+          ]
+        }))
+        break
       case 'file-summaries': {
         // the agent labelled the files it wrote: the explorer picks these up live
         set((s) => {

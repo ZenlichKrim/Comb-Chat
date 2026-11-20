@@ -212,6 +212,8 @@ export interface Settings {
   planner: PlannerMode
   /** the author reads the builder's report and diffs before the user does */
   reviewPass: boolean
+  /** how many rounds one goal may run before it stops and says so (1 = off) */
+  goalRounds: number
   /** .comb/memory.md: decisions the author carries between sessions */
   projectMemory: boolean
 }
@@ -249,6 +251,7 @@ export const DEFAULT_SETTINGS: Settings = {
   alphaFeatures: false,
   describeFiles: true,
   stableMode: true,
+  goalRounds: 4,
   costCap: 0.5,
   verifyCommand: '',
   autoContinue: true,
@@ -511,6 +514,8 @@ export interface ChatMessage {
   guards?: { id: string; kind: string; title: string; detail?: string }[]
   /** contract check shown under the answer: criterion by criterion, with proof */
   specReport?: SpecReport
+  /** files this run hands over, with their absolute path so a click opens them */
+  presented?: { path: string; rel: string; kind: 'file' | 'artifact' }[]
   /** an open/answered question from the agent */
   vote?: AgentVote
   /** clickable follow-ups offered by the agent */
@@ -578,6 +583,8 @@ export type AgentEvent =
   /** files this run produced, handed to the chat so the user can take them */
   | { type: 'attachments'; runId: string; attachments: Attachment[] }
   | { type: 'file-summaries'; runId: string; summaries: FileSummary[] }
+  /** what this run hands over: every file it produced, clickable, with a line each */
+  | { type: 'present'; runId: string; files: { path: string; rel: string; kind: 'file' | 'artifact' }[] }
   | { type: 'error'; runId: string; message: string }
   | {
       /** the API call failed and is being retried: the transcript must not keep half an answer */
@@ -615,6 +622,18 @@ export type AgentEvent =
     }
   /** the contract check came back: this is the evidence behind «готово» */
   | { type: 'spec-check'; runId: string; report: SpecReport; attempt: number; refused: boolean }
+  /** the goal opened another round: the run is not over, it is continuing */
+  | {
+      type: 'goal-round'
+      runId: string
+      round: number
+      maxRounds: number
+      /** why: unconfirmed criteria or an unfinished plan */
+      reason: 'criteria' | 'plan'
+      detail?: string
+    }
+  /** the goal stopped, and here is why — never silent */
+  | { type: 'goal-end'; runId: string; rounds: number; stop: 'contract-met' | 'rounds-used' | 'no-progress' | 'failed' | 'off' }
   | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' }
 
 export interface RunRequest {

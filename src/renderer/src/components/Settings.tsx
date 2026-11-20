@@ -275,6 +275,22 @@ export function SettingsDialog(): React.ReactElement {
                 value={settings.stableMode !== false}
                 onChange={(v) => void setSettings({ stableMode: v })}
               />
+              <Row label={t('set.goalRounds')} hint={t('set.goalRoundsHint')}>
+                <div className="row gap-3" style={{ alignItems: 'center' }}>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={settings.goalRounds || 1}
+                    style={{ ['--fill' as any]: `${((Math.max(1, settings.goalRounds || 1) - 1) / 9) * 100}%` }}
+                    onChange={(e) => void setSettings({ goalRounds: Number(e.target.value) })}
+                  />
+                  <span className="mono t-sm" style={{ width: 28 }}>
+                    {settings.goalRounds > 1 ? settings.goalRounds : t('common.off')}
+                  </span>
+                </div>
+              </Row>
               <Row label={t('set.costCap')} hint={t('set.costCapHint')}>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
                   <span className="t-sm faint">$</span>

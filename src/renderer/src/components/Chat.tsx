@@ -1020,8 +1020,11 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
   const [open, setOpen] = useState(false)
   const [wide, setWide] = useState<Set<string>>(new Set())
   const actions = steps.reduce((n, s) => n + s.actions.length, 0)
-  const last = steps[steps.length - 1]
-  const visible = open ? steps : last ? [last] : []
+  // A step with neither a sentence nor an action is not a step: it is a leftover
+  // that renders as a lonely "0" under the trace.
+  const real = steps.filter((s) => !!s.say?.trim() || s.actions.length > 0)
+  const last = real[real.length - 1]
+  const visible = open ? real : last ? [last] : []
 
   const toggleWide = (id: string): void =>
     setWide((prev) => {
@@ -1032,12 +1035,12 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
     })
 
   return (
-    <div className="trace" data-open={open}>
-      <button className="trace-head" onClick={() => setOpen((v) => !v)}>
+    <div className="trace" data-open={open} data-empty={real.length ? undefined : 'true'}>
+      {real.length > 0 && <button className="trace-head" onClick={() => setOpen((v) => !v)}>
         <Icon name={open ? 'chevron-down' : 'chevron-right'} size={9} />
-        <span>{t('trace.summary', { n: steps.length, m: actions })}</span>
+        <span>{t('trace.summary', { n: real.length, m: actions })}</span>
         {live && <span className="spinner" />}
-      </button>
+      </button>}
       <div className="trace-body" data-compact={open ? undefined : 'true'}>
         {visible.map((s) => (
           <div className="trace-step" key={s.id}>
@@ -1081,7 +1084,19 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
 function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
   const t = useT()
   const openFile = useStore((s) => s.openFile)
+  const summaries = useStore((s) => s.fileSummaries)
+  // The hand-over list from the main process wins: it knows every file the run
+  // produced (not just the ones a tool call named) and its absolute path, so a
+  // click really opens it. The tool-derived list is the fallback for old threads.
+  const handed = msg.presented || []
   const files = useMemo(() => {
+    if (handed.length) {
+      return handed.slice(0, 40).map((f) => ({
+        rel: f.rel.replace(/\\/g, '/'),
+        path: f.path,
+        artifact: f.kind === 'artifact'
+      }))
+    }
     const set = new Map<string, { rel: string; path?: string; artifact: boolean }>()
     for (const c of msg.tools || []) {
       const diffPaths = (c.diff || []).map((d) => d.path)
@@ -1096,7 +1111,7 @@ function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
       if (c.attach?.rel) set.set(c.attach.rel, { rel: c.attach.rel, path: c.attach.path, artifact: true })
     }
     return [...set.values()].slice(0, 40)
-  }, [msg])
+  }, [msg, handed.length])
   if (!files.length) return null
   const artifacts = files.filter((f) => f.artifact)
   return (
@@ -1119,7 +1134,10 @@ function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
           >
             <Icon name={f.artifact ? 'download' : 'file'} size={10} />
             <span className="result-file-name">{f.rel.split(/[\\/]/).pop()}</span>
-            <span className="result-file-dir">{f.rel.split(/[\\/]/).slice(0, -1).join('/')}</span>
+            <span className="result-file-dir">
+              {(f.path ? summaries[f.path] || summaries[f.path.replace(/\\/g, '/')] : '') ||
+                f.rel.split(/[\\/]/).slice(0, -1).join('/')}
+            </span>
           </button>
         ))}
       </div>
@@ -1283,7 +1301,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
         {/* What the run actually produced, as something you can click. A finished
             task that says "done" and leaves you hunting in the sidebar is a dead
             end; these are the files and the artifact, right under the answer. */}
-        {!msg.streaming && (msg.tools?.length || 0) > 0 && <ResultFiles msg={msg} />}
+        {!msg.streaming && ((msg.tools?.length || 0) > 0 || (msg.presented?.length || 0) > 0) && <ResultFiles msg={msg} />}
 
         {msg.specReport && !msg.streaming && <SpecCard report={msg.specReport} />}
 
@@ -1319,7 +1337,11 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
           </div>
         )}
 
-        {!msg.streaming && (hasText || tools.length) && (
+        {/* The action row shows tokens and cost. It must be here whenever there is
+            anything to show, not only when prose and tool calls both exist — a
+            message that ended on a checker card was printing its cost inside the
+            bubble as a bare number. */}
+        {!msg.streaming && (hasText || tools.length > 0 || !!msg.specReport || !!msg.presented?.length || !!msg.guards?.length) && (
           <div className="msg-actions">
             {hasText && (
               <button className="msg-action" onClick={copy} data-tip={t('common.copy')}>

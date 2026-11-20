@@ -5228,3 +5228,8 @@ hr {
   font-size: 10.5px;
   overflow-wrap: anywhere;
 }
+
+/* A trace with nothing in it takes no room: an empty "0 steps" line is noise. */
+.trace[data-empty='true'] {
+  display: none;
+}
