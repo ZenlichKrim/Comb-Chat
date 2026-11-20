@@ -163,6 +163,33 @@ export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok:
  * Stream a chat completion from an OpenAI-compatible endpoint (DeepSeek).
  * Handles SSE framing, partial JSON lines, reasoning_content and tool-call deltas.
  */
+/** models that think by default: deepseek-flash-thinking and anything v4-pro */
+function isThinkingModel(model: string): boolean {
+  return /-(thinking)$/.test(model) || model === 'deepseek-v4-pro'
+}
+
+/** the same class of model, thinking off */
+function withoutThinking(model: string): string {
+  if (model === 'deepseek-v4-pro') return 'deepseek-v4-pro'
+  return model.replace(/-thinking$/, '')
+}
+
+/**
+ * True when this request would be rejected for missing thoughts.
+ *
+ * The rule the server enforces: in thinking mode every assistant turn in the
+ * replayed history carries back its `reasoning_content`. Our own turns do, since
+ * the field is kept with the message. A hole means the transcript came from
+ * somewhere else — a thread started before thoughts were kept, an import, a
+ * compaction — and no amount of retrying will fill it.
+ *
+ * So the check is deliberately narrow: it looks for holes, never at the model.
+ * A healthy thread never triggers it and never loses its thinking.
+ */
+export function repairsThinkingMode(messages: LlmMessage[]): boolean {
+  return messages.some((m) => m.role === 'assistant' && !m.reasoning_content)
+}
+
 export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
   const { apiKey, baseUrl, model, messages, tools, temperature, maxTokens, signal, onDelta, effort } = args
   const endpoint = normalizeBase(baseUrl)
@@ -181,6 +208,28 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
     body.tool_choice = 'auto'
   }
 
+  // A transcript that already lost its thoughts cannot be repaired by adding
+  // them. Asking for thinking on top of it is what the server refuses with
+  // "The `reasoning_content` in the thinking mode must be passed back to the
+  // API" — and it refuses before doing any work, so the whole thread is stuck.
+  // A thread like that (started before this field was kept, imported, or rebuilt
+  // after a compaction) talks to a non-thinking model instead: the answer is the
+  // same, the history stays valid, and the chat survives.
+  const repairsThinking = repairsThinkingMode(messages)
+  const effectiveModel = repairsThinking ? withoutThinking(model) : model
+  if (repairsThinking) {
+    body.model = wireModel(effectiveModel)
+    delete body.thinking
+    // Say it once, in words: the answer is unaffected, but the user deserves to
+    // know why this run is not thinking (the transcript predates the fix).
+    args.onRetry?.({
+      attempt: 0,
+      max: 1,
+      waitMs: 0,
+      reason: 'в истории нет мыслей предыдущих шагов — этот прогон идёт без thinking, ответ будет'
+    })
+  }
+
   let attempt = 0
   let lastErr: any = null
   /** one shot at recovering a thinking-mode 400 by dropping reasoning_content */
@@ -190,7 +239,7 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
   while (attempt < MAX_ATTEMPTS) {
     attempt++
     try {
-      return await runOnce({ endpoint, apiKey, body, signal, onDelta, model, onUsage: args.onUsage, attempt })
+      return await runOnce({ endpoint, apiKey, body, signal, onDelta, model: effectiveModel, onUsage: args.onUsage, attempt })
     } catch (e: any) {
       lastErr = e
       // The server refuses history without reasoning_content. If some turn still

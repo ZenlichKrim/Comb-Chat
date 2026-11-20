@@ -10,7 +10,7 @@
  * transcript -> API mapping honest: `npm test`.
  */
 import assert from 'node:assert/strict'
-import { toApiHistory } from '../src/main/llm.ts'
+import { toApiHistory, repairsThinkingMode } from '../src/main/llm.ts'
 
 const msg = (over) => ({ id: 'm', role: 'assistant', content: '', createdAt: Date.now(), ...over })
 
@@ -46,4 +46,35 @@ const tc = toApiHistory([
 assert.equal(tc.reasoning_content, 'Сначала прочитаю структуру.')
 assert.ok(Array.isArray(tc.tool_calls) && tc.tool_calls.length === 1, 'tool_calls survive')
 
-console.log('reasoning roundtrip: 3 checks passed')
+// 4. every assistant turn in a replayed transcript either has thoughts or had
+// none to begin with — never an invented one without reasoning
+const replayed = toApiHistory([
+  { id: 'u0', role: 'user', content: 'Привет', createdAt: 0 },
+  msg({ id: 'a0', content: 'Привет.' }),
+  { id: 'u1', role: 'user', content: 'Сделай мод', createdAt: 1 },
+  msg({ id: 'a1', content: 'Понял.', reasoning: 'Размышляю.' })
+])
+const assistants = replayed.filter((m) => m.role === 'assistant')
+assert.equal(assistants.length, 2)
+assert.equal(assistants[0].reasoning_content, undefined)
+assert.equal(assistants[1].reasoning_content, 'Размышляю.')
+
+// 5. the fallback fires only on a real hole in the replayed history
+assert.equal(
+  repairsThinkingMode([
+    { role: 'user', content: 'Привет' },
+    { role: 'assistant', content: 'Привет.', reasoning_content: 'Думаю.' }
+  ]),
+  false,
+  'a healthy thread keeps thinking on'
+)
+assert.equal(
+  repairsThinkingMode([
+    { role: 'user', content: 'Привет' },
+    { role: 'assistant', content: 'Привет.' }
+  ]),
+  true,
+  'a turn without thoughts is the hole the API rejects, so the request has to go out without thinking'
+)
+
+console.log('reasoning roundtrip: 5 checks passed')

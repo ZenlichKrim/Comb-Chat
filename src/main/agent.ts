@@ -475,7 +475,11 @@ export async function runAgent(
   if (contextBlock) {
     // insert workspace context as a system-ish user message right before the ask
     history.splice(history.length - 1, 0, { role: 'user', content: `<workspace_context>\n${contextBlock}\n</workspace_context>` })
-    history.splice(history.length - 1, 0, { role: 'assistant', content: 'Workspace context loaded.' })
+    // In thinking mode every assistant turn needs its reasoning replayed; a
+    // hand-made assistant message has none, so it is a system note instead. The
+    // API rejected the old line outright: "The reasoning_content in the thinking
+    // mode must be passed back to the API."
+    history.splice(history.length - 1, 0, { role: 'system', content: 'Workspace context loaded.' })
   }
 
   const disabled = new Set(req.disabledTools || [])
