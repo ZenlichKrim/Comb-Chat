@@ -461,6 +461,9 @@ export interface StickyNote {
 export interface ChatMessage {
   id: string
   role: Role
+  /** which stage of the pipeline produced this bubble */
+  roleOf?: AgentRole
+  stage?: 'thinking' | 'working' | 'review'
   content: string
   reasoning?: string
   /** wall-clock ms actually spent thinking, measured on the main process's clock */

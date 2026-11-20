@@ -724,9 +724,34 @@ export const useStore = create<State & Actions>((set, get) => ({
     switch (e.type) {
       case 'run-start':
         break
-      case 'role':
-        // the pipeline announces who is at the table; the header says so
+      case 'role': {
+        // The pipeline announces who is at the table — and each stage is its own
+        // message. The author's answer and the builder's work used to share one
+        // message id, so the first step-note of the builder blanked the text the
+        // author had just streamed: the answer visibly vanished mid-run.
+        const prev = get()
+        const stageKey = e.runId
         set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
+        void stageKey
+        updateAssistant((m) => (m.streaming ? { ...m, streaming: false } : m))
+        const fresh: ChatMessage = {
+          id: uid('msg'),
+          role: 'assistant',
+          content: '',
+          reasoning: '',
+          createdAt: Date.now(),
+          model: prev.settings.model,
+          tools: [],
+          streaming: true,
+          roleOf: e.role,
+          stage: e.phase
+        }
+        set((s) => ({
+          streamingMessageId: fresh.id,
+          threads: s.threads.map((t) =>
+            t.id === threadId ? { ...t, messages: [...t.messages, fresh], updatedAt: Date.now() } : t
+          )
+        }))
         updateAssistant((m) => ({
           ...m,
           steps: [
@@ -740,6 +765,7 @@ export const useStore = create<State & Actions>((set, get) => ({
           ].slice(-80)
         }))
         break
+      }
       case 'reasoning-delta': {
         // The clock is main's, not ours: `deltaMs` is time since this burst of
         // thought began, so the number can only grow and can never lie.
@@ -775,18 +801,27 @@ export const useStore = create<State & Actions>((set, get) => ({
           attachments: [...(m.attachments || []), ...e.attachments.filter((a) => !(m.attachments || []).some((x) => x.path === a.path))]
         }))
         break
-      case 'step-note':
-        // The prose of this round now lives in the trace, so drop it from the
-        // message body — otherwise every sentence is printed twice.
-        updateAssistant((m) => ({
-          ...m,
-          content: '',
-          steps: [
-            ...(m.steps || []),
-            { id: uid('stp'), step: e.step, say: e.say, actions: e.actions }
-          ].slice(-80)
-        }))
+      case 'step-note': {
+        // The prose STAYS in the message: it is the answer the user is waiting
+        // for. It used to move into the trace (content = ''), which is why a long
+        // reply vanished the moment the agent called finish — the round had a
+        // tool call, so the note fired and wiped the text.
+        // No duplication: when the round's narration is the body itself, the
+        // trace keeps only the actions.
+        updateAssistant((m) => {
+          const body = (m.content || '').trim()
+          const say = (e.say || '').trim()
+          const duplicate = !!say && (body === say || body.startsWith(say) || say.startsWith(body))
+          return {
+            ...m,
+            steps: [
+              ...(m.steps || []),
+              { id: uid('stp'), step: e.step, say: duplicate ? '' : say, actions: e.actions }
+            ].slice(-80)
+          }
+        })
         break
+      }
       case 'step':
         set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
         break
@@ -911,6 +946,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         // leave the card in the transcript marked as expired.
         const stale = get().pendingApproval
         updateAssistant((m) => {
+          // A stage that produced neither prose, a tool call nor a thought is
+          // noise: the review pass often adds nothing, and an empty bubble reads
+          // as "the app lost my answer".
+          const empty = !m.content?.trim() && !m.reasoning?.trim() && !(m.tools || []).length && !(m.steps || []).length
+          if (empty) return m
           // The finish tool carries the summary; if the model never wrote prose
           // afterwards, that summary IS the answer — show it instead of a turn
           // that just ends.
@@ -929,6 +969,26 @@ export const useStore = create<State & Actions>((set, get) => ({
         set({ running: false, pendingApproval: null, activity: null, retryInfo: null, activeRole: null })
         void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
+        // A stage that streamed nothing leaves an empty bubble: remove it, or the
+        // transcript ends with a blank block that looks like lost content.
+        set((s) => ({
+          threads: s.threads.map((th) =>
+            th.id !== threadId
+              ? th
+              : {
+                  ...th,
+                  messages: th.messages.filter(
+                    (m) =>
+                      m.role !== 'assistant' ||
+                      !!m.content?.trim() ||
+                      !!m.reasoning?.trim() ||
+                      !!(m.tools || []).length ||
+                      !!(m.steps || []).length ||
+                      !!m.error
+                  )
+                }
+          )
+        }))
         const t = get().threads.find((x) => x.id === threadId)
         if (t) get().persistThread({ ...t, updatedAt: Date.now() })
         if (e.reason === 'limit') get().toast('warn', tr('store.stepLimit'), tr('store.stepLimitHint'))
@@ -950,7 +1010,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         // pause, not the end: pick it back up once or twice before giving up.
         if (e.reason === 'error' && get().settings.autoContinue !== false && runs < 2) {
           set({ autoContinues: runs + 1 })
-          get().toast('info', tr('store.autoRetry'), tr('store.autoRetryHint'))
+          // Say it in the transcript, not only in a toast that disappears: the
+          // run visibly stopped, and silence makes it look like the app forgot
+          // to answer. Then pick it up again by itself.
+          const errMsg = 'Связь с API оборвалась — ответ не дописан. Пробую ещё раз.'
+          updateAssistant((m) => ({ ...m, error: m.error || errMsg }))
+          get().toast('warn', tr('store.autoRetry'), tr('store.autoRetryHint'))
           setTimeout(() => {
             if (!get().running) void get().sendMessage(tr('store.autoContinuePrompt'), undefined, { auto: true })
           }, 2500)

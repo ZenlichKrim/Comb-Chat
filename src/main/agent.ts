@@ -435,7 +435,11 @@ export async function runAgent(
     if (/\?$/.test(q) || /\?\s*$/.test(lower)) return true
     return /^(что|кто|где|когда|почему|зачем|как|сколько|можно ли|есть ли|ты|вы|why|what|who|where|when|how|is|are|did|do|does|can|could)\b/i.test(lower)
   })()
-  history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) + langNote })
+  // The user turn is what the user actually wrote. The language reminder rides
+  // on the system prompt instead: appended here it got echoed back into the
+  // chat as part of "their" message, which is noise the user never typed.
+  history.push({ role: 'user', content: buildUserContent(req.userMessage, req.attachments) })
+  if (langNote) history.push({ role: 'system', content: 'Отвечай по-русски. Keep identifiers, paths and code as they are.' })
   if (askedQuestion) {
     history.push({
       role: 'user',
