@@ -164,6 +164,7 @@ You have access to the WHOLE machine, not just the open project${opts.workspace 
 - Anything outside the project is still gated by the approval policy: writes, deletes and commands ask first.
 - Never read or print secrets (SSH keys, .env with credentials, browser profiles, keychains) unless the user explicitly points at them.
 - Do not wander: search purposefully, and say which paths outside the project you touched.
+- You are not confined to the open folder. When full access is on, read, search and write anywhere on the machine — including folders next to the workspace. If the project the user means is not where you expected, look for it (glob / list_dir with a parent path) instead of stopping and asking.
 - \`run_command\` is non-interactive and has network access; use \`todo_write\` for anything with more than 2 steps.`
     : opts.workspace
     ? `
@@ -320,6 +321,8 @@ export async function runAgent(
 
   const touched = new Set<string>()
   const beforeState = new Map<string, string | null>()
+  /** the step leash; grows by bounded extensions while the plan is still open */
+  let effectiveMaxSteps = Math.max(1, req.maxSteps)
   let todos: TodoItem[] = []
   const usage: TokenUsage = { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 }
   const checkpoints: Checkpoint[] = []
@@ -329,7 +332,13 @@ export async function runAgent(
   const capEarly: Capabilities = req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
   const earlyPolicy = resolvePolicy(capEarly, req.approvalPolicy)
   let approvalPolicy = earlyPolicy.approvalPolicy
-  const fullDisk = !!req.fullDiskAccess
+  // YOLO means the user has already said "do it" to everything: writes without
+  // asking, commands without asking. Still refusing to look at a folder next to
+  // the workspace is the contradiction the user hit — an agent that cannot read
+  // a sibling directory is not trusting, it is broken. Full access in that mode;
+  // the workspace still anchors relative paths.
+  const yolo = capEarly.edit === 'auto' && capEarly.run === 'auto'
+  const fullDisk = !!req.fullDiskAccess || yolo
   const roots = [req.workspace, ...(req.extraRoots || [])].filter((r): r is string => !!r)
   const extraRootNames = (req.extraRoots || []).filter(Boolean)
   const ctx: ToolContext = {
@@ -775,7 +784,7 @@ export async function runAgent(
       }
     }
 
-    while (step < Math.max(1, req.maxSteps)) {
+    while (step < effectiveMaxSteps) {
       step++
       deps.emit({ type: 'step', runId: req.runId, step })
       roundTools = []
@@ -1253,7 +1262,11 @@ export async function runAgent(
             const open = todos.filter((x) => x.status !== 'done')
             const summary = String(args.summary || args.message || '')
             const blocked = (args.work_done === false && summary.length > 40) || /(не могу|невозможно|cannot|blocked|нет доступа)/i.test(summary)
-            if (open.length && !blocked && gaveUpRefused < 2) {
+            // Two refusals used to be the ceiling, and after that a half-built
+            // project could be declared done. There is no ceiling for "the plan
+            // still has items": the work either gets done, or the model says in
+            // one line what really blocks it — which is the `blocked` branch.
+            if (open.length && !blocked) {
               gaveUpRefused++
               deps.emit({
                 type: 'guard',
@@ -1510,7 +1523,26 @@ export async function runAgent(
       }
     }
 
-    if (step >= Math.max(1, req.maxSteps)) finalReason = 'limit'
+    // The step budget is a leash, not a verdict: if the agent still has its own
+    // plan open and the work is moving, extending costs nothing but tokens the
+    // user already agreed to by asking for the job — while stopping mid-task is
+    // exactly the "он бросил на середине" failure. The extension is bounded, and
+    // the header says so.
+    const planOpen = todos.filter((t) => t.status !== 'done').length
+    if (step >= effectiveMaxSteps) {
+      if (step < Math.max(1, req.maxSteps) + 24 && planOpen > 0 && touched.size > 0) {
+        effectiveMaxSteps += 12
+        deps.emit({
+          type: 'guard',
+          runId: req.runId,
+          kind: 'steer',
+          title: `Продлеваю прогон: в плане ещё ${planOpen} пункт(ов)`,
+          detail: `лимит шагов поднят до ${effectiveMaxSteps} — работа не брошена на середине.`
+        })
+      } else {
+        finalReason = 'limit'
+      }
+    }
 
     // Label the files this run created or rewrote, in the background: by the time
     // the user opens the explorer they already read like known things.

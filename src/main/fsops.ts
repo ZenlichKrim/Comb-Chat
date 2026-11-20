@@ -147,6 +147,11 @@ export function safeJoin(root: string | string[], rel: string, allowOutside = fa
     const rr = path.resolve(r)
     if (resolved === rr || resolved.startsWith(rr + path.sep)) return resolved
   }
+  // Full access: a relative path that climbs out of every root is still a path
+  // the user allowed. It resolves against the first root, exactly as a shell
+  // would do — otherwise `../project` is refused while `/abs/project` is fine,
+  // which is the inconsistency people hit when looking for a folder next door.
+  if (allowOutside) return path.resolve(roots[0], rel)
   throw new Error(`Path escapes workspace: ${rel}`)
 }
 

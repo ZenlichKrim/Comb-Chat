@@ -359,6 +359,21 @@ async function toolMultiEdit(args: Record<string, any>, ctx: ToolContext): Promi
 }
 
 async function toolListDir(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  // A bare list_dir in full access mode answers the question people actually
+  // ask first: where am I, and what is around me. Otherwise the agent has to
+  // guess a parent path or ask the user, which is how a run stalls on step one.
+  if (!args.path && ctx.fullDisk) {
+    const lines: string[] = []
+    const ws = ctx.workspace ? path.resolve(ctx.workspace) : ''
+    if (ws) lines.push(`workspace: ${ws}`)
+    const sibs = await siblingDirs(ctx)
+    if (sibs.length) {
+      lines.push(`folders next to it (${sibs.length}):`)
+      for (const d of sibs) lines.push(`📁 ${path.basename(d)}/`)
+    }
+    if (!lines.length) lines.push('No workspace is open; full disk access is on, so absolute paths work.')
+    return { ok: true, output: lines.join('\n'), meta: { count: sibs.length } }
+  }
   const rel = String(args.path || '.')
   const abs = safeJoin(ctx.roots, rel, ctx.fullDisk)
   const entries = await listDir(abs, rootsOf(ctx))
@@ -396,15 +411,57 @@ async function walkAll(ctx: ToolContext, maxFiles: number): Promise<{ abs: strin
   return out
 }
 
+/**
+ * Where "look around" may actually look.
+ *
+ * With full access the workspace is a starting point, not a fence: searching for
+ * a project in a neighbouring folder is the first thing anyone does, and the old
+ * behaviour answered "path escapes workspace" while the user had already granted
+ * YOLO. The parent directory is searched one level deep, skipping the heavy
+ * folders nobody means (node_modules, .git, build outputs).
+ */
+const HEAVY = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'target', '.next', '.venv', 'venv', '__pycache__'])
+
+async function siblingDirs(ctx: ToolContext): Promise<string[]> {
+  if (!ctx.fullDisk) return []
+  const base = ctx.workspace ? path.dirname(path.resolve(ctx.workspace)) : ''
+  if (!base || base === path.parse(base).root) return []
+  try {
+    const entries = await fs.readdir(base, { withFileTypes: true })
+    return entries
+      .filter((e) => e.isDirectory() && !HEAVY.has(e.name) && !e.name.startsWith('.'))
+      .map((e) => path.join(base, e.name))
+      .slice(0, 40)
+  } catch {
+    return []
+  }
+}
+
 async function toolGlob(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
   const pattern = String(args.pattern || '*')
   const files = await walkAll(ctx, 20000)
   const re = globToRegex(pattern)
-  const matched = files.filter((f) => re.test(f.rel))
+  let matched = files.filter((f) => re.test(f.rel))
+  let searchedSiblings = false
+  // Nothing here? With full access, look at the folders next to the workspace
+  // before answering "no matches": the user's project may simply live there.
+  if (!matched.length && ctx.fullDisk) {
+    searchedSiblings = true
+    for (const dir of await siblingDirs(ctx)) {
+      const deep = await walk(dir, { maxFiles: 4000 }).catch(() => [] as string[])
+      for (const abs of deep) {
+        const rel = path.join(path.basename(dir), path.relative(dir, abs)).split(path.sep).join('/')
+        if (re.test(rel)) matched.push({ abs, rel, root: dir })
+        if (matched.length > 400) break
+      }
+      if (matched.length > 400) break
+    }
+  }
   // with several roots the prefix matters, otherwise two README.md look identical
   const multi = (ctx.roots.length || 1) > 1
   const shown = matched.slice(0, 400).map((f) => (multi ? `${path.basename(f.root)}/${f.rel}` : f.rel))
-  return { ok: true, output: shown.join('\n') || 'No files matched', meta: { count: matched.length } }
+  const head = searchedSiblings ? `(searched the folders next to ${ctx.workspace})\n` : ''
+  return { ok: true, output: head + (shown.join('\n') || 'No files matched'), meta: { count: matched.length } }
 }
 
 async function toolGrep(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
@@ -891,7 +948,11 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Relative path, defaults to workspace root' },
+          path: {
+            type: 'string',
+            description:
+              'Relative path from the workspace, or an absolute path (including folders next to the workspace) when full access is on'
+          },
           all: { type: 'boolean', description: 'include normally-ignored folders like node_modules' }
         }
       }
