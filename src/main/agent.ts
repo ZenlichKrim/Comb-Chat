@@ -338,7 +338,10 @@ export async function runAgent(
   // a sibling directory is not trusting, it is broken. Full access in that mode;
   // the workspace still anchors relative paths.
   const yolo = capEarly.edit === 'auto' && capEarly.run === 'auto'
-  const fullDisk = !!req.fullDiskAccess || yolo
+  // Full disk is exactly `req.fullDiskAccess`; YOLO sets that flag when the run is
+  // built. Deriving it from capabilities here too quietly widened the sandbox for
+  // every caller that passed auto capabilities but never granted disk access.
+  const fullDisk = !!req.fullDiskAccess
   const roots = [req.workspace, ...(req.extraRoots || [])].filter((r): r is string => !!r)
   const extraRootNames = (req.extraRoots || []).filter(Boolean)
   const ctx: ToolContext = {
@@ -360,9 +363,8 @@ export async function runAgent(
     runId: req.runId,
     requestApproval: async (call) => {
       if (run.autoApproved.has(call.name)) return 'allow'
-      deps.emit({ type: 'tool-approval-request', runId: req.runId, call })
       const key = `${call.name}:${call.id}`
-      return new Promise((resolve) => {
+      const answer = new Promise<'allow' | 'allow-always' | 'deny'>((resolve) => {
         const timer = setTimeout(() => {
           run.approvals.delete(key)
           resolve('deny')
@@ -379,6 +381,11 @@ export async function runAgent(
           resolve(d)
         })
       })
+      // The request goes out only once the answer has somewhere to land: a fast
+      // click (or an "allow always" that fires instantly) must never be dropped
+      // on the floor and leave the run waiting fifteen minutes for nobody.
+      deps.emit({ type: 'tool-approval-request', runId: req.runId, call })
+      return answer
     },
     signal
   }
@@ -467,8 +474,10 @@ export async function runAgent(
       content:
         '[this is a question, not a task] The user asked you something. Answer it in words, in full, and stop. ' +
         'Do not start working: no file edits, no builds, no plans, no todo lists. ' +
-        'If answering honestly takes one quick look at a file, look and answer — but do not turn the look into a project tour. ' +
-        'A tool call here is a mistake unless you genuinely cannot answer without it.'
+        // Looking is allowed and normal: the previous wording called any tool call
+        // a mistake, which the next step then contradicted by demanding one. The
+        // agent ping-ponged between the two and never produced a reply.
+        'Reading is fine — open the file you need, then answer. What is not fine is turning that look into a tour of the project, or calling a second tool once you can answer.'
     })
   }
   if (req.notes?.length) {
@@ -889,7 +898,9 @@ export async function runAgent(
       // gets five file diffs back has been ignored. Not for continuations
       // (auto-resume after an outage has nothing new to answer).
       const continuation = /^(continue|продолжай|продолжи|дальше)\b/i.test((req.userMessage?.content || '').trim())
-      const firstTurnOfTask = step === 1 && !continuation
+      // A question is not a task: it does not open with a status report, it does
+      // not get pushed to act, and reading a file is progress rather than a stall.
+      const firstTurnOfTask = step === 1 && !continuation && !askedQuestion
       if (firstTurnOfTask && !result.content.trim() && result.toolCalls.length) {
         // Decline the calls, ask for the opening line, and let it work next turn.
         closeToolCalls(result.toolCalls, 'Not executed: open a new task with a sentence to the user first, then call this again.')
@@ -912,6 +923,13 @@ export async function runAgent(
       }
 
       if (!result.toolCalls.length) {
+        // The answer to a question is the answer. It ends the run here, before any
+        // "you promised work but changed nothing" nudge can turn a reply into a
+        // demand to go edit files.
+        if (askedQuestion && result.content.trim()) {
+          finalReason = 'done'
+          break
+        }
         // A run that narrated a plan and touched nothing is a wasted run: the
         // user reads "принято, делаю шаг 1" and no file changes. Push it to act.
         // Only when the reply is a promise of work ("принято, делаю…", "now I'll…"):
@@ -1571,7 +1589,7 @@ export async function runAgent(
     }
   } finally {
     // How did it end, in one line the user can read from across the room.
-    if (finalReason === 'done' && !touched.size && !ranAnyCommand) {
+    if (finalReason === 'done' && !touched.size && !ranAnyCommand && !askedQuestion) {
       // the model stopped mid-promise: tell the user plainly instead of a green card
       deps.emit({
         type: 'guard',
@@ -1677,7 +1695,9 @@ export async function runAgent(
       }
     } else if (finalReason === 'guard') {
       notify('Прогон остановлен защитой', 'Смотрите карточку в приложении — там причина.', true)
-    } else if (finalReason === 'done' && !touched.size) {
+    } else if (finalReason === 'done' && !touched.size && !askedQuestion) {
+      // A question answered in words changed no files — that is the job, not a
+      // failed run. Only a task that produced nothing gets the alarm.
       notify('Прогон закончился без изменений', 'Агент описал план, но файлы не тронуты — откройте и продолжите.', true)
     } else if (finalReason === 'error') {
       notify('Прогон упал с ошибкой', 'Смотрите карточку в приложении.', true)

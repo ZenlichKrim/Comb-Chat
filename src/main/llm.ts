@@ -55,11 +55,14 @@ export class LlmError extends Error {
   kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted' | 'truncated' | 'reasoning'
   /** what the server told us to wait, in ms */
   retryAfterMs?: number
-  constructor(message: string, kind: LlmError['kind'], status?: number, retryAfterMs?: number) {
+  /** how far into the turn the connection died — a break at the start costs nothing */
+  progress?: number
+  constructor(message: string, kind: LlmError['kind'], status?: number, retryAfterMs?: number, progress = 0) {
     super(message)
     this.kind = kind
     this.status = status
     this.retryAfterMs = retryAfterMs
+    this.progress = progress
   }
 }
 
@@ -283,7 +286,11 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
         args.onRetry?.({ attempt, max: MAX_ATTEMPTS, waitMs: 0, reason: 'ответ обрезался по лимиту токенов — прошу короче' })
         continue
       }
-      const wait = retryDelay(e, attempt)
+      // A connection that dropped before a single token arrived is a socket, not
+      // a busy server: retrying at once is what makes a run feel instant instead
+      // of sitting in a growing backoff for a full minute on step three.
+      const empty = !(e instanceof LlmError) || !e.progress
+      const wait = empty ? 400 + Math.floor(Math.random() * 300) : retryDelay(e, attempt)
       args.onRetry?.({ attempt, max: MAX_ATTEMPTS, waitMs: wait, reason: describeRetry(e) })
       await sleepAbortable(wait, signal)
       if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
@@ -404,8 +411,17 @@ async function runOnce(opts: {
   // connection and let the retry loop take over: a stalled socket is exactly the
   // "it died on step two while I was away" failure mode.
   let lastByte = Date.now()
+  // A request that never ends is the worst failure the app can show: a spinner
+  // that stays forever with a Stop button as the only way out. The socket dying
+  // quietly, or a provider that keeps the stream open while sending nothing, both
+  // land here and become an ordinary retry.
+  const startedAt = Date.now()
   const stallTimer = setInterval(() => {
-    if (Date.now() - lastByte > 150_000) {
+    const silent = Date.now() - lastByte > 150_000
+    // thinking mode can legitimately take minutes; nothing at all for this long
+    // means the connection is dead, not that the model is thinking
+    const tooLong = Date.now() - startedAt > 600_000
+    if (silent || tooLong) {
       clearInterval(stallTimer)
       void reader.cancel().catch(() => {})
     }
@@ -499,7 +515,7 @@ async function runOnce(opts: {
     // A stream that died halfway used to be returned as if it were a complete
     // answer — with half a tool call in it, which the agent then executed and
     // broke everything downstream. Retry instead; the loop above will ask again.
-    throw new LlmError(`Stream interrupted: ${e?.message || e}`, 'network')
+    throw new LlmError(`Stream interrupted: ${e?.message || e}`, 'network', undefined, undefined, content.length + reasoning.length)
   } finally {
     clearInterval(stallTimer)
     try {

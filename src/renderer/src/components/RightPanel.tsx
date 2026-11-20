@@ -54,7 +54,14 @@ export function RightPanel(): React.ReactElement {
                           <span className="spinner" style={{ width: 8, height: 8 }} />
                         ) : null}
                       </span>
-                      <span className={`todo-text ${t.status === 'done' ? 'done' : ''}`}>{t.text}</span>
+                      {/* `text` is the shape the agent sends; older threads and
+                          the main process both used `content`, and a todo row
+                          without a label rendered as a bare checkbox. */}
+                      <span className={`todo-text ${t.status === 'done' ? 'done' : ''}`}>
+                        {(t as { text?: string; content?: string }).text ||
+                          (t as { content?: string }).content ||
+                          ''}
+                      </span>
                     </div>
                   ))}
                 </div>

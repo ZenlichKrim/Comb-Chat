@@ -38,6 +38,11 @@ export function SettingsDialog(): React.ReactElement {
   const [tab, setTab] = useState<Tab>('model')
   const [keyDraft, setKeyDraft] = useState(settings.apiKey)
   const [showKey, setShowKey] = useState(false)
+  // one source of truth for the indent width, shared with the editor
+  const rawTab = Number(settings.tabSize)
+  const editorTab = Number.isFinite(rawTab) && rawTab >= 1 ? Math.min(8, Math.round(rawTab)) : 2
+  const rawTerm = Number(settings.terminalFontSize)
+  const termFont = Number.isFinite(rawTerm) && rawTerm >= 9 ? Math.min(24, Math.round(rawTerm)) : 13
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const threads = useStore((s) => s.threads)
@@ -449,10 +454,13 @@ export function SettingsDialog(): React.ReactElement {
               <Toggle label={t('set.lineNumbers')} value={settings.showLineNumbers} onChange={(v) => void setSettings({ showLineNumbers: v })} />
               <Toggle label={t('set.wordWrap')} hint={t('set.wordWrapHint')} value={settings.wordWrap} onChange={(v) => void setSettings({ wordWrap: v })} />
               <Toggle label={t('set.autoSave')} hint={t('set.autoSaveHint')} value={settings.autoSave} onChange={(v) => void setSettings({ autoSave: v })} />
-              <Row label={t('set.tabSize')} hint={t('set.tabSizeHint', { n: settings.tabSize })}>
+              {/* An older settings file can carry 0 or nothing here. The editor
+                  clamps it, and this row shows the value that is really in use
+                  instead of "0 spaces" with no option selected. */}
+              <Row label={t('set.tabSize')} hint={t('set.tabSizeHint', { n: editorTab })}>
                 <div className="segmented">
                   {[2, 4, 8].map((n) => (
-                    <button key={n} data-active={settings.tabSize === n} onClick={() => void setSettings({ tabSize: n })}>
+                    <button key={n} data-active={editorTab === n} onClick={() => void setSettings({ tabSize: n })}>
                       {n}
                     </button>
                   ))}
@@ -472,14 +480,14 @@ export function SettingsDialog(): React.ReactElement {
                   onChange={(e) => void setSettings({ shell: e.target.value })}
                 />
               </Field>
-              <Row label={t('set.terminalFontSize')} hint={`${settings.terminalFontSize}px`}>
+              <Row label={t('set.terminalFontSize')} hint={`${termFont}px`}>
                 <input
                   type="range"
                   min={10}
                   max={18}
                   step={1}
-                  value={settings.terminalFontSize}
-                  style={{ ['--fill' as any]: `${((settings.terminalFontSize - 10) / 8) * 100}%` }}
+                  value={termFont}
+                  style={{ ['--fill' as any]: `${((termFont - 10) / 8) * 100}%` }}
                   onChange={(e) => void setSettings({ terminalFontSize: Number(e.target.value) })}
                 />
               </Row>

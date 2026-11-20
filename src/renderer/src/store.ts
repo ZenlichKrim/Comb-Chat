@@ -594,7 +594,12 @@ export const useStore = create<State & Actions>((set, get) => ({
       messageId: assistantMsg.id,
       workspace: get().workspace,
       extraRoots: get().extraRoots,
-      fullDiskAccess: settings.fullDiskAccess,
+      // YOLO (edits and commands without asking) is the promise of full access:
+      // the flag travels with it, so the main process never has to guess.
+      fullDiskAccess:
+        settings.fullDiskAccess ||
+        ((settings.capabilities || { edit: 'ask', run: 'ask' }).edit === 'auto' &&
+          (settings.capabilities || { edit: 'ask', run: 'ask' }).run === 'auto'),
       model: settings.model,
       thoughtEffort: settings.thoughtEffort || 'deep',
       temperature: settings.temperature,

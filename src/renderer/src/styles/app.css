@@ -739,13 +739,45 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 0 10px;
   font-size: var(--fs-2xs);
   color: var(--fg-3);
   background: var(--bg-1);
   border-top: 1px solid var(--line-1);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.editor-status > * {
+  flex: none;
+}
+.editor-host {
+  container-type: inline-size;
+}
+/* At 900px the three columns leave the transcript a slot two words wide. The
+   plan stays (it is the answer to "what is it doing"), the file panel is the
+   first thing to go because the tree is reachable from the palette as well. */
+@media (max-width: 1080px) {
+  .right-panel {
+    width: 232px;
+  }
+}
+@media (max-width: 940px) {
+  .right-panel {
+    display: none;
+  }
+}
+@container (max-width: 420px) {
+  .ed-status-lang,
+  .ed-status-sel {
+    display: none;
+  }
+}
+@container (max-width: 300px) {
+  .ed-status-meta {
+    display: none;
+  }
 }
 .empty-editor {
   flex: 1;
@@ -1718,6 +1750,23 @@ a.code-ref code {
   align-items: center;
   gap: 8px;
   padding: 4px 3px 0;
+  /* The line under the composer used to wrap to three lines when a panel opened,
+     and the last one was cut off by the panel edge. One line, ellipsis, and the
+     keyboard hints step aside on a narrow column. */
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.composer-foot > * {
+  min-width: 0;
+}
+.chat-col {
+  container-type: inline-size;
+}
+@container (max-width: 560px) {
+  .composer-keys {
+    display: none;
+  }
 }
 
 /* empty / onboarding cards */
@@ -1809,6 +1858,9 @@ a.code-ref code {
 .right-panel {
   width: 272px;
   flex: none;
+  /* the plan is the answer to "what is it doing": give it room before the
+     transcript closes in, but never squeeze the chat to a column */
+  max-width: 42vw;
   background: var(--bg-1);
   border-left: 1px solid var(--line-1);
   display: flex;
@@ -5086,6 +5138,10 @@ hr {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dot-sep {
   opacity: 0.5;

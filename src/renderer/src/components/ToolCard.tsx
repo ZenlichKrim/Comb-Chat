@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import type { ToolResultView } from '../../../shared/types'
+import type { FileDiff, ToolResultView } from '../../../shared/types'
 import { Icon, type IconName } from './Icon'
 import { DiffView } from './CodeBlock'
 import { useStore } from '../store'
@@ -94,18 +94,32 @@ function statusPill(
   }
 }
 
+/**
+ * A tool result carries `diff` as a list, but a single run of the loop can hand
+ * over one object (the mutation tools build a single FileDiff). One wrong shape
+ * used to take the whole transcript down — every message blank, no explanation.
+ * The card accepts both.
+ */
+function normalizeDiffs(diff: unknown): FileDiff[] {
+  if (!diff) return []
+  if (Array.isArray(diff)) return diff.filter((d): d is FileDiff => !!d && typeof d === 'object' && typeof (d as FileDiff).rel === 'string')
+  if (typeof diff === 'object' && typeof (diff as FileDiff).rel === 'string') return [diff as FileDiff]
+  return []
+}
+
 export function ToolCard({ call, compact }: { call: ToolResultView; compact?: boolean }): React.ReactElement {
   const t = useT()
   const meta = TOOL_META[call.name] || { icon: 'zap' as IconName, label: call.name as DictKey, verb: call.name as DictKey }
   const [open, setOpen] = useState(false)
-  const hasDiff = !!call.diff?.length
+  const diffs = normalizeDiffs(call.diff)
+  const hasDiff = diffs.length > 0
   const wantsOpen = call.status === 'error' || call.status === 'awaiting-approval'
   const expanded = open || wantsOpen
   if (call.name === 'ask_user') return <></>
   const settings = useStore((s) => s.settings)
   const openFile = useStore((s) => s.openFile)
   const workspace = useStore((s) => s.workspace)
-  const diff = call.diff?.reduce((a, d) => ({ add: a.add + d.additions, del: a.del + d.deletions }), { add: 0, del: 0 })
+  const diff = diffs.reduce((a, d) => ({ add: a.add + d.additions, del: a.del + d.deletions }), { add: 0, del: 0 })
 
   // a handed-over file renders as a real card, not a collapsible row: the point
   // is that the user can look at it without hunting through the tree
@@ -136,7 +150,7 @@ export function ToolCard({ call, compact }: { call: ToolResultView; compact?: bo
           {call.status === 'denied' && <div className="tool-note err">{t('tool.deniedNote')}</div>}
 
           {hasDiff ? (
-            (call.diff || []).map((d, i) => (
+            diffs.map((d, i) => (
               <div key={i} className="tool-diff">
                 <div className="tool-diff-head">
                   <span className={`pill ${d.kind === 'create' ? 'ok' : d.kind === 'delete' ? 'err' : 'acc'}`}>

@@ -223,6 +223,12 @@ export function CodeEditor({
 }: Props): React.ReactElement {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
+  // CodeMirror throws on an indent unit of zero width or a fraction, and a
+  // settings file from an older build (or an empty numeric field) is enough to
+  // produce both. A broken editor pane takes the whole file with it — the app
+  // shows the tab and nothing inside it — so the value is normalised here.
+  const rawTab = Number(tabSize)
+  const safeTab = Number.isFinite(rawTab) && rawTab >= 1 ? Math.min(8, Math.round(rawTab)) : 2
   const changeCb = useRef(onChange)
   const selCb = useRef(onSelectionChange)
   const saveCb = useRef(onSave)
@@ -254,8 +260,8 @@ export function CodeEditor({
           showLineNumbers ? lineNumbers() : [],
           showLineNumbers ? highlightActiveLineGutter() : [],
           wordWrap ? EditorView.lineWrapping : [],
-          EditorState.tabSize.of(tabSize),
-          indentUnit.of(' '.repeat(tabSize)),
+          EditorState.tabSize.of(safeTab),
+          indentUnit.of(' '.repeat(safeTab)),
           EditorView.editable.of(!readOnly)
         ]),
         langComp.current.of(languageExtension(language)),
@@ -363,8 +369,8 @@ export function CodeEditor({
         showLineNumbers ? lineNumbers() : [],
         showLineNumbers ? highlightActiveLineGutter() : [],
         wordWrap ? EditorView.lineWrapping : [],
-        EditorState.tabSize.of(tabSize),
-        indentUnit.of(' '.repeat(tabSize)),
+        EditorState.tabSize.of(safeTab),
+        indentUnit.of(' '.repeat(safeTab)),
         EditorView.editable.of(!readOnly)
       ])
     })
@@ -374,14 +380,16 @@ export function CodeEditor({
     <div className="editor-host" style={{ ['--editor-font-size' as any]: `${fontSize}px` }}>
       <div ref={host} className="cm-host" />
       <div className="editor-status">
-        <span>
+        <span className="ed-status-pos">
           Ln {cursor.line}, Col {cursor.col}
         </span>
-        {cursor.sel > 0 && <span className="acc">{cursor.sel} selected</span>}
+        {cursor.sel > 0 && <span className="acc ed-status-sel">{cursor.sel} selected</span>}
         <span className="spacer" />
-        <span className="faint">{language}</span>
-        <span className="faint">spaces: {tabSize}</span>
-        <span className="faint">UTF-8</span>
+        {/* These two were three words crammed into a quarter width: on a narrow
+            pane they wrapped into a vertical column and pushed the row height. */}
+        <span className="faint ed-status-lang">{language}</span>
+        <span className="faint ed-status-meta">spaces: {safeTab}</span>
+        <span className="faint ed-status-meta">UTF-8</span>
       </div>
     </div>
   )

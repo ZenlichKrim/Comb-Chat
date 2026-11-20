@@ -841,7 +841,7 @@ export function ChatPane(): React.ReactElement {
             {settings.capabilities?.planner !== 'off' && t('chat.teamBadge')}
           </span>
           <span className="spacer" />
-          <span className="t-xs ghost">
+          <span className="t-xs ghost composer-keys">
             {settings.sendOnEnter ? (
               <>
                 <kbd>Enter</kbd> {t('chat.sendHintEnter')} · <kbd>Shift</kbd>+<kbd>Enter</kbd> {t('chat.newlineHint')}
@@ -1098,18 +1098,27 @@ function ResultFiles({ msg }: { msg: ChatMessage }): React.ReactElement | null {
       }))
     }
     const set = new Map<string, { rel: string; path?: string; artifact: boolean }>()
+    const norm = (v: string): string => v.replace(/\\/g, '/').replace(/^\.\//, '')
     for (const c of msg.tools || []) {
-      const diffPaths = (c.diff || []).map((d) => d.path)
+      // the shape guard lives in ToolCard; a single diff here used to crash the
+      // whole message list on files that the agent had just edited
+      const diffList = Array.isArray(c.diff) ? c.diff : c.diff ? [c.diff] : []
+      // `rel` is the workspace-relative name the card shows; `path` is absolute,
+      // so mixing the two produced two rows for one file
+      const diffPaths = diffList.map((d) => d.rel)
+      // `args.path` is what was asked for, the diff carries what actually
+      // changed: the same file turned up twice in the card ("hello.txt · hello.txt")
       const one = [c.args?.path, c.args?.rel].filter((x) => typeof x === 'string') as string[]
       for (const rel of [...diffPaths, ...one]) {
         if (!rel || /[\\/]$/.test(rel)) continue
         const artifact = /\.(jar|exe|msi|dmg|appimage|deb|zip|apk|aab)$/i.test(rel)
         const mutated = ['write_file', 'edit_file', 'multi_edit', 'move_path'].includes(c.name)
         if (!mutated && !artifact) continue
-        set.set(rel, { rel, path: undefined, artifact })
+        set.set(norm(rel), { rel, path: undefined, artifact })
       }
-      if (c.attach?.rel) set.set(c.attach.rel, { rel: c.attach.rel, path: c.attach.path, artifact: true })
+      if (c.attach?.rel) set.set(norm(c.attach.rel), { rel: c.attach.rel, path: c.attach.path, artifact: true })
     }
+    // one row per file: the diff and the args path have to collapse, not double
     return [...set.values()].slice(0, 40)
   }, [msg, handed.length])
   if (!files.length) return null

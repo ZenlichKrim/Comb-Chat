@@ -51,6 +51,19 @@ export async function getSettings(): Promise<Settings> {
   settingsCache.allowedTools = [...(stored.allowedTools || DEFAULTS.allowedTools)]
   settingsCache.extraRoots = [...(stored.extraRoots || DEFAULTS.extraRoots)]
   settingsCache.recentWorkspaces = [...(stored.recentWorkspaces || [])]
+  // A hand-edited or half-written settings file is not a reason to break the
+  // editor: numeric fields get a sane floor here, once, for every consumer.
+  const num = (v: unknown, fallback: number, min: number, max: number): number => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
+  }
+  settingsCache.tabSize = num(settingsCache.tabSize, 2, 1, 8)
+  settingsCache.fontSize = num(settingsCache.fontSize, 13, 9, 28)
+  settingsCache.uiScale = num(settingsCache.uiScale, 1, 0.75, 1.5)
+  settingsCache.maxAgentSteps = num(settingsCache.maxAgentSteps, 40, 4, 200)
+  settingsCache.maxTokens = num(settingsCache.maxTokens, 16384, 1024, 65536)
+  settingsCache.goalRounds = num(settingsCache.goalRounds, 4, 1, 12)
+  settingsCache.terminalFontSize = num(settingsCache.terminalFontSize, 13, 9, 24)
   // deepseek-chat / deepseek-reasoner were retired by the API on 2026-07-24
   const legacy: Record<string, string> = {
     'deepseek-chat': 'deepseek-flash',
