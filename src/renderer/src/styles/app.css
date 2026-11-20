@@ -3429,6 +3429,21 @@ hr {
   --note-edge: color-mix(in oklab, #ef92a8 42%, var(--line-2));
 }
 
+.note-kind {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--note-ink, var(--fg-2));
+  opacity: 0.75;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid var(--note-edge, var(--line-2));
+  line-height: 14px;
+}
+.note-tile[data-kind='idea'] {
+  box-shadow: inset 2px 0 0 var(--note-ink, var(--acc));
+}
+
 .note-pin {
   position: relative;
   display: grid;

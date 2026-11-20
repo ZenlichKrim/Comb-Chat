@@ -450,6 +450,8 @@ export interface StickyNote {
   targetLabel?: string
   /** palette slot, 0-5: the tile colour */
   tone: number
+  /** what the note is for; an idea is shown differently from a loose end */
+  kind?: 'idea' | 'risk' | 'todo' | 'question'
   createdAt: number
   /** waiting for the next round / already handed to the running agent */
   status: 'pending' | 'sent' | 'done'

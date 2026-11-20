@@ -1250,7 +1250,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
 
   if (msg.role === 'user') {
     return (
-      <div className="msg user" style={{ animationDelay: `${Math.min(index, 6) * 20}ms` }}>
+      <div className="msg user" id={index === 0 ? 'msg-first' : undefined} style={{ animationDelay: `${Math.min(index, 6) * 20}ms` }}>
         <div className="msg-user-body">
           <div className="chat-text msg-user-text">{msg.content}</div>
           {!!msg.attachments?.length && (
@@ -1281,7 +1281,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
   const reasoningTokens = msg.usage?.reasoningTokens || 0
 
   return (
-    <div className="msg assistant">
+    <div className="msg assistant" id={msg.streaming ? 'msg-live' : undefined}>
       <div className="msg-gutter">
         <span className="msg-avatar">
           <Icon name="bee" size={12} />

@@ -302,6 +302,32 @@ check('the reply is the end of the run', res.ok === true && /второй вар
 check('the run continues with the default instead of hanging', res.ok === true && took < 60_000, `${took}ms ${JSON.stringify(res)}`)
 check('the model is told which option was used', events.some((e) => e.type === 'text-delta') || res.ok === true)
 
+/* ------------------------------------------------------------------ */
+/* 10. a design is not done until someone looked at it                 */
+/* ------------------------------------------------------------------ */
+console.log('design:')
+fs.writeFileSync(path.join(workspace, 'page.html'), '<!doctype html><html><body><h1>hi</h1></body></html>')
+script = [
+  { text: 'Пишу страницу.', tool: { name: 'write_file', args: { path: 'page.html', content: '<!doctype html><html><body style="background:#14110e;color:#f4ece1"><h1>Comb</h1></body></html>' } } },
+  { text: 'Готово, выглядит хорошо.', tool: { name: 'finish', args: { summary: 'Сделал страницу, всё в порядке.', work_done: true } } },
+  { text: 'Смотрю на результат.', tool: { name: 'read_file', args: { path: 'page.html' } } },
+  finalText('Страница готова: тёмный фон, крупный заголовок.')
+]
+events.length = 0
+res = await runTeam({ ...req, maxSteps: 8, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u6', role: 'user', content: 'Сделай красивую страницу page.html.', createdAt: Date.now() } }, deps)
+check('"done" on a page nobody looked at is refused', events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 300))
+check('the refusal names the way to look', JSON.stringify(events).includes('preview_page') || JSON.stringify(events).includes('view_image'))
+check('the run still ends with an answer', res.ok === true && text().length > 0)
+
+// and it does not fire for a task with no visual result
+script = [
+  { text: 'Правлю файл.', tool: { name: 'write_file', args: { path: 'plain.txt', content: 'hello\n' } } },
+  { text: 'Готово.', tool: { name: 'finish', args: { summary: 'Записал plain.txt.', work_done: true } } }
+]
+events.length = 0
+await runTeam({ ...req, maxSteps: 5, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u7', role: 'user', content: 'Запиши hello в plain.txt.', createdAt: Date.now() } }, deps)
+check('a non-visual task is not nagged about previews', !events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
+
 server.close()
 console.log(`\nagent harness: ${pass + fail} checks, ${pass} passed${fail ? `, ${fail} FAILED` : ''}`)
 process.exit(fail ? 1 : 0)

@@ -3,6 +3,7 @@ import { Icon } from './Icon'
 import { useStore } from '../store'
 import type { StickyNote } from '../../../shared/types'
 import { useT } from '../lib/i18n'
+import type { DictKey } from '../../../shared/i18n'
 
 /** The six pastel slots a note can live in. Kept apart from the theme so a board
  *  of notes reads as a board, not as another surface of the IDE. */
@@ -100,9 +101,15 @@ export function NoteTile({
       className={`note-tile tone-${TONES[note.tone % TONES.length]}`}
       data-status={note.status}
       data-compact={!!compact}
+      data-kind={note.kind || 'todo'}
     >
       <div className="note-tile-head">
         <Icon name={note.byAgent ? 'bee' : 'sticky'} size={9} />
+        {note.kind && note.kind !== 'todo' && (
+          <span className="note-kind" data-tip={t(`note.kind.${note.kind}` as DictKey)}>
+            {t(`note.kind.${note.kind}` as DictKey)}
+          </span>
+        )}
         {note.target && (
           <button
             className="note-target ellipsis"

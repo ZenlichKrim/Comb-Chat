@@ -3,6 +3,7 @@ import path from 'node:path'
 import { exec } from 'node:child_process'
 import { createTwoFilesPatch } from 'diff'
 import {
+  imageMime,
   isProbablyBinary,
   languageFor,
   listDir,
@@ -13,6 +14,7 @@ import {
   writeFileSafe
 } from './fsops'
 import { getSettings } from './store'
+import { homeDirs, installedApps, listDrives, renderFound, scoreAppMatch, searchDirs } from './discover'
 import type { FileDiff, TodoItem, ToolResultView } from '../shared/types'
 import type { LlmToolSchema } from './llm'
 
@@ -201,7 +203,12 @@ export async function executeTool(
             note: {
               text: String(args.text || '').slice(0, 400),
               target: args.target ? String(args.target) : undefined,
-              tone: Number(args.tone) || 2
+              tone: Number(args.tone) || 2,
+              // What the note *is*: an idea is not a gripe, and the board shows
+              // them differently. An agent working on a creative task should be
+              // able to think out loud on paper instead of burying the thought
+              // in a paragraph nobody scrolls back to.
+              kind: ['idea', 'risk', 'todo', 'question'].includes(String(args.kind)) ? String(args.kind) : 'todo'
             }
           }
         }
@@ -214,6 +221,8 @@ export async function executeTool(
         }
       case 'attach_file':
         return await toolAttachFile(args, ctx)
+      case 'preview_page':
+        return await toolPreviewPage(args, ctx)
       case 'view_image':
         return await toolViewImage(args, ctx)
       case 'web_search':
@@ -222,6 +231,10 @@ export async function executeTool(
         return await toolReadUrl(args)
       case 'tool_help':
         return toolHelp(args)
+      case 'find_path':
+        return await toolFindPath(args, ctx)
+      case 'find_app':
+        return await toolFindApp(args)
       case 'finish':
         return { ok: true, output: args.summary || 'Task finished.', halt: 'done' }
       default:
@@ -239,6 +252,230 @@ export function toolNote(args: Record<string, any>): string {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Find a thing on the machine when nobody said where it is.
+ *
+ * This is the first real step of three of the jobs the user keeps asking for:
+ * the Peak game folder, Roblox Studio, a jar that was built somewhere. `glob`
+ * only looks inside the open project (and the folder next to it), so the honest
+ * answer used to be "no matches" while the game sat on D:\.
+ *
+ * The search is bounded by entries and by time, and it reports where it looked,
+ * so a miss is a fact the model can act on instead of a shrug.
+ */
+async function toolFindPath(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  const query = String(args.name || args.query || '').trim()
+  if (!query) return { ok: false, error: 'name is required (a substring or a simple *pattern*)' }
+  const kind = args.kind === 'file' || args.kind === 'dir' ? args.kind : 'any'
+  const depth = Math.min(Math.max(Number(args.depth) || 4, 1), 8)
+  const limit = Math.min(Math.max(Number(args.limit) || 40, 1), 100)
+  const maxMs = Math.min(Math.max(Number(args.max_ms) || 20000, 1000), 120000)
+
+  // a pattern with * or ? is a glob over the name; otherwise a case-insensitive substring
+  const hasGlob = /[*?]/.test(query)
+  const nameRe = hasGlob
+    ? new RegExp('^' + query.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i')
+    : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+
+  let starts: string[]
+  if (args.root) {
+    starts = [safeJoin(ctx.roots, String(args.root), true)]
+  } else if (ctx.fullDisk) {
+    starts = [...homeDirs(), ...(await listDrives())]
+  } else {
+    starts = ctx.roots.length ? ctx.roots : [ctx.workspace]
+  }
+
+  const skipped = new Set(['appdata'])
+  const res = await searchDirs(starts, { nameRe, want: kind, depth, maxEntries: 80000, maxMs, skip: skipped })
+  const seen = new Set<string>()
+  const entries = res.entries.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)))
+  if (!entries.length) {
+    return {
+      ok: true,
+      output:
+        `Nothing named like "${query}" under ${res.visited.length} folders (${starts.slice(0, 6).join(', ')}${starts.length > 6 ? ', …' : ''}), ${depth} levels deep.` +
+        (res.truncated ? '\nThe budget ran out before the search was finished — pass a `root` to search a specific drive, or raise depth.' : '\nThe search finished; the thing is not there under that name.') +
+        (ctx.fullDisk ? '' : '\nFull disk access is off, so only the open folders were searched.'),
+      meta: { count: 0, truncated: res.truncated }
+    }
+  }
+  return {
+    ok: true,
+    output:
+      `Found ${entries.length}${res.truncated ? '+' : ''} match(es) for "${query}":\n` +
+      renderFound(entries, limit) +
+      (res.truncated ? '\n(the entry budget ran out — raise `root`/`depth` if the one you need is not listed)' : ''),
+    meta: { count: entries.length, truncated: res.truncated }
+  }
+}
+
+/**
+ * Find an installed application and hand back its folder.
+ *
+ * "Find the studio and start in it" is a request about software the machine
+ * already has. Guessing `C:\Program Files\Roblox` wastes rounds; the system
+ * knows, so this asks the system.
+ */
+async function toolFindApp(args: Record<string, any>): Promise<ToolOutcome> {
+  const query = String(args.name || '').trim()
+  if (!query) return { ok: false, error: 'name is required' }
+  const apps = await installedApps()
+  const scored = apps
+    .map((a) => ({ ...a, score: scoreAppMatch(a.name, query) + scoreAppMatch(path.basename(a.path || ''), query) }))
+    .filter((a) => a.score >= 3)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 25)
+  if (!scored.length) {
+    return {
+      ok: true,
+      output:
+        `No installed application matches "${query}" (checked ${apps.length} registered apps).\n` +
+        'Try find_path with a name like "studio.exe" or the product name, or ask the user where they installed it.'
+    }
+  }
+  return {
+    ok: true,
+    output:
+      `Installed apps matching "${query}":\n` +
+      scored.map((a) => `${a.name} — ${a.path || '(no install folder)'} [${a.why}]`).join('\n') +
+      '\nThe folder listed is the app root: read its files there, or open the project you need inside it.',
+    meta: { count: scored.length }
+  }
+}
+
+/** HTML targets whose picture is worth a real browser: they draw to a canvas. */
+const CANVAS_HINT = /<canvas|three\.module|three\.min\.js|new\s+THREE\.|getContext\(['"]webgl/i
+
+/**
+ * Take a picture of a page so the agent can see its own design.
+ *
+ * "Красивый, продуманный интерфейс" is a promise no file listing can keep: a
+ * layout is judged by looking at it. Chrome and Edge ship with every Windows and
+ * most Linux machines, so a headless screenshot needs no new dependency — the
+ * same window the user would open, rendered to a PNG the model can actually see.
+ * Canvas/WebGL pages need the real browser; a static HTML file is rendered as is.
+ */
+async function toolPreviewPage(args: Record<string, any>, ctx: ToolContext): Promise<ToolOutcome> {
+  const rel = String(args.path || '')
+  if (!rel) return { ok: false, error: 'path is required (an .html file or an http(s) URL)' }
+  const isUrl = /^https?:\/\//i.test(rel)
+  const target = isUrl ? rel : safeJoin(ctx.roots, rel, ctx.fullDisk)
+  const size = String(args.size || '1440,900')
+  if (!/^\d{2,5},\d{2,5}$/.test(size)) return { ok: false, error: 'size must look like "1440,900"' }
+  if (!isUrl) {
+    const st = await fs.stat(target).catch(() => null)
+    if (!st) return { ok: false, error: `Not found: ${rel}` }
+  }
+  const outDir = path.join(ctx.workspace, '.comb', 'shots')
+  await fs.mkdir(outDir, { recursive: true }).catch(() => {})
+  const out = path.join(outDir, `${Date.now().toString(36)}-preview.png`)
+  const url = isUrl ? target : `file:///${target.replace(/\\/g, '/').replace(/^\//, '')}`
+  const waitMs = Math.min(Math.max(Number(args.wait_ms) || 1500, 0), 15000)
+
+  const candidates = process.platform === 'win32'
+    ? [
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+      ]
+    : process.platform === 'darwin'
+      ? [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+          '/Applications/Chromium.app/Contents/MacOS/Chromium'
+        ]
+      : []
+  const bins = process.platform === 'linux'
+    ? ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'microsoft-edge']
+    : candidates.filter((c) => true)
+  /** a bare command name is only usable if it really is on PATH */
+  const onPath = async (name: string): Promise<string> =>
+    new Promise((resolve) => {
+      exec(process.platform === 'win32' ? `where ${name}` : `command -v ${name}`, { windowsHide: true }, (err, stdout) => {
+        resolve(err ? '' : String(stdout || '').split(/\r?\n/)[0].trim())
+      })
+    })
+  let used = ''
+  let bin = ''
+  if (args.binary) {
+    const wanted = String(args.binary)
+    const exists = wanted.includes('/') || wanted.includes('\\')
+      ? await fs.access(wanted).then(() => true).catch(() => false)
+      : !!(await onPath(wanted))
+    if (!exists) {
+      return {
+        ok: false,
+        error:
+          `No browser at ${wanted}. Point \`binary\` at a Chromium-based browser, or fix the layout from the CSS and say the design was not seen.`
+      }
+    }
+    bin = wanted
+  } else {
+    for (const candidate of bins) {
+      if (candidate.includes('/') || candidate.includes('\\')) {
+        const ok = await fs.access(candidate).then(() => true).catch(() => false)
+        if (ok) {
+          bin = candidate
+          break
+        }
+      } else {
+        const real = await onPath(candidate)
+        if (real) {
+          bin = real
+          break
+        }
+      }
+    }
+  }
+  if (!bin) {
+    return {
+      ok: false,
+      error:
+        'No Chrome, Chromium or Edge found to render the page. Read the CSS and the markup and fix what you can prove is wrong ' +
+        '(contrast, spacing, hierarchy), and tell the user the design was not seen — do not claim it looks good. ' +
+        'Row of escape: pass `binary` with the full path of a Chromium-based browser if one is installed somewhere unusual.'
+    }
+  }
+  const cmd = [
+    `"${bin}"`,
+    '--headless=new',
+    '--disable-gpu',
+    '--hide-scrollbars',
+    '--no-sandbox',
+    `--virtual-time-budget=${waitMs}`,
+    `--window-size=${size}`,
+    `--screenshot="${out}"`,
+    `"${url}"`
+  ].join(' ')
+
+  const res = await new Promise<{ code: number; out: string }>((resolve) => {
+    exec(cmd, { timeout: 60000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({ code: err ? ((err as any).code ?? 1) : 0, out: `${stdout || ''}${stderr || ''}`.slice(-1200) })
+    })
+  })
+  used = res.out
+  const made = await fs.stat(out).catch(() => null)
+  if (res.code !== 0 || !made) {
+    return {
+      ok: false,
+      error: `The browser exited with ${res.code} and wrote no picture. ${used}`.trim(),
+      output: used
+    }
+  }
+  const data = await fs.readFile(out)
+  const mime = imageMime(out) || 'image/png'
+  return {
+    ok: true,
+    output:
+      `Screenshot of ${isUrl ? rel : rel} at ${size} (${Math.round(made.size / 1024)} KB) → ${path.relative(ctx.workspace, out)}\n` +
+      'It is attached to your next message: look at it and judge the layout — spacing, hierarchy, contrast, what the eye hits first. ' +
+      'Fix what looks wrong, then take another picture and compare.',
+    meta: { imageUrl: `data:${mime};base64,${data.toString('base64')}`, imageRel: path.relative(ctx.workspace, out), screenshot: out }
+  }
+}
 
 /**
  * A help page the model can ask for in the middle of a run. Agents do not know
@@ -279,6 +516,12 @@ run_command — non-interactive shell, network allowed, 5 min default, pass \`ti
 todo_write — replaces the whole plan. Keep it short and honest: an item you cannot close in this run does not belong there.
 
 attach_file — put a real file into the chat with a path and an open button.
+
+find_path — find a file or folder anywhere on the machine when nobody said where it is: a game on another drive, a mod folder, a jar built earlier. Searches the user folders and every mounted drive under full access; pass root to search one folder.
+
+find_app — the folder of an installed application, from the system's own app list (Roblox Studio, Unity, Blender). Use it instead of guessing a Program Files path.
+
+preview_page — render an HTML page or local app in headless Chrome and look at the screenshot. This is how a design is judged: take the shot, then fix what the eye says.
 
 view_image — look at a screenshot or texture; the picture is added to your next message.
 
@@ -1186,7 +1429,12 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
         properties: {
           text: { type: 'string', description: 'One sentence, in the interface language' },
           target: { type: 'string', description: 'Optional file or folder this note is about' },
-          tone: { type: 'number', description: '0-5 colour slot, pick something different from the previous note' }
+          tone: { type: 'number', description: '0-5 colour slot, pick something different from the previous note' },
+          kind: {
+            type: 'string',
+            enum: ['idea', 'risk', 'todo', 'question'],
+            description: 'What this note is: a design idea worth returning to, a risk you spotted, a loose end for the user, or an open question'
+          }
         },
         required: ['text']
       }
@@ -1283,6 +1531,25 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'preview_page',
+      description:
+        'Render an HTML page or a local web app in headless Chrome and hand you the screenshot: judge the design by looking at it, not by describing the CSS. Use it for a UI you just built, a landing page, a Blender-like dashboard, a game HUD mockup, or a 3D scene drawn in a canvas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'An .html file (relative or absolute) or an http(s) URL' },
+          size: { type: 'string', description: 'Viewport "width,height", default "1440,900"' },
+          wait_ms: { type: 'integer', description: 'How long to let the page run before the shot (animations, WebGL), default 1500' },
+          binary: { type: 'string', description: 'Optional full path to a Chromium-based browser, when the default lookup finds none' },
+          note: { type: 'string', description: 'Optional one line: what you are checking' }
+        },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'view_image',
       description:
         'Look at an image file on disk (screenshot, texture, icon, photo, mockup). The image is added to your next message so you can actually see it. Use this instead of guessing what a picture contains.',
@@ -1293,6 +1560,46 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
           note: { type: 'string', description: 'Optional one line: why you are looking at it' }
         },
         required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_path',
+      description:
+        'Find a file or folder anywhere on the machine when nobody told you where it is: a game installed on another drive, a mod folder, a jar that was built earlier. With full disk access it searches the user folders and every mounted drive; pass `root` to search one folder. Bounded by time, and it tells you where it looked when it finds nothing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Name to look for: a substring ("peak") or a simple pattern ("*.jar", "Peak*")'
+          },
+          kind: { type: 'string', enum: ['file', 'dir', 'any'], description: 'What kind of entry you want (default any)' },
+          root: { type: 'string', description: 'Folder to start from, e.g. "D:/" or the folder the user pointed at' },
+          depth: { type: 'integer', description: 'How deep below the start folders, 1-8 (default 4)' },
+          limit: { type: 'integer', description: 'How many matches to show, 1-100 (default 40)' },
+          max_ms: { type: 'integer', description: 'Time budget in milliseconds (default 20000, max 120000)' },
+          note: { type: 'string', description: 'Optional one line: what you are looking for and why' }
+        },
+        required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'find_app',
+      description:
+        'Find an installed application and its folder ("Roblox Studio", "Unity", "Blender", "idea"). Uses the system app registry on Windows and the app folders elsewhere. Use it before guessing a Program Files path.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Product or app name as the user said it' },
+          note: { type: 'string', description: 'Optional one line: what you need it for' }
+        },
+        required: ['name']
       }
     }
   },
@@ -1333,6 +1640,9 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
 // and never counts against the write permission.
 export const READ_ONLY_TOOLS = new Set([
   'tool_help',
+  'find_path',
+  'find_app',
+  'preview_page',
   'read_file',
   'list_dir',
   'glob',

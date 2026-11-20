@@ -177,6 +177,9 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - \`run_command\` is non-interactive: no vim, no prompts, no servers that never exit (background them or skip).
 - Long builds (npm install, gradle, maven, cargo, docker) take minutes: pass \`timeout_ms\` (e.g. 600000) instead of letting the default cut them off, and print a short line to the user first so the wait is expected.
 - You have real web access: \`web_search\` for anything you would otherwise guess (library versions, API names, error text, release notes) and \`read_url\` to read a page properly. Search first, then read the one page that matters — do not read five.
+- When the thing you need is not in the open folder, do not stop and do not ask: look for it. \`find_path\` searches the user folders and every mounted drive (bounded by time, and it tells you where it looked); \`find_app\` returns the install folder of a program from the system's own list. A game on D:, a studio installed under Program Files, a jar built earlier — these are three find calls, not three questions to the user.
+- If a tool name, argument or limit is not obvious, read it instead of guessing: \`tool_help\` returns the exact reference for any tool in this run.
+- A big command output is not lost: past 24k characters the whole text is saved under .comb/output and you get the path plus the head and the tail. Read or grep that file — running the same build again to see the end is wasted time.
 - You also have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
 - Use \`todo_write\` for anything with more than 2 steps, and keep it current.
@@ -186,6 +189,8 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 
 - You are the author, not a clerk — for every task, not just creative ones. Before starting, think about what this is judged on, what the request left out, and what a professional would add unasked. Then add it. Work that only satisfies the literal list reads as cheap and the user notices immediately.
 - Before finishing, do the check a careful author does: what will the user look at first, what is missing that would make this feel finished, which edge case will bite them in five minutes.
+- When the result is something you can look at — a page, a UI, a texture, a scene, a mockup — look at it before you call it done. \`preview_page\` renders an HTML file or local app to a screenshot you can see; \`view_image\` opens any picture. Judge spacing, hierarchy, contrast, what the eye hits first, what is empty when there is no data. A layout nobody looked at is a guess, and the user will see the guess in five seconds.
+- Think on paper when the work is creative: \`leave_note\` with kind "idea" is the place for the idea you do not want to lose mid-task, kind "risk" for what could break, kind "question" for what the user should decide later. They land on the notes board, not in the scrollback.
 - Never ship a stub: no TODO comments as your work, no empty class that "will be filled later", no method that returns a hardcoded value where behaviour was asked for. If you cannot do a thing, say it in the summary instead of leaving a placeholder that pretends.
 - The user's spec is a contract, not a mood board. Every numbered item in it is work you owe them: implement it or say explicitly which ones you could not and why. Never call finish while a plan item is open.
 - "Compiles" is not "works" and neither is "the code looks right". For a real project: build it, read the errors, fix them. For code against a version you do not remember exactly, read the actual jar/lockfile in the project instead of guessing API names.
@@ -644,7 +649,7 @@ export async function runAgent(
   /** the user asked for a build artifact (jar/exe/appimage...) — we must find it */
   const wantedArtifact = (() => {
     const q = (req.userMessage?.content || '').toLowerCase()
-    const m = q.match(/\b(jar|exe|appimage|\.deb|apk|dmg|msi)\b/)
+    const m = q.match(/\b(jar|exe|appimage|\.deb|apk|dmg|msi|zip|rbxl|rbxlx|rbxm|pk3|pk4|bsp|wad|pak|vpk|mcworld|schem|schematic)\b/)
     return m ? m[1].replace('.', '') : ''
   })()
   /** the agent's own sentence for the round being executed */
@@ -653,11 +658,15 @@ export async function runAgent(
   let roundTools: { id: string; name: string; ok: boolean; error: string; args: Record<string, any> }[] = []
   let ranAnyCommand = false
   let finishRefused = 0
+  let designRefused = 0
   let loopHits = 0
   let loopNote = ''
   let verifyStage: 'pending' | 'running' | 'done' | 'failed' = 'pending'
   let notifiedCost = false
   let repeatWarnings = 0
+  /** how many times this run has already *looked* at its own result */
+  let previewsTaken = 0
+
   let notifiedVote = false
   let notifyCount = 0
 
@@ -1157,9 +1166,17 @@ export async function runAgent(
         }
         // Reading is progress in understanding, not in the work: it counts
         // separately so it can be capped without cutting real edits short.
-        if (READ_ONLY_TOOLS.has(call.name)) {
+        // Looking at your own result is the opposite of treading water: a preview
+        // is how a layout, a particle effect or a room is judged. It counts as
+        // work, and it is counted so the run can be asked about it later.
+        if (outcome.meta?.screenshot) {
+          previewsTaken++
+          roundProgressed = true
+          idleRounds = 0
+        }
+        if (READ_ONLY_TOOLS.has(call.name) && !outcome.meta?.screenshot) {
           readOnlySteps++
-        } else {
+        } else if (!outcome.meta?.screenshot) {
           roundProgressed = true
           idleRounds = 0
         }
@@ -1331,6 +1348,34 @@ export async function runAgent(
               })
               continue
             }
+          }
+          // A design task finished without the agent ever looking at what it made
+          // is a guess, not a design. The tools can take the picture; refusing once
+          // costs one round and is the difference between "красиво" and "я так думаю".
+          // Evidence, not vocabulary: the run produced something you can look at.
+          const madeVisual = [...touched].some((p) => /\.(html?|css|svg|png|jpe?g|webp)$/i.test(p))
+          if (call.name === 'finish' && stableMode && madeVisual && previewsTaken === 0 && designRefused < 1) {
+            designRefused++
+            deps.emit({
+              type: 'guard',
+              runId: req.runId,
+              kind: 'steer',
+              title: 'Не принял «готово»: результат никто не видел',
+              detail: 'Сначала посмотри на то, что сделал: preview_page / view_image.'
+            })
+            history.push({
+              role: 'user',
+              content:
+                '[look before you finish] You built something whose whole point is how it looks — a layout, a page, a scene, ' +
+                'a texture, a HUD — and you have not looked at it once.\n' +
+                'Take the picture now and judge it like the user will:\n' +
+                '- for an HTML page or a web UI: preview_page({"path":"index.html","size":"1440,900"}), then again at 390,844 for a phone;\n' +
+                '- for a game asset or a mockup image: view_image on the file you produced;\n' +
+                '- for a 3D scene or a game asset: render a still into a PNG (or an HTML preview of the model) and look at that;\n' +
+                'Then fix what is wrong — spacing, contrast, what the eye hits first, empty states — and take one more shot to confirm. ' +
+                'Finish only after you have seen the result.'
+            })
+            continue
           }
           // "готово" with nothing done is not a finish: it is the failure the user
           // screenshots. Refuse it once, make it do the work it promised.

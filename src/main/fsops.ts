@@ -93,7 +93,10 @@ export function languageFor(file: string): string {
 }
 
 const BINARY_EXT = new Set([
-  'png','jpg','jpeg','gif','webp','ico','bmp','pdf','zip','gz','tar','7z','rar','exe','dll','so','dylib','node','woff','woff2','ttf','otf','mp3','mp4','wav','ogg','webm','mov','class','jar','pyc','wasm','bin','db','sqlite'
+  'png','jpg','jpeg','gif','webp','ico','bmp','pdf','zip','gz','tar','7z','rar','exe','dll','so','dylib','node','woff','woff2','ttf','otf','mp3','mp4','wav','ogg','webm','mov','class','jar','pyc','wasm','bin','db','sqlite',
+  // game and editor assets: a texture, a model, a level. Reading them as text
+  // produced a page of replacement characters and the agent "analysed" noise.
+  'dds','tga','ktx','ktx2','hdr','exr','fbx','glb','gltf','obj','mtl','blend','unity3d','uasset','umap','pak','vpk','bsp','wad','pk3','pk4','rbxm','rbxl','rbxlx','mesh','anim','phys','ttf','otf','skp','stl','dae','psd','aseprite','ase','clip','xcf'
 ])
 
 export function isProbablyBinary(file: string, head?: Buffer): boolean {
@@ -103,6 +106,17 @@ export function isProbablyBinary(file: string, head?: Buffer): boolean {
   const sample = head.subarray(0, Math.min(head.length, 4096))
   for (const b of sample) if (b === 0) return true
   return false
+}
+
+/** Which kind of picture a file is, for a vision call. Empty when it is not one. */
+export function imageMime(file: string): string {
+  const ext = path.extname(file).replace('.', '').toLowerCase()
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'bmp') return 'image/bmp'
+  return ''
 }
 
 /** Join one root, refusing anything that walks out of it. */
