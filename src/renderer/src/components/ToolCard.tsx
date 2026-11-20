@@ -25,6 +25,8 @@ const TOOL_META: Record<string, { icon: IconName; label: DictKey; verb: DictKey 
   leave_note: { icon: 'sticky', label: 'tool.note', verb: 'tool.verbNote' },
   attach_file: { icon: 'paperclip', label: 'tool.attach_file', verb: 'tool.verbAttaching' },
   view_image: { icon: 'image', label: 'tool.viewImage', verb: 'tool.verbLooking' },
+  web_search: { icon: 'search', label: 'tool.webSearch', verb: 'tool.verbSearchingWeb' },
+  read_url: { icon: 'external', label: 'tool.readUrl', verb: 'tool.verbReadingPage' },
   finish: { icon: 'check-circle', label: 'tool.done', verb: 'tool.verbFinishing' }
 }
 

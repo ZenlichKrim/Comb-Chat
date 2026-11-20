@@ -88,10 +88,31 @@ export function priceFor(model: string): { priceIn: number; priceInCached: numbe
   return { priceIn: 0.3, priceInCached: 0.006, priceOut: 1.2, contextWindow: 1_000_000, maxOutput: 384_000 }
 }
 
-export function computeCost(model: string, promptTokens: number, cachedTokens: number, completionTokens: number): number {
+/**
+ * Peak or off-peak, from DeepSeek's published table: peak is 01:00-04:00 and
+ * 06:00-10:00 UTC, Monday to Friday, excluding Chinese public holidays; every
+ * other hour is half price. We do not try to model the holidays — being wrong by
+ * 50% on a holiday is better than pretending the discount does not exist, which
+ * is what the old flat "peak only" number did.
+ */
+export function isPeakHour(at: Date = new Date()): boolean {
+  const day = at.getUTCDay() // 0 Sun … 6 Sat
+  if (day === 0 || day === 6) return false
+  const h = at.getUTCHours()
+  return (h >= 1 && h < 4) || (h >= 6 && h < 10)
+}
+
+export function computeCost(
+  model: string,
+  promptTokens: number,
+  cachedTokens: number,
+  completionTokens: number,
+  at: Date = new Date()
+): number {
   const p = priceFor(model)
+  const k = isPeakHour(at) ? 1 : 0.5
   const fresh = Math.max(0, promptTokens - cachedTokens)
-  return (fresh / 1e6) * p.priceIn + (cachedTokens / 1e6) * p.priceInCached + (completionTokens / 1e6) * p.priceOut
+  return ((fresh / 1e6) * p.priceIn + (cachedTokens / 1e6) * p.priceInCached + (completionTokens / 1e6) * p.priceOut) * k
 }
 
 const RETRYABLE = new Set([429, 500, 502, 503, 504, 522, 524])

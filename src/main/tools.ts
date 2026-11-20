@@ -184,6 +184,10 @@ export async function executeTool(
         return await toolAttachFile(args, ctx)
       case 'view_image':
         return await toolViewImage(args, ctx)
+      case 'web_search':
+        return await toolWebSearch(args)
+      case 'read_url':
+        return await toolReadUrl(args)
       case 'finish':
         return { ok: true, output: args.summary || 'Task finished.', halt: 'done' }
       default:
@@ -712,6 +716,86 @@ async function toolViewImage(
   }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Web tools: DeepSeek's own Search & Fetch API                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The model has no internet of its own — its knowledge stops at a date, and
+ * guesses about versions and API names are exactly how a run produces code
+ * against an interface that never existed. DeepSeek sells search and page
+ * fetching as JSON endpoints ($0.75 per 1000 requests, billed per use), so the
+ * agent can look things up for real instead of asking the user to paste docs.
+ */
+async function deepseekWeb(pathname: '/tools/search' | '/tools/fetch', body: Record<string, unknown>): Promise<any> {
+  const settings = await getSettings()
+  if (!settings.apiKey) throw new Error('No API key: web tools need the DeepSeek key from Settings.')
+  const base = (settings.baseUrl || 'https://api.deepseek.com').trim().replace(/\/+$/, '').replace(/\/v\d+$/, '')
+  const res = await fetch(`${base}/v1${pathname}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${settings.apiKey.trim()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(45_000)
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`web tool failed: ${res.status} ${text.slice(0, 200)}`)
+  }
+  return res.json()
+}
+
+async function toolWebSearch(args: Record<string, any>): Promise<ToolOutcome> {
+  const query = String(args.query || '').trim()
+  if (!query) return { ok: false, error: 'query is required' }
+  const count = Math.max(1, Math.min(10, Number(args.count) || 5))
+  try {
+    const json = await deepseekWeb('/tools/search', {
+      query: query.slice(0, 128),
+      count,
+      need_content: false
+    })
+    const results: any[] = Array.isArray(json?.results) ? json.results : []
+    if (!results.length) return { ok: true, output: `No results for "${query}".` }
+    // summary, not content: 600-800 characters is what a model can actually use,
+    // and the full page is one read_url call away when it matters.
+    const body = results
+      .map((r, i) => {
+        const date = r.date ? ` · ${String(r.date).slice(0, 10)}` : ''
+        const auth = typeof r.authority === 'number' && r.authority >= 3 ? ' · authoritative' : ''
+        return `${i + 1}. ${r.title}\n   ${r.url}${date}${auth}\n   ${(r.summary || r.snippet || '').trim()}`
+      })
+      .join('\n\n')
+    return {
+      ok: true,
+      output: `Search: ${query}\n\n${body}\n\n(If a page matters, call read_url on it — do not guess what it says.)`,
+      meta: { results: results.map((r) => ({ title: r.title, url: r.url, date: r.date })) }
+    }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+async function toolReadUrl(args: Record<string, any>): Promise<ToolOutcome> {
+  const url = String(args.url || '').trim()
+  if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'url must start with http:// or https://' }
+  try {
+    const page = await deepseekWeb('/tools/fetch', { url })
+    const text = [page?.title ? `# ${page.title}` : '', page?.content || page?.markdown || '']
+      .filter(Boolean)
+      .join('\n\n')
+      .trim()
+    if (!text) return { ok: false, error: `Fetched ${url} but got no readable text (page may be JS-only or blocked).` }
+    return {
+      ok: true,
+      output: clamp(text, 40000),
+      meta: { url, title: page?.title }
+    }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
 export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
@@ -1007,6 +1091,42 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   {
     type: 'function',
     function: {
+      name: 'web_search',
+      description:
+        'Search the live web (DeepSeek Search API). Use it for anything you would otherwise guess: library versions, API names, error messages, release notes, current prices. Returns ranked results with titles, URLs and long summaries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query, 1-128 chars. Supports site:, -site:, "exact phrase", lang:, after:YYYY-MM-DD.'
+          },
+          count: { type: 'integer', description: 'How many results, 1-10 (default 5)' },
+          note: { type: 'string', description: 'Optional one line: what you are looking up and why' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_url',
+      description:
+        'Fetch one web page and return it as markdown text. Use after web_search when a result matters, or when the user pastes a link.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Absolute http(s) URL' },
+          note: { type: 'string', description: 'Optional one line: what you are reading it for' }
+        },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'view_image',
       description:
         'Look at an image file on disk (screenshot, texture, icon, photo, mockup). The image is added to your next message so you can actually see it. Use this instead of guessing what a picture contains.',
@@ -1041,7 +1161,19 @@ export const TOOL_SCHEMAS: LlmToolSchema[] = [
   }
 ]
 
-export const READ_ONLY_TOOLS = new Set(['read_file', 'list_dir', 'glob', 'grep', 'todo_write', 'attach_file'])
+// Looking things up is reading, not acting: a search never needs a confirmation
+// and never counts against the write permission.
+export const READ_ONLY_TOOLS = new Set([
+  'read_file',
+  'list_dir',
+  'glob',
+  'grep',
+  'todo_write',
+  'attach_file',
+  'web_search',
+  'read_url',
+  'view_image'
+])
 export const DESTRUCTIVE_TOOLS = new Set(['run_command', 'delete_path', 'move_path'])
 export const MUTATING_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit', 'delete_path', 'move_path'])
 

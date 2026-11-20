@@ -52,9 +52,12 @@ export interface ModelInfo {
   contextWindow: number
   maxOutput: number
   /** USD per 1M tokens, peak rates (off-peak is half) */
+  /** USD per 1M tokens, peak rate — what the app shows until off-peak is applied */
   priceIn: number
   priceInCached: number
   priceOut: number
+  /** off-peak is exactly half; 0 here means "same as peak" */
+  priceOutOffPeak?: number
   /** accepts image input */
   vision: boolean
   blurbKey: 'model.blurbFlash' | 'model.blurbPro' | 'model.blurbV4Pro'
