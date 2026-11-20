@@ -885,6 +885,25 @@ export const useStore = create<State & Actions>((set, get) => ({
         void get().refreshTree()
         break
       }
+      case 'spec-check': {
+        // The evidence behind «готово»: what was checked and what it rests on.
+        updateAssistant((m) => ({
+          ...m,
+          specReport: e.report,
+          guards: e.refused
+            ? [
+                ...(m.guards || []),
+                {
+                  id: uid('guard'),
+                  kind: 'rework',
+                  title: `Приёмка не прошла: ${e.report.checks.filter((c) => c.status === 'fail').length} из ${e.report.checks.length}`,
+                  detail: e.report.summary
+                }
+              ]
+            : m.guards
+        }))
+        break
+      }
       case 'guard': {
         const note = { id: uid('guard'), kind: e.kind, title: e.title, detail: e.detail }
         updateAssistant((m) => ({ ...m, guards: [...(m.guards || []), note] }))

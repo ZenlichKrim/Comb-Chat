@@ -458,6 +458,29 @@ export interface StickyNote {
   byAgent?: boolean
 }
 
+/** One criterion of the contract, judged against the real files. */
+export interface SpecCheck {
+  /** the acceptance criterion in the user's words */
+  claim: string
+  status: 'done' | 'fail'
+  /** what in the code proves it */
+  evidence?: string
+  /** what the builder must do when it fails */
+  fix?: string
+}
+
+/**
+ * The verdict of the independent review: not the builder grading itself, but a
+ * separate pass reading the contract against the changed files. It is the
+ * reason "готово" can mean something.
+ */
+export interface SpecReport {
+  verdict: 'done' | 'rework'
+  checks: SpecCheck[]
+  summary: string
+  at: number
+}
+
 export interface ChatMessage {
   id: string
   role: Role
@@ -486,6 +509,8 @@ export interface ChatMessage {
   streaming?: boolean
   /** stable-mode guard notes attached to the turn they happened in */
   guards?: { id: string; kind: string; title: string; detail?: string }[]
+  /** contract check shown under the answer: criterion by criterion, with proof */
+  specReport?: SpecReport
   /** an open/answered question from the agent */
   vote?: AgentVote
   /** clickable follow-ups offered by the agent */
@@ -583,11 +608,13 @@ export type AgentEvent =
   | {
       type: 'guard'
       runId: string
-      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done' | 'steer' | 'retry'
+      kind: 'cost' | 'verify' | 'stuck' | 'errors' | 'done' | 'steer' | 'retry' | 'contract' | 'rework'
       /** short headline for the transcript */
       title: string
       detail?: string
     }
+  /** the contract check came back: this is the evidence behind «готово» */
+  | { type: 'spec-check'; runId: string; report: SpecReport; attempt: number; refused: boolean }
   | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' }
 
 export interface RunRequest {
@@ -627,6 +654,10 @@ export interface RunRequest {
   roleMode?: 'single' | 'split'
   /** the brief the author wrote, handed to the builder as its whole task */
   brief?: Brief
+  /** the contract this run is held to (SPEC.md criteria); the builder must see it */
+  spec?: string
+  /** which pass this is against the contract: 0 the first, 1 the rework */
+  specAttempt?: number
   /** the author reviews the builder's report before the user sees it */
   review?: { report: string; changed: string[] }
   /** the user's notes for this task: the agent has to respect them */

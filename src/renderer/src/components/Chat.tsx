@@ -3,7 +3,7 @@ import { Icon, type IconName } from './Icon'
 import { CombMark } from './TitleBar'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
-import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
+import { VoteCard, GuardNote, Suggestions, SpecCard } from './AgentNotes'
 import { NotePin, NotesPanel } from './Notes'
 import { useStore, useActiveThread, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
@@ -1284,6 +1284,8 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             task that says "done" and leaves you hunting in the sidebar is a dead
             end; these are the files and the artifact, right under the answer. */}
         {!msg.streaming && (msg.tools?.length || 0) > 0 && <ResultFiles msg={msg} />}
+
+        {msg.specReport && !msg.streaming && <SpecCard report={msg.specReport} />}
 
         {(msg.guards || []).map((g) => (
           <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />

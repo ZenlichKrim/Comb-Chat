@@ -5171,3 +5171,60 @@ hr {
 .theme-graphite .tp-acc2 { background: #7d7d7d; }
 .theme-electric .tp-acc2 { background: #a78bfa; }
 .theme-nord .tp-acc2 { background: #ebcb8b; }
+
+
+/* Acceptance check: the criteria the user set, each with its proof. Quiet on
+   purpose — it sits under the answer like a receipt, not a dashboard. */
+.spec-card {
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-1);
+  background: color-mix(in oklab, var(--bg-2) 55%, transparent);
+  font-size: var(--fs-2xs);
+  min-width: 0;
+}
+.spec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-2);
+  font-weight: 600;
+}
+.spec-card[data-verdict='rework'] .spec-icon {
+  color: var(--warn, #f2a65a);
+}
+.spec-card[data-verdict='done'] .spec-icon {
+  color: var(--acc-2, #7cc8a6);
+}
+.spec-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.spec-list li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.35;
+}
+.spec-list li .spec-mark {
+  flex: none;
+  margin-top: 3px;
+  color: var(--fg-3);
+}
+.spec-list li[data-status='fail'] .spec-mark {
+  color: var(--warn, #f2a65a);
+}
+.spec-claim {
+  color: var(--fg-1);
+}
+.spec-proof {
+  color: var(--fg-3);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}

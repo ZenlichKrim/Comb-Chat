@@ -190,6 +190,8 @@ export function builderPrompt(opts: {
   brief: Brief | null
   memory: string
   caps: Capabilities
+  /** acceptance criteria from SPEC.md: what gets checked, in the user's words */
+  contract?: string
 }): string {
   const ru = opts.locale === 'ru'
   const briefText = opts.brief
@@ -231,7 +233,9 @@ ${ru ? 'Пиши по-русски.' : 'Write in English.'}
 # Окружение
 ${opts.workspace ? `Рабочая папка: \`${opts.workspace}\`. Относительные пути — от неё.` : 'Папка не открыта.'}${
     opts.memory ? `\n\n# Память проекта\n${opts.memory}` : ''
-  }${briefText ? `\n\n# БРИФ ОТ АВТОРА\n${briefText}` : '\n\nБриф не передан: работай по прямому указанию пользователя.'}`
+  }${briefText ? `\n\n# БРИФ ОТ АВТОРА\n${briefText}` : '\n\nБриф не передан: работай по прямому указанию пользователя.'}${
+    opts.contract ? `\n\n${opts.contract}` : ''
+  }`
 }
 
 /** Parse the author's ```brief block into something the builder can be held to. */

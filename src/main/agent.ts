@@ -25,6 +25,15 @@ import {
   toolsForRole
 } from './roles'
 import type { AgentRole, Brief, Capabilities } from '../shared/types'
+import {
+  changedFileExcerpts,
+  checkAgainstSpec,
+  ensureSpec,
+  needsSpec,
+  readSpec,
+  reworkBrief,
+  specForBuilder
+} from './spec'
 
 /** never spend a request describing media, bundles or lockfiles */
 const SKIP_DESCRIBE = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|mp3|mp4|zip|tar|gz|7z|dmg|exe|dll|so|dylib|pdf|apk|jar)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/i
@@ -292,7 +301,7 @@ async function buildContextBlock(workspace: string, openFiles: string[]): Promis
 export async function runAgent(
   req: RunRequest,
   deps: AgentDeps
-): Promise<{ ok: boolean; error?: string; finalText?: string }> {
+): Promise<{ ok: boolean; error?: string; finalText?: string; touched?: string[] }> {
   const settings = await getSettings()
   if (!settings.apiKey) {
     deps.emit({ type: 'error', runId: req.runId, message: 'No API key configured. Open Settings and paste your DeepSeek key.' })
@@ -413,7 +422,10 @@ export async function runAgent(
             workspace: req.workspace,
             brief: req.brief || null,
             memory,
-            caps
+            caps,
+            // the criteria come from the user, not from the brief: without them
+            // the builder is free to satisfy its own reading of the task
+            contract: specForBuilder(req.spec || '', caps, req.specAttempt || 0)
           })
 
   // A last-line reminder in the user turn itself: models drift back to English
@@ -1624,7 +1636,7 @@ export async function runAgent(
   }
 
   lastFinalText.set(req.runId, finalText)
-  return { ok: true, finalText }
+  return { ok: true, finalText, touched: [...touched] }
 }
 
 /**
@@ -1797,8 +1809,36 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
     return { ok: (await runAgent({ ...req, role: 'builder', roleMode: 'split' }, deps)).ok, roles: ['builder'] }
   }
 
+  // 0. the contract. A task big enough to be worth doing is big enough to be
+  // written down as checks, and those checks come from the user's words — not
+  // from whatever the builder decides it accomplished.
+  let contract = ''
+  const wantsContract = settings.stableMode !== false && needsSpec(req.userMessage?.content || '')
+  if (wantsContract) {
+    const spec = await ensureSpec({
+      workspace: req.workspace,
+      request: req.userMessage?.content || '',
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      model: 'deepseek-flash'
+    })
+    if (spec.spec) {
+      contract = spec.spec
+      const criteria = spec.spec
+        .split(/\r?\n/)
+        .filter((l) => /^\s*(?:[-*]|\d+[.)])\s+/.test(l)).length
+      deps.emit({
+        type: 'guard',
+        runId: req.runId,
+        kind: 'contract',
+        title: spec.written ? `Контракт записан: ${criteria} критериев в SPEC.md` : 'Контракт взят из SPEC.md проекта',
+        detail: spec.path || undefined
+      })
+    }
+  }
+
   // 1. the author thinks, talks and writes the brief
-  const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split' }, deps)
+  const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split', spec: contract }, deps)
   if (!authorRes.ok) return { ok: false, error: authorRes.error, roles: ['author'] }
   const brief = parseBrief(authorRes.finalText || '')
   if (!brief) {
@@ -1827,8 +1867,71 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
     history: [],
     userMessage: { ...req.userMessage, content: brief.raw }
   }
-  const buildRes = await runAgent(buildReq, deps)
-  const report = buildRes.finalText || ''
+  buildReq.spec = contract
+  buildReq.specAttempt = 0
+  let buildRes = await runAgent(buildReq, deps)
+  let report = buildRes.finalText || ''
+
+  // 2b. the independent check. Not the author's opinion and not the builder's
+  // report: a separate pass reads the criteria against the changed files and can
+  // fail the work once. This is the step that would have caught "тебя просили
+  // мод, а ты сделал частицы на пауков".
+  if (contract && buildRes.ok && buildRes.touched?.length) {
+    const check = await checkAgainstSpec({
+      request: req.userMessage?.content || '',
+      spec: contract,
+      report,
+      files: changedFileExcerpts(req.workspace, buildRes.touched),
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      model: 'deepseek-flash'
+    })
+    if (check) {
+      deps.emit({
+        type: 'spec-check',
+        runId: req.runId,
+        report: check,
+        attempt: 1,
+        refused: check.verdict === 'rework'
+      })
+      if (check.verdict === 'rework') {
+        const reworkReq: RunRequest = {
+          ...buildReq,
+          runId: `${req.runId}:rework`,
+          messageId: `${req.messageId}:rework`,
+          specAttempt: 1,
+          history: [],
+          brief: buildReq.brief ? { ...buildReq.brief, extra: [...buildReq.brief.extra, reworkBrief(check)] } : buildReq.brief,
+          userMessage: {
+            ...buildReq.userMessage,
+            content: `${brief.raw}\n\n${reworkBrief(check)}`
+          }
+        }
+        // The builder has to see the refusal as its task, not as advice in a
+        // report it may ignore.
+        buildRes = await runAgent(reworkReq, deps)
+        report = buildRes.finalText || report
+        const recheck = await checkAgainstSpec({
+          request: req.userMessage?.content || '',
+          spec: contract,
+          report,
+          files: changedFileExcerpts(req.workspace, buildRes.touched || []),
+          apiKey: settings.apiKey,
+          baseUrl: settings.baseUrl,
+          model: 'deepseek-flash'
+        })
+        if (recheck) {
+          deps.emit({
+            type: 'spec-check',
+            runId: req.runId,
+            report: recheck,
+            attempt: 2,
+            refused: false
+          })
+        }
+      }
+    }
+  }
 
   // 3. the author checks the result and speaks to the user about it
   if (settings.reviewPass && buildRes.ok) {
