@@ -20,8 +20,8 @@ import { completeOnce } from './llm'
 
 const SPEC_FILE = 'SPEC.md'
 
-/** Words that promise a whole system rather than a tweak. */
-const BIG = /(мод|mod|игру|game|приложени|app|сайт|site|систем|system|движок|engine|плагин|plugin|аген|agent|редактор|editor|дашборд|dashboard)/i
+/** Words that promise a whole system rather than a tweak — any stack. */
+const BIG = /(игру|game|приложени|app|сайт|site|систем|system|движок|engine|плагин|plugin|аген|agent|редактор|editor|дашборд|dashboard|сервис|service|api\b|бэкенд|backend|фронтенд|frontend)/i
 
 export function specPath(workspace: string | null): string | null {
   if (!workspace) return null
@@ -153,7 +153,7 @@ const CHECK_SYSTEM = `You are the reviewer on a software team. You did not write
 You get: the user's original request, the spec's acceptance criteria, the builder's report, and the text of the files it changed.
 
 Rules:
-- Judge what is in the files, not what the report claims. A report that says "полноценный мод" over four particle files is a FAIL.
+- Judge what is in the files, not what the report claims. A report that calls a feature complete over four stub files is a FAIL.
 - A criterion is "done" only if you can point at the code that satisfies it. Otherwise "fail" with a one-line reason and, when useful, a concrete instruction.
 - Judge scope too: if the user asked for a system and the code covers a corner of it, that is a fail even when every written file is fine. Say which parts are missing.
 - Be specific and short. No praise. No restating the spec.

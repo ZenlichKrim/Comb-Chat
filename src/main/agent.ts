@@ -175,7 +175,7 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - Change code with \`edit_file\` (exact string replacement). Include enough context lines so the match is unique. Use \`write_file\` only for new files or full rewrites.
 - Verify your work: run the project's type checker, tests or linter with \`run_command\` when they exist. Read package.json / Makefile / pyproject.toml first to learn the right commands.
 - \`run_command\` is non-interactive: no vim, no prompts, no servers that never exit (background them or skip).
-- Long builds (gradle, maven, cargo, npm install) take minutes: pass \`timeout_ms\` (e.g. 600000) instead of letting the default cut them off, and print a short line to the user first so the wait is expected.
+- Long builds (npm install, gradle, maven, cargo, docker) take minutes: pass \`timeout_ms\` (e.g. 600000) instead of letting the default cut them off, and print a short line to the user first so the wait is expected.
 - You have real web access: \`web_search\` for anything you would otherwise guess (library versions, API names, error text, release notes) and \`read_url\` to read a page properly. Search first, then read the one page that matters — do not read five.
 - You also have network access through \`run_command\`: \`curl\`/\`wget\`/\`git clone\`/package managers all work. When the task needs an asset (an icon, a font, a package, a repo) download it into the project and verify the bytes landed (size, format) instead of asking the user to do it.
 - The model accepts images: if the user attached a screenshot, read it and act on what it shows.
@@ -609,7 +609,10 @@ export async function runAgent(
     return true
   })()
   /** does it produce something people look at or play? then craft matters double */
-  const visualish = /(мод|mod\b|игр|game|интерфейс|interface|ui\b|ux\b|дизайн|design|визуал|visual|анимац|animat|атмосфер|atmospher|погод|weather|снег|snow|туман|fog|сайт|site|page|страниц|лендинг|dashboard|панель)/i.test(
+  // Something people look at or play, in any stack — not "a Minecraft mod". The
+  // old pattern started with `мод`, and that one word set the tone of the whole
+  // run: the model read its own prompt as a hint about the domain.
+  const visualish = /(игр|game|интерфейс|interface|ui\b|ux\b|дизайн|design|визуал|visual|анимац|animat|атмосфер|atmospher|погод|weather|снег|snow|туман|fog|сайт|site|page|страниц|лендинг|dashboard|панель)/i.test(
     (req.userMessage?.content || '').toLowerCase()
   )
   const specSections = (() => {
@@ -706,8 +709,8 @@ export async function runAgent(
         content:
           `[stable mode] The user asked for a built ${wantedArtifact.toUpperCase()}. A summary is not a build. ` +
           (cmd ? `Run \`${cmd}\` now and fix every error it prints, one by one, until it succeeds.\n` : 'Run the project build command now and fix every error it prints.\n') +
-          'Do not stub things out to make it compile: wire the real API. If a class name is wrong for this Minecraft version, ' +
-          'read the actual jar in the project (javap / unzip -l) and use the name that exists there. ' +
+          'Do not stub things out to make it compile: wire the real API. If a name is wrong for the version in this project, ' +
+          'read the actual dependency in the project (its types, its jar, its lockfile) and use the name that exists there. ' +
           'Only after the build succeeds and the artifact file exists, call finish and say where the file is.'
       })
       return

@@ -676,6 +676,8 @@ function ThreadsPanel(): React.ReactElement {
   const remove = useStore((s) => s.deleteThread)
   const newThread = useStore((s) => s.newThread)
   const [q, setQ] = useState('')
+  const runs = useStore((s) => s.runs)
+  const approvals = useStore((s) => s.approvalThreadId)
   const filtered = q ? threads.filter((t) => t.title.toLowerCase().includes(q.toLowerCase())) : threads
 
   return (
@@ -694,7 +696,14 @@ function ThreadsPanel(): React.ReactElement {
       <div className="tree-scroll">
         {filtered.map((thread) => (
           <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>
-            <span className="thread-dot" data-busy={thread.id === activeId ? 'true' : undefined} />
+            {/* a session that is working shows it from here, whichever one is
+                open — otherwise background work is invisible and reads as frozen */}
+            <span
+              className="thread-dot"
+              data-busy={runs[thread.id] ? 'true' : undefined}
+              data-await={approvals === thread.id ? 'true' : undefined}
+              title={approvals === thread.id ? t('side.waitingYou') : runs[thread.id] ? t('side.working') : undefined}
+            />
             <div className="col grow" style={{ gap: 1, minWidth: 0 }}>
               <span className="ellipsis t-sm thread-title">{thread.title}</span>
               <span className="t-xs ghost thread-meta">

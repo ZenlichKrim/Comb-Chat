@@ -12,7 +12,8 @@ import path from 'node:path'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const hook = path.join(here, 'electron-require.cjs')
-const harness = path.join(here, 'harness.mjs')
+// the file to run: the agent loop by default, any other harness by name
+const harness = path.join(here, process.argv[2] || 'harness.mjs')
 
 const res = spawnSync(
   process.execPath,

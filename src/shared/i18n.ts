@@ -109,6 +109,8 @@ export const en = {
   'side.newSession': 'New session (Ctrl+N)',
   'side.noSessions': 'No sessions yet',
   'side.msgs': '{n} msgs',
+  'side.working': 'working now',
+  'side.waitingYou': 'waiting for your answer',
   'side.deleteSession': 'Delete this session?',
 
   /* ---------------------------------------------------------------- */
@@ -176,6 +178,7 @@ export const en = {
   'chat.couldNotRead': 'Could not read {rel}',
   'chat.review': 'review',
   'chat.reviewTip': 'Review the full diff',
+  'chat.approvalFrom': 'from session «{name}»',
   'chat.awaitingApproval': 'Waiting for your approval',
   'chat.approvalStays': 'The question stays on screen until you answer it.',
   'chat.approvalExpired': 'The run ended before you answered — nothing was applied.',
@@ -845,6 +848,8 @@ export const ru: Dict = {
   'side.newSession': 'Новая сессия (Ctrl+N)',
   'side.noSessions': 'Сессий пока нет',
   'side.msgs': '{n} сообщ.',
+  'side.working': 'работает сейчас',
+  'side.waitingYou': 'ждёт вашего ответа',
   'side.deleteSession': 'Удалить эту сессию?',
 
   'chat.noSession': 'Нет сессии',
@@ -909,6 +914,7 @@ export const ru: Dict = {
   'chat.couldNotRead': 'Не удалось прочитать {rel}',
   'chat.review': 'дифф',
   'chat.reviewTip': 'Посмотреть полный дифф',
+  'chat.approvalFrom': 'из сессии «{name}»',
   'chat.awaitingApproval': 'Ждёт вашего разрешения',
   'chat.approvalStays': 'Вопрос висит на экране, пока вы не ответите.',
   'chat.approvalExpired': 'Прогон завершился до ответа — ничего не применено.',

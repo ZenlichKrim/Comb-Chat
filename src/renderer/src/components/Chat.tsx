@@ -5,7 +5,7 @@ import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
 import { VoteCard, GuardNote, Suggestions, SpecCard } from './AgentNotes'
 import { NotePin, NotesPanel } from './Notes'
-import { useStore, useActiveThread, formatCost, formatTokens, timeAgo } from '../store'
+import { useStore, useActiveThread, useThreadBusy, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
 import { MODELS } from '../../../shared/types'
@@ -109,10 +109,16 @@ export function ChatPane(): React.ReactElement {
   const thread = useActiveThread()
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
-  const running = useStore((s) => s.running)
+  // "running" is about the session in this pane, not the window: two sessions can
+  // work at once, and a global flag made the second one look dead or busy at random.
+  const threadId = useActiveThread()?.id ?? null
+  const running = useThreadBusy(threadId)
   const stopRun = useStore((s) => s.stopRun)
   const sendMessage = useStore((s) => s.sendMessage)
   const pendingApproval = useStore((s) => s.pendingApproval)
+  const approvalThreadId = useStore((s) => s.approvalThreadId)
+  const selectThread = useStore((s) => s.selectThread)
+  const approvalFrom = useStore((s) => s.threads.find((x) => x.id === approvalThreadId))
   const approve = useStore((s) => s.approve)
   const setDiffPreview = useStore((s) => s.setDiffPreview)
   const contextFiles = useStore((s) => s.contextFiles)
@@ -427,7 +433,17 @@ export function ChatPane(): React.ReactElement {
         <div className="approval-bar" data-sticky>
           <Icon name="shield" size={13} className="warn" />
           <span className="approval-label">
-            <span className="t-sm" style={{ fontWeight: 600 }}>{pendingApproval.name}</span>
+            <span className="t-sm" style={{ fontWeight: 600 }}>
+              {/* a request from another session is answered right here, so say
+                  whose it is and let the jump be one click */}
+              {approvalFrom && approvalFrom.id !== thread?.id ? (
+                <button className="link" onClick={() => selectThread(approvalFrom.id)}>
+                  {t('chat.approvalFrom', { name: approvalFrom.title })}
+                </button>
+              ) : (
+                pendingApproval.name
+              )}
+            </span>
             <span className="t-xs dim ellipsis">
               {pendingApproval.args?.command
                 ? String(pendingApproval.args.command).slice(0, 90)

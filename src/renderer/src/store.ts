@@ -72,8 +72,11 @@ interface State {
   bottomPanel: BottomPanel | 'none'
   bottomPanelHeight: number
   palette: PaletteState
+  /** at least one run is in flight (the active one normally) */
   running: boolean
   runId: string | null
+  /** runs in flight, by thread: two sessions can work at the same time */
+  runs: Record<string, { runId: string; messageId: string }>
   streamingMessageId: string | null
   pendingApproval: ToolResultView | null
   /** what the agent is doing right now, derived from the live tool stream */
@@ -81,6 +84,8 @@ interface State {
   /** who is speaking in the current run: author talks, builder works */
   activeRole: 'author' | 'builder' | null
   approvalRunId: string | null
+  /** which session is waiting for the approval dialog */
+  approvalThreadId: string | null
   toasts: Toast[]
   searchOpen: boolean
   aboutOpen: boolean
@@ -239,12 +244,14 @@ export const useStore = create<State & Actions>((set, get) => ({
   palette: { open: false, mode: 'commands' },
   running: false,
   runId: null,
+  runs: {},
   streamingMessageId: null,
   pendingApproval: null,
   queued: [],
   activity: null,
   activeRole: null,
   approvalRunId: null,
+  approvalThreadId: null,
   toasts: [],
   searchOpen: false,
   settingsOpen: false,
@@ -491,7 +498,23 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   selectThread: (id) => {
     const thread = get().threads.find((t) => t.id === id)
-    set({ activeThreadId: id, changedFiles: [], pendingApproval: null, notes: thread?.notes ?? [] })
+    const live = get().runs[id]
+    set({
+      activeThreadId: id,
+      changedFiles: [],
+      notes: thread?.notes ?? [],
+      // Switching to a session that is working restores its own live state: the
+      // approval card it is waiting on, the step it is on, and its message id.
+      pendingApproval: null,
+      approvalRunId: null,
+      approvalThreadId: null,
+      retryInfo: null,
+      activity: null,
+      activeRole: null,
+      running: !!live,
+      runId: live?.runId ?? null,
+      streamingMessageId: live?.messageId ?? null
+    })
     const t = get().threads.find((x) => x.id === id)
     if (t) set({ checkpoints: [] })
   },
@@ -517,7 +540,10 @@ export const useStore = create<State & Actions>((set, get) => ({
   /* ---------------------------------------------------------------- */
   sendMessage: async (text, attachments = []) => {
     const state = get()
-    if (state.running) return false
+    // Only this session matters: another conversation may be working at the same
+    // time and that is exactly what the user asked for. The old guard read one
+    // window-wide flag and refused the second session with nothing on screen.
+    if (state.activeThreadId && state.runs[state.activeThreadId]) return false
     let threadId = state.activeThreadId
     if (!threadId) {
       const thread: Thread = {
@@ -535,7 +561,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       threadId = thread.id
     }
     const thread = get().threads.find((t) => t.id === threadId)
-    if (!thread) return false
+    if (!thread || get().runs[threadId]) return false
 
     const userMsg: ChatMessage = {
       id: uid('msg'),
@@ -564,10 +590,12 @@ export const useStore = create<State & Actions>((set, get) => ({
       extraRoots: get().extraRoots,
       model: get().settings.model
     }
+    const runId = uid('run')
     set((s) => ({
       threads: s.threads.map((t) => (t.id === threadId ? updated : t)),
       running: true,
-      runId: uid('run'),
+      runId,
+      runs: { ...s.runs, [threadId]: { runId, messageId: assistantMsg.id } },
       streamingMessageId: assistantMsg.id,
       changedFiles: [],
       pendingApproval: null,
@@ -586,7 +614,6 @@ export const useStore = create<State & Actions>((set, get) => ({
       }))
     }
     void window.comb.app.attention(true, text.slice(0, 40))
-    const runId = get().runId!
     const settings = get().settings
     const req: RunRequest = {
       runId,
@@ -693,7 +720,10 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   stopRun: async () => {
-    const id = get().runId
+    // Stop applies to the session on screen. With two runs in flight, a global
+    // stop would have killed the one the user was not looking at.
+    const s = get()
+    const id = s.activeThreadId ? s.runs[s.activeThreadId]?.runId : s.runId
     // A stop stays a stop: nothing queued or scheduled may start the next turn.
     set({ queued: [] })
     if (id) await window.comb.agent.stop(id)
@@ -719,8 +749,17 @@ export const useStore = create<State & Actions>((set, get) => ({
   /* ---------------------------------------------------------------- */
   handleEvent: (e) => {
     const state = get()
-    const threadId = state.activeThreadId
+    // Events belong to the run that produced them, not to the tab the user has
+    // open. Writing them into the active thread is what made a session look like
+    // it had "just stopped": its output was landing in the other conversation.
+    const owner =
+      Object.entries(state.runs).find(([, r]) => r.runId === e.runId)?.[0] ??
+      // fall back to the active thread only if this run is not tracked at all
+      state.activeThreadId
+    const threadId = owner ?? null
     if (!threadId) return
+    const activeRun = state.runs[threadId]
+    const messageId = activeRun ? activeRun.messageId : state.streamingMessageId
 
     const updateAssistant = (fn: (m: ChatMessage) => ChatMessage): void => {
       set((s) => ({
@@ -728,12 +767,16 @@ export const useStore = create<State & Actions>((set, get) => ({
           t.id === threadId
             ? {
                 ...t,
-                messages: t.messages.map((m) => (m.id === s.streamingMessageId || m.streaming ? fn(m) : m))
+                messages: t.messages.map((m) =>
+                  m.id === messageId || (m.streaming && m.roleOf === get().activeRole) || (m.streaming && !messageId) ? fn(m) : m
+                )
               }
             : t
         )
       }))
     }
+    /** state that only makes sense for the session on screen */
+    const isVisible = (): boolean => get().activeThreadId === threadId
 
     switch (e.type) {
       case 'run-start':
@@ -745,13 +788,17 @@ export const useStore = create<State & Actions>((set, get) => ({
         // author had just streamed: the answer visibly vanished mid-run.
         const prev = get()
         const stageKey = e.runId
-        set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
         void stageKey
+        // The role chip and the activity line describe the session on screen. A
+        // second session working in the background must not relabel this one.
+        if (isVisible()) {
+          set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
+        }
         updateAssistant((m) => (m.streaming ? { ...m, streaming: false } : m))
         // Each stage announces itself at least twice (author → builder → author)
         // and the goal opens new builder rounds. A stage that produced nothing is
         // not a new bubble: it would render as a stray avatar with an empty trace.
-        const cur = get().threads.find((t) => t.id === threadId)?.messages.find((m) => m.id === get().streamingMessageId)
+        const cur = get().threads.find((t) => t.id === threadId)?.messages.find((m) => m.id === messageId)
         const curEmpty =
           !!cur &&
           !cur.content?.trim() &&
@@ -783,7 +830,11 @@ export const useStore = create<State & Actions>((set, get) => ({
           stage: e.phase
         }
         set((s) => ({
-          streamingMessageId: fresh.id,
+          // the stage message belongs to this run, not to the window
+          runs: s.runs[threadId]
+            ? { ...s.runs, [threadId]: { ...s.runs[threadId], messageId: fresh.id } }
+            : s.runs,
+          streamingMessageId: s.activeThreadId === threadId ? fresh.id : s.streamingMessageId,
           threads: s.threads.map((t) =>
             t.id === threadId ? { ...t, messages: [...t.messages, fresh], updatedAt: Date.now() } : t
           )
@@ -850,10 +901,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         break
       }
       case 'step':
-        set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
+        if (isVisible()) set({ activity: { step: e.step, label: tr('chat.stepThinking'), since: Date.now() } })
         break
       case 'tool-call':
-        set({ activity: { step: get().activity?.step || 1, label: activityLabel(e.call.name, e.call.args), since: Date.now() } })
+        if (isVisible()) {
+          set({ activity: { step: get().activity?.step || 1, label: activityLabel(e.call.name, e.call.args), since: Date.now() } })
+        }
         updateAssistant((m) => {
           const tools = m.tools || []
           const exists = tools.some((t) => t.id === e.call.id)
@@ -883,7 +936,9 @@ export const useStore = create<State & Actions>((set, get) => ({
         }))
         break
       case 'tool-approval-request':
-        set({ pendingApproval: e.call, approvalRunId: e.runId })
+        // A background session asking for permission must be visible: the modal
+        // is tied to the run it came from, and the sidebar marks that session.
+        set({ pendingApproval: e.call, approvalRunId: e.runId, approvalThreadId: threadId })
         get().toast('info', tr('chat.awaitingApproval'), e.call.name)
         // make sure the call is visible in the transcript
         updateAssistant((m) => ({
@@ -903,6 +958,12 @@ export const useStore = create<State & Actions>((set, get) => ({
         set((s) => ({ checkpoints: [e.checkpoint, ...s.checkpoints] }))
         break
       case 'files-changed': {
+        // The change list belongs to the session that made the changes.
+        if (!isVisible()) {
+          void get().refreshGit()
+          void get().refreshTree()
+          break
+        }
         const rels = e.paths.map((p) => {
           const ws = state.workspace || ''
           return p.startsWith(ws) ? p.slice(ws.length + 1).replace(/\\/g, '/') : p
@@ -915,7 +976,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       case 'activity':
         // The app itself is busy (writing the spec, checking the work): keep the
         // header alive instead of leaving the last label from three steps ago.
-        set({ activity: { step: e.step, label: e.label, since: Date.now() }, retryInfo: null })
+        if (isVisible()) set({ activity: { step: e.step, label: e.label, since: Date.now() }, retryInfo: null })
         break
       case 'goal-round': {
         // The run is not over: it is continuing, and the user should see that
@@ -998,14 +1059,16 @@ export const useStore = create<State & Actions>((set, get) => ({
       case 'run-retry': {
         // the stream died mid-answer: wipe the partial text so the retry does not
         // duplicate it, and show what is happening instead of a frozen spinner
-        set((s) => ({
-          activity: {
-            step: e.step,
-            label: tr('chat.reconnecting', { n: Math.round(e.waitMs / 1000) }),
-            since: s.activity?.since || Date.now()
-          },
-          retryInfo: { attempt: e.attempt, max: e.max, reason: e.reason, at: Date.now(), waitMs: e.waitMs }
-        }))
+        if (isVisible()) {
+          set((s) => ({
+            activity: {
+              step: e.step,
+              label: tr('chat.reconnecting', { n: Math.round(e.waitMs / 1000) }),
+              since: s.activity?.since || Date.now()
+            },
+            retryInfo: { attempt: e.attempt, max: e.max, reason: e.reason, at: Date.now(), waitMs: e.waitMs }
+          }))
+        }
         updateAssistant((m) => ({ ...m, content: '', reasoning: '' }))
         break
       }
@@ -1079,7 +1142,27 @@ export const useStore = create<State & Actions>((set, get) => ({
             : m.tools
           }
         })
-        set({ running: false, pendingApproval: null, activity: null, retryInfo: null, activeRole: null })
+        // Only this run ends; the other session keeps its own state.
+        set((s) => {
+          const runs = { ...s.runs }
+          delete runs[threadId]
+          const stillRunning = Object.keys(runs).length > 0
+          const visible = s.activeThreadId === threadId
+          return {
+            runs,
+            running: stillRunning,
+            runId: visible ? s.runId : s.runId,
+            ...(visible
+              ? {
+                  pendingApproval: null,
+                  activity: null,
+                  retryInfo: null,
+                  activeRole: null,
+                  runId: null
+                }
+              : {})
+          }
+        })
         void window.comb.app.attention(false)
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         // A stage that streamed nothing leaves an empty bubble: remove it, or the
@@ -1394,3 +1477,22 @@ export function timeAgo(ts: number): string {
   if (d < 604_800_000) return `${Math.floor(d / 86_400_000)}d`
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
+
+/**
+ * Is the session on screen the one that is running?
+ *
+ * The composer, the Stop button, the plan panel and the "thinking" row all act on
+ * one session. With two sessions in flight, `running` was a single window-wide
+ * flag: the second session refused to start ("already running") and, worse, the
+ * events of whichever run was live were written into whichever thread happened to
+ * be open — the first chat simply stopped mid-answer. Work is tracked per thread
+ * now, and these selectors are how the UI asks "about this one".
+ */
+export const useThreadBusy = (threadId: string | null | undefined): boolean =>
+  useStore((s) => !!threadId && !!s.runs[threadId])
+
+export const threadBusy = (threadId: string | null | undefined): boolean =>
+  !!threadId && !!useStore.getState().runs[threadId]
+
+export const useLiveRun = (): string | null =>
+  useStore((s) => (s.activeThreadId ? s.runs[s.activeThreadId]?.runId ?? null : null))
