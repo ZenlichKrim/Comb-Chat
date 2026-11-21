@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Capabilities, SpecCheck, SpecReport } from '../shared/types'
 import { completeOnce } from './llm'
+import { foreignDomains } from './domains'
 
 /**
  * The contract.
@@ -50,39 +51,41 @@ export function readSpec(workspace: string | null): string {
   }
 }
 
-/** Two requests are the same task when their opening words agree. */
+/**
+ * The spec for this request, or '' when it belongs to another task.
+ *
+ * No guessing and no legacy path: a contract is used only when it carries the
+ * stamp of this exact request (same ask, or a continuation of it). Anything else
+ * — an older file, a spec with no stamp, a contract for a neighbouring task — is
+ * not a contract. Ignoring it costs one cheap rewrite; adopting it costs the
+ * whole task, which is exactly what the user kept seeing.
+ */
+export function specForRequest(workspace: string | null, request: string): string {
+  const raw = readSpec(workspace)
+  if (!raw) return ''
+  const at = raw.indexOf(SPEC_STAMP)
+  if (at < 0) return ''
+  const end = raw.indexOf('-->', at)
+  const stamped = end > at ? raw.slice(at + SPEC_STAMP.length, end) : ''
+  if (!stamped.trim() || !request.trim()) return ''
+  if (!sameTask(stamped, request)) return ''
+  // Same ask, but a domain was injected into the contract that the request never
+  // mentions: that is a contaminated spec, not a contract.
+  if (foreignDomains(raw, request).length) return ''
+  return raw
+}
+
+/** Two requests are the same task when one is the other, or its continuation. */
 function sameTask(a: string, b: string): boolean {
   const norm = (t: string) => (t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   const x = norm(a)
   const y = norm(b)
   if (!x || !y) return false
   if (x === y) return true
+  // a continued run ("продолжай", "дальше по тому же") is the same task
+  if (/^(продолж|дальше|continue|keep going)/.test(y)) return true
   const head = (t: string) => t.split(' ').slice(0, 12).join(' ')
-  return head(x) === head(y) || x.startsWith(head(y)) || y.startsWith(head(x))
-}
-
-/**
- * The spec for this request, or '' when the file belongs to another task.
- * A spec without a stamp predates this rule; it is trusted only when its
- * criteria clearly came from this request's words.
- */
-export function specForRequest(workspace: string | null, request: string): string {
-  const raw = readSpec(workspace)
-  if (!raw) return ''
-  const at = raw.indexOf(SPEC_STAMP)
-  if (at >= 0) {
-    const end = raw.indexOf('-->', at)
-    const stamped = end > at ? raw.slice(at + SPEC_STAMP.length, end) : ''
-    return sameTask(stamped, request) ? raw : ''
-  }
-  // legacy: unstamped spec — keep it only if the request shares its wording
-  const criteria = specCriteria(raw)
-  const words = (request || '').toLowerCase()
-  const hit = criteria.filter((c) => {
-    const key = c.toLowerCase().split(/\s+/).filter((w) => w.length > 4)[0]
-    return key ? words.includes(key) : false
-  })
-  return hit.length >= Math.min(2, criteria.length) ? raw : ''
+  return x.startsWith(head(y)) || y.startsWith(head(x))
 }
 
 /**
@@ -132,6 +135,9 @@ Rules:
 - Include a section «Границы»: what is explicitly NOT being done in this round, so the builder cannot pad instead of delivering.
 - Include a section «Доказательства»: one line per criterion saying how it will be proven (file path, command, screenshot).
 - If the user asked for a system, the spec must name the parts of that system, enumerate them from the request's own domain and technologies, and mark which parts are this round. Never narrow a request to one feature of it.
+- Stay in the request's own technology and domain. Never name a game, engine, platform or file format the user did not name or imply. If the request is about a game, a map, a 3D asset or a mod, the stack comes from the request and from the files in the project — not from another project in the same folder. A criterion that requires a technology the user did not ask for is a wrong spec, not a safe one.
+- If the user's words name one thing and the project folder contains another (a research folder, a leftover build, a spec from an earlier task), the user's words win. Write the criteria for what was asked.
+- If a criterion cannot be guaranteed (quality, feel, visual level), do not silently drop it: state it as a goal with the concrete check that will be used, or say plainly what is not guaranteed and what will be done instead. Never remove the part of the request that made it worth doing.
 - Never invent requirements the user did not imply. Ambiguity goes into «Открытые вопросы» as a decision you made with one line of reasoning.
 - Output ONLY the markdown spec. No preamble, no code fences around the whole thing.`
 
@@ -207,6 +213,7 @@ Rules:
 - Judge what is in the files, not what the report claims. A report that calls a feature complete over four stub files is a FAIL.
 - A criterion is "done" only if you can point at the code that satisfies it. Otherwise "fail" with a one-line reason and, when useful, a concrete instruction.
 - Judge scope too: if the user asked for a system and the code covers a corner of it, that is a fail even when every written file is fine. Say which parts are missing.
+- Judge the domain: work that solves the request in a different technology, engine or file format than the user asked for is a fail, even when it is well made. "It is easier in X" is not a reason to deliver X.
 - Be specific and short. No praise. No restating the spec.
 - Answer ONLY with JSON:
 {"checks":[{"claim":"<criterion, short>","status":"done|fail","evidence":"<file: what in it proves it>","fix":"<what to do, only when fail>"}],"verdict":"done|rework","summary":"<one sentence for the user>"}`
@@ -233,6 +240,9 @@ export async function checkAgainstSpec(opts: {
   const filesText = opts.files.length
     ? opts.files.map((f) => `### ${f.path}\n\`\`\`\n${f.body}\n\`\`\``).join('\n\n')
     : '(the run changed no files)'
+  // The checker must know where the project lives and what the request is, so it
+  // cannot pass work that drifted into another domain, and cannot fail work for
+  // not using a stack nobody asked for.
   const user =
     `ЗАПРОС ПОЛЬЗОВАТЕЛЯ:\n${opts.request.slice(0, 3000)}\n\n` +
     `КРИТЕРИИ ПРИЁМКИ:\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}\n\n` +

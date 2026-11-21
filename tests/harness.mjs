@@ -403,6 +403,11 @@ const { specForRequest, writeSpec } = await import('../src/main/spec.ts')
 writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. карта уровня\n2. файлы игры на месте')
 check('another task\'s spec is ignored', specForRequest(workspace, 'сделай мод про снег') === '', specForRequest(workspace, 'сделай мод про снег').slice(0, 60))
 check('the matching task keeps its spec', specForRequest(workspace, 'сделай карту для игры peak').includes('карта уровня'))
+// the exact failure the user hit: a Peak map task coming back as a Minecraft world
+writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. ванильный мир Minecraft Java\n2. region-файлы сгенерированы')
+check('a spec that injected another domain is refused', specForRequest(workspace, 'сделай карту для игры peak') === '', specForRequest(workspace, 'сделай карту для игры peak').slice(0, 80))
+fs.writeFileSync(path.join(workspace, 'SPEC.md'), '1. карта уровня\n2. ванильный мир Minecraft Java')
+check('an old unstamped spec is never adopted', specForRequest(workspace, 'сделай карту для игры peak') === '')
 
 /* 14. reading is not punished when reading is the job -------------- */
 console.log('reading as the job:')

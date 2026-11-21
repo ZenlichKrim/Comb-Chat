@@ -15,6 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { executeTool, spillText, READ_ONLY_TOOLS } from '../src/main/tools.ts'
 import { mergeLedger, roundPrompt, shouldContinue } from '../src/main/goal.ts'
+import { specForRequest, writeSpec } from '../src/main/spec.ts'
 import { scoreAppMatch } from '../src/main/discover.ts'
 
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'comb-tools-'))
@@ -91,6 +92,18 @@ ledger = mergeLedger(ledger, { touched: [written], report: 'Невозможно
 assert.equal(ledger.done.length, 1, 'the same file is not recorded twice')
 assert.equal(ledger.ruledOut.length, 1)
 assert.match(ledger.ruledOut[0], /нет JDK/)
+
+/* the contract must never travel between tasks or domains */
+writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. [[карта]] уровня\n2. файлы игры на месте')
+assert.equal(specForRequest(workspace, 'сделай карту для игры peak'), specForRequest(workspace, 'сделай карту для игры peak'))
+// a stamped spec is used only for its own request
+assert.equal(specForRequest(workspace, 'сделай мод про снег'), '')
+// a spec that injected another domain is refused even for the same ask
+writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. ванильный мир Minecraft Java\n2. region-файлы')
+assert.equal(specForRequest(workspace, 'сделай карту для игры peak'), '')
+// a legacy unstamped spec is never adopted
+fs.writeFileSync(path.join(workspace, 'SPEC.md'), '1. карта уровня\n2. ванильный мир Minecraft Java')
+assert.equal(specForRequest(workspace, 'сделай карту для игры peak'), '')
 
 const prompt = roundPrompt({
   objective: 'Собрать мод',
