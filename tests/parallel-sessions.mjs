@@ -213,6 +213,34 @@ useStore.getState().handleEvent({ type: 'run-end', runId: `${runIdD}:build`, rea
 const threadD = useStore.getState().threads.find((t) => t.id === d)
 check('the author\'s answer does not vanish when the next stage starts', threadD.messages.some((m) => (m.content || '').includes('ВОТ ЧТО Я ДУМАЮ')), threadD.messages.map((m) => (m.content || '').slice(0, 20)).join(' | '))
 
+// A child stage's text must reach the bubble the user is looking at
+useStore.getState().selectThread(d)
+useStore.getState().handleEvent({ type: 'text-delta', runId: `${runIdD}:review`, text: 'ВТОРОЙ ЭТАП ПИШЕТ', threadId: d })
+const threadD2 = useStore.getState().threads.find((t) => t.id === d)
+check('text of a child stage lands in the run\'s message', threadD2.messages.some((m) => (m.content || '').includes('ВТОРОЙ ЭТАП ПИШЕТ')), threadD2.messages.map((m) => (m.content || '').slice(0, 24)).join(' | '))
+
+// text that arrives with no message id at all must not vanish either
+useStore.getState().handleEvent({ type: 'text-delta', runId: 'run-untracked', text: 'БЕЗ ID', threadId: d })
+const threadD3 = useStore.getState().threads.find((t) => t.id === d)
+check('text without a message id is not dropped', threadD3.messages.some((m) => (m.content || '').includes('БЕЗ ID')), threadD3.messages.map((m) => (m.content || '').slice(0, 24)).join(' | '))
+
+// A full multi-stage stream: every sentence must survive to the end
+useStore.getState().selectThread(a)
+await useStore.getState().sendMessage('пятая задача')
+const e = useStore.getState().activeThreadId
+const runE = useStore.getState().runs[e].runId
+const streamed = ['Автор', ' думает', ' вслух,', ' и это', ' важно.', ' Сборщик', ' делает.', ' Ревью', ' проверяет.']
+useStore.getState().handleEvent({ type: 'role', runId: runE, role: 'author', phase: 'thinking', threadId: e })
+for (const chunk of streamed.slice(0, 5)) useStore.getState().handleEvent({ type: 'text-delta', runId: runE, text: chunk, threadId: e })
+useStore.getState().handleEvent({ type: 'role', runId: `${runE}:build`, role: 'builder', phase: 'working', threadId: e })
+for (const chunk of streamed.slice(5, 7)) useStore.getState().handleEvent({ type: 'text-delta', runId: `${runE}:build`, text: chunk, threadId: e })
+useStore.getState().handleEvent({ type: 'run-end', runId: `${runE}:build`, reason: 'done', threadId: e })
+useStore.getState().handleEvent({ type: 'role', runId: `${runE}:review`, role: 'author', phase: 'review', threadId: e })
+for (const chunk of streamed.slice(7)) useStore.getState().handleEvent({ type: 'text-delta', runId: `${runE}:review`, text: chunk, threadId: e })
+useStore.getState().handleEvent({ type: 'run-end', runId: runE, reason: 'done', threadId: e })
+const allText = useStore.getState().threads.find((t) => t.id === e).messages.map((m) => m.content || '').join('')
+check('every streamed sentence survives a full multi-stage run', streamed.every((c) => allText.includes(c)), allText.replace(/\n/g, ' ').slice(0, 200))
+
 // stopping is per session
 await useStore.getState().stopRun()
 

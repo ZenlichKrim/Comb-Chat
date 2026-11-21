@@ -811,11 +811,44 @@ export const useStore = create<State & Actions>((set, get) => ({
     // already in the channel would otherwise find a new home.
     if (deletedThreads.has(threadId) || !state.threads.some((t) => t.id === threadId)) return
     const activeRun = state.runs[threadId]
-    // Same story for the message: a child stage writes into the bubble of the
-    // session on screen if we let it fall back while another session is streaming.
-    const messageId = activeRun ? activeRun.messageId : state.activeThreadId === threadId ? state.streamingMessageId : undefined
+    // Which message this event belongs to. A child stage (`run:build`,
+    // `run:review`, `run:goal2`) owns no entry of its own, and asking only for its
+    // exact id gave `undefined` — so its text was appended to a bubble that did not
+    // exist and the user watched the answer disappear mid-run. A stage belongs to
+    // the run it was spawned from: inherit the parent's message id.
+    const parentKey = Object.keys(state.runs).find((k) => e.runId.startsWith(`${k}:`))
+    const parentRun = parentKey ? state.runs[parentKey] : undefined
+    const threadMsgs = state.threads.find((t) => t.id === threadId)?.messages || []
+    const messageId = activeRun
+      ? activeRun.messageId
+      : parentRun
+        ? parentRun.messageId
+        : state.activeThreadId === threadId
+          ? state.streamingMessageId || [...threadMsgs].reverse().find((m) => m.role === 'assistant' && (m.streaming || !m.content?.trim()))?.id
+          : [...threadMsgs].reverse().find((m) => m.role === 'assistant' && m.streaming)?.id
 
     const updateAssistant = (fn: (m: ChatMessage) => ChatMessage): void => {
+      // Text with nowhere to go is still text the user asked for. If no bubble
+      // matches, make one — losing a sentence is worse than an extra bubble.
+      if (messageId === undefined) {
+        const hasVoice = threadMsgs.some((m) => m.role === 'assistant' && (m.streaming || m.content?.trim()))
+        if (!hasVoice) {
+          const fresh: ChatMessage = {
+            id: uid('msg'),
+            role: 'assistant',
+            content: '',
+            reasoning: '',
+            createdAt: Date.now(),
+            model: get().settings.model,
+            tools: [],
+            streaming: true
+          }
+          set((s) => ({
+            threads: s.threads.map((t) => (t.id === threadId ? { ...t, messages: [...t.messages, fn(fresh)] } : t))
+          }))
+          return
+        }
+      }
       set((s) => ({
         threads: s.threads.map((t) =>
           t.id === threadId
@@ -1204,7 +1237,18 @@ export const useStore = create<State & Actions>((set, get) => ({
             : m.tools
           }
         })
-        // Only this run ends; the other session keeps its own state.
+        // A run ends — and only that run. This fires for child stages too
+        // (`run:build`, `run:review`), which are not the session's run: deleting
+        // the session's registration there un-tracked a run that was still going,
+        // and every later sentence of it was appended to a bubble that no longer
+        // existed. That is the answer that vanished while the user was reading it.
+        const endedRunId = e.runId || state.runs[threadId]?.runId
+        const sessionRunId = state.runs[threadId]?.runId
+        const isChildEnd = !!sessionRunId && !!endedRunId && endedRunId.startsWith(`${sessionRunId}:`)
+        if (isChildEnd) {
+          // the stage is over, the session keeps working: nothing to unregister
+          break
+        }
         set((s) => {
           const runs = { ...s.runs }
           delete runs[threadId]

@@ -1050,7 +1050,10 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
   const t = useT()
   // Closed by default. A run is 10-40 steps; printing every paragraph of them
   // turns the transcript into a wall you have to scroll past to reach the answer.
-  const [open, setOpen] = useState(false)
+  // While the run is live the trace is open: the user is watching a long task
+  // and wants to read what the agent is saying, not a collapsed counter. It folds
+  // itself once the run ends, so the finished transcript stays calm.
+  const [open, setOpen] = useState(live)
   const [wide, setWide] = useState<Set<string>>(new Set())
   const actions = steps.reduce((n, s) => n + s.actions.length, 0)
   // A step with neither a sentence nor an action is not a step: it is a leftover
