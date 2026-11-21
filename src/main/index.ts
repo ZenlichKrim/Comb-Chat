@@ -466,9 +466,10 @@ function registerIpc(): void {
     void accent
     // The paper theme is a light surface: native menus, dialogs and the window
     // frame must follow it, or the app looks like a light page in a dark shell.
-    nativeTheme.themeSource = theme === 'paper' ? 'light' : 'dark'
+    const light = theme === 'paper' || theme === 'light'
+    nativeTheme.themeSource = light ? 'light' : 'dark'
     if (mainWindow && process.platform !== 'darwin') {
-      mainWindow.setBackgroundColor(theme === 'paper' ? '#f4f2ec' : '#100e0c')
+      mainWindow.setBackgroundColor(light ? '#ffffff' : '#100e0c')
     }
   })
 }
@@ -489,8 +490,9 @@ if (!gotLock) {
   })
 
   app.whenReady().then(async () => {
-    nativeTheme.themeSource = 'dark'
-    const settings = await store.getSettings()
+    const bootSettings = await store.getSettings()
+    nativeTheme.themeSource = bootSettings.theme === 'light' || bootSettings.theme === 'paper' ? 'light' : 'dark'
+    const settings = bootSettings
     if (!settings.apiKey && !process.env.COMB_NO_ONBOARD) {
       /* first run: renderer shows onboarding */
     }

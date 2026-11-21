@@ -25,7 +25,7 @@ export interface Capabilities {
 
 /** One agent. Kept as a named type because events still carry the stage. */
 export type AgentRole = 'agent'
-export type ThemeId = 'comb' | 'ember' | 'forest' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
+export type ThemeId = 'light' | 'comb' | 'ember' | 'forest' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
 export type Locale = 'en' | 'ru'
@@ -206,7 +206,7 @@ export const DEFAULT_SETTINGS: Settings = {
   temperature: 0.2,
   maxTokens: 16384,
   approvalPolicy: 'ask',
-  theme: 'comb',
+  theme: 'light',
   /** 'auto' = the accent that belongs to the chosen theme */
   accent: 'auto',
   fontSize: 13,

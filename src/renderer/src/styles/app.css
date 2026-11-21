@@ -1544,16 +1544,18 @@ a.code-ref code {
   margin: 0 auto;
 }
 .composer {
+  /* A field you type in, the way the reference draws it: one rounded surface,
+     one hairline, no toolbar strip with its own colour. */
   border: 1px solid var(--line-2);
-  border-radius: var(--r-lg);
-  background: var(--bg-2);
+  border-radius: var(--r-xl);
+  background: var(--bg-0);
   transition: border-color var(--dur), box-shadow var(--dur);
   /* not hidden: the note popover has to escape the composer box */
   position: relative;
 }
 .composer:focus-within {
-  border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--line-3);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.06);
 }
 .composer[data-running='true'] {
   border-color: color-mix(in oklab, var(--accent) 55%, transparent);
@@ -1593,9 +1595,9 @@ a.code-ref code {
   border: none;
   outline: none;
   resize: none;
-  padding: 10px 12px 4px;
+  padding: 12px 16px 2px;
   font-family: var(--font-ui);
-  font-size: var(--fs-md);
+  font-size: calc(var(--fs-md) + 1px);
   line-height: 1.6;
   color: var(--fg-0);
   max-height: 260px;
@@ -1607,8 +1609,8 @@ a.code-ref code {
 .composer-bar {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 6px 6px;
+  gap: 4px;
+  padding: 2px 8px 8px;
 }
 .composer-chip {
   display: inline-flex;
@@ -1652,9 +1654,9 @@ a.code-ref code {
   background: var(--warn);
 }
 .send-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--r-sm);
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-full);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2400,22 +2402,25 @@ button.sb-item:hover {
   animation: fade-in 120ms var(--ease);
 }
 .settings {
-  width: min(1000px, 92vw);
-  height: min(700px, 88vh);
-  background: var(--bg-1);
-  border: 1px solid var(--line-3);
-  border-radius: var(--r-xl);
+  /* The reference's settings: a titled sheet, a short list of sections on the
+     left, and sparse rows on the right. Smaller than a page, larger than a
+     dialog, with the page still visible around it. */
+  width: min(880px, 92vw);
+  height: min(640px, 88vh);
+  background: var(--bg-0);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-3);
   display: flex;
   overflow: hidden;
   animation: pop-in 180ms var(--ease-out);
 }
 .settings-nav {
-  width: 186px;
+  width: 190px;
   flex: none;
-  background: var(--bg-0);
+  background: var(--bg-1);
   border-right: 1px solid var(--line-1);
-  padding: 12px 8px;
+  padding: 14px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2448,8 +2453,8 @@ button.sb-item:hover {
   color: var(--fg-0);
 }
 .settings-tab[data-active='true'] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--bg-3);
+  color: var(--fg-0);
   font-weight: 600;
 }
 .settings-version {
@@ -2462,11 +2467,11 @@ button.sb-item:hover {
   min-width: 0;
 }
 .settings-section {
-  padding: 26px 30px 36px;
-  max-width: 700px;
+  padding: 22px 28px 32px;
+  max-width: 620px;
 }
 .settings-title {
-  font-size: var(--fs-xl);
+  font-size: var(--fs-lg);
   font-weight: 700;
   color: var(--fg-0);
   margin: 0 0 5px;
@@ -2731,6 +2736,15 @@ button.sb-item:hover {
 }
 .theme-nord .tp-acc {
   background: #88c0d0;
+}
+.theme-light {
+  background: #ffffff;
+}
+.theme-light .tp-line {
+  background: #cfcfcc;
+}
+.theme-light .tp-acc {
+  background: #27272a;
 }
 .theme-paper {
   background: #eeebe3;
@@ -3420,7 +3434,7 @@ hr {
   border-radius: var(--r-md);
   border: 1px solid var(--line-2);
   background: var(--bg-1);
-  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.22);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -3475,7 +3489,7 @@ hr {
   border-radius: 18px;
   border: 1px solid var(--line-2);
   background: var(--bg-1);
-  box-shadow: 0 32px 80px -30px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 32px 80px -30px rgb(0 0 0 / 0.26);
   overflow: hidden;
 }
 .notes-head {
@@ -3565,7 +3579,7 @@ hr {
 }
 .note-tile:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 10px 24px -14px rgb(0 0 0 / 0.2);
 }
 .note-tile[data-compact='true'] {
   min-height: 0;
@@ -3605,7 +3619,7 @@ hr {
 }
 .note-mini:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgb(0 0 0 / 0.18);
 }
 .note-text {
   font-size: var(--fs-sm);
@@ -3795,7 +3809,7 @@ hr {
   border-radius: var(--r-md);
   background: var(--bg-1);
   border: 1px solid var(--line-2);
-  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 16px 40px -12px rgb(0 0 0 / 0.18);
   animation: menu-in 0.12s ease both;
 }
 @keyframes menu-in {
@@ -3846,6 +3860,26 @@ hr {
   gap: 5px;
   padding: 0 4px;
   opacity: 0.75;
+}
+.composer-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
+  white-space: nowrap;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.composer-access:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+}
+.composer-access[data-wide='true'] {
+  color: var(--fg-1);
+  background: var(--bg-3);
 }
 .composer-state-badge {
   display: inline-flex;
@@ -4063,7 +4097,7 @@ hr {
   border-radius: 22px;
   background: var(--bg-1);
   border: 1px solid var(--line-2);
-  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 24px 60px -18px rgb(0 0 0 / 0.2);
   transform-origin: bottom left;
   animation: launcher-rise 0.16s cubic-bezier(0.3, 0.9, 0.3, 1) both;
 }
@@ -4223,7 +4257,7 @@ hr {
   backdrop-filter: blur(14px);
   border: 1px solid var(--line-2);
   border-left: 3px solid var(--ok);
-  box-shadow: 0 30px 70px -24px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 30px 70px -24px rgb(0 0 0 / 0.22);
   cursor: pointer;
   animation: attention-in 0.28s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
@@ -4726,8 +4760,10 @@ hr {
   color: var(--fg-1);
 }
 .perm-opt[data-on='true'] {
-  background: color-mix(in oklab, var(--accent) 22%, var(--bg-2));
+  background: var(--bg-0);
+  border: 1px solid var(--line-2);
   color: var(--fg-0);
+  font-weight: 600;
 }
 
 /* who is speaking: one small chip, two quiet colours */
@@ -4741,7 +4777,7 @@ hr {
    ========================================================================== */
 
 :root {
-  --surface-raise: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.35);
+  --surface-raise: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px rgb(0 0 0 / 0.16);
   --hairline: color-mix(in oklab, var(--fg-0) 7%, transparent);
 }
 
@@ -4955,18 +4991,45 @@ hr {
   line-height: 1.6;
 }
 
-/* ---- sidebar: one column of names ------------------------------------ */
-.sb-head {
+/* ---- sidebar: sessions first, tools below ---------------------------- */
+.sb-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sb-actions {
   display: flex;
   align-items: center;
-  height: 34px;
-  flex: none;
-  padding: 0 6px;
   gap: 4px;
+  padding: 0 2px 6px;
+}
+.sb-new {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  border: 1px solid var(--line-2);
+  background: var(--bg-0);
+  white-space: nowrap;
+}
+.sb-new:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
 }
 .sb-tool {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4977,11 +5040,22 @@ hr {
   background: var(--bg-2);
   color: var(--fg-0);
 }
+.sb-threads {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-bottom: 6px;
+}
+.sb-divider {
+  height: 1px;
+  background: var(--line-1);
+  margin: 8px 4px 6px;
+}
 .sb-rows {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 0 6px 8px;
+  padding: 0;
   flex: none;
 }
 .sb-row {
@@ -4995,6 +5069,7 @@ hr {
   color: var(--fg-2);
   text-align: left;
   white-space: nowrap;
+  width: 100%;
 }
 .sb-row:hover {
   background: var(--bg-2);
@@ -5006,7 +5081,7 @@ hr {
 }
 .sb-row-icon {
   flex: none;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 .sb-row-badge {
   margin-left: auto;
@@ -5014,7 +5089,7 @@ hr {
   height: 16px;
   padding: 0 4px;
   border-radius: var(--r-full);
-  background: var(--bg-4);
+  background: var(--bg-3);
   color: var(--fg-2);
   font-size: 9px;
   font-weight: 700;
@@ -5022,10 +5097,31 @@ hr {
   align-items: center;
   justify-content: center;
 }
+.sb-foot {
+  flex: none;
+  padding: 6px;
+  border-top: 1px solid var(--line-1);
+}
+.sb-body[data-open='true'] {
+  flex: 1;
+  min-height: 0;
+  border-top: 1px solid var(--line-1);
+  padding-top: 4px;
+}
+.sb-head {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
 .thread-row {
   align-items: center;
-  gap: 9px;
-  padding: 6px 9px;
+  gap: 8px;
+  padding: 0 8px;
+  height: 28px;
+  width: 100%;
+  min-width: 0;
   border-radius: var(--r-md);
   border: none;
   background: transparent;
@@ -5035,6 +5131,16 @@ hr {
 }
 .thread-row[data-active='true'] {
   background: var(--bg-3);
+  color: var(--fg-0);
+}
+.thread-time {
+  flex: none;
+  font-size: var(--fs-2xs);
+  color: var(--fg-4);
+  font-variant-numeric: tabular-nums;
+}
+.thread-row:hover .thread-time {
+  display: none;
 }
 .thread-dot {
   width: 5px;

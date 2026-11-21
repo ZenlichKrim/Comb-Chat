@@ -32,42 +32,111 @@ export function Sidebar(): React.ReactElement {
 
   return (
     <aside className="sidebar" data-open={sidebarOpen}>
-      <div className="sb-head">
-        {sidebarOpen && (
+      {sidebarOpen && (
+        <>
+          {/* The session list is the sidebar, the way it is in the reference:
+              new session as a row, then the sessions themselves, then the
+              tools (files, search, git) as quieter rows with their panels
+              opening underneath. No tabs, no rail, no headers. */}
+          <div className="sb-scroll">
+            <div className="sb-actions">
+              <button className="sb-new" onClick={() => newThread()}>
+                <Icon name="plus" size={13} />
+                <span>{t('side.newSession')}</span>
+              </button>
+              <button
+                className="sb-tool"
+                onClick={() => useStore.setState({ sidebarOpen: false })}
+                data-tip={t('title.toggleSidebar')}
+              >
+                <Icon name="chevron-left" size={12} />
+              </button>
+            </div>
+
+            <ThreadsList />
+
+            <div className="sb-divider" />
+            {row('files', t('side.explorer'), 'file')}
+            {row('search', t('side.search'), 'search')}
+            {row('git', t('side.sourceControl'), 'git', changes)}
+          </div>
+
+          <div className="sb-body" data-open={section !== 'threads' ? 'true' : undefined}>
+            {section === 'files' && <FileTree />}
+            {section === 'search' && <SearchPanel />}
+            {section === 'git' && <GitPanel />}
+          </div>
+
+          <div className="sb-foot">
+            <button className="sb-row" onClick={() => useStore.setState({ settingsOpen: true })}>
+              <Icon name="settings" size={12} className="sb-row-icon" />
+              <span className="ellipsis">{t('side.settings')}</span>
+            </button>
+          </div>
+        </>
+      )}
+      {!sidebarOpen && (
+        <div className="sb-head">
           <button className="sb-tool" onClick={() => newThread()} data-tip={t('side.newSession')}>
             <Icon name="plus" size={12} />
           </button>
-        )}
-        <span className="spacer" />
-        <button
-          className="sb-tool"
-          onClick={() => useStore.setState({ sidebarOpen: !sidebarOpen })}
-          data-tip={t('title.toggleSidebar')}
-        >
-          <Icon name={sidebarOpen ? 'chevron-left' : 'chevron-right'} size={12} />
-        </button>
-      </div>
-
-      {sidebarOpen && (
-        <div className="sb-rows">
-          {row('threads', t('side.sessions'), 'chat')}
-          {row('files', t('side.explorer'), 'file')}
-          {row('search', t('side.search'), 'search')}
-          {row('git', t('side.sourceControl'), 'git', changes)}
-          <button className="sb-row" onClick={() => useStore.setState({ settingsOpen: true })}>
-            <Icon name="settings" size={12} className="sb-row-icon" />
-            <span className="ellipsis">{t('side.settings')}</span>
+          <button
+            className="sb-tool"
+            onClick={() => useStore.setState({ sidebarOpen: true })}
+            data-tip={t('title.toggleSidebar')}
+          >
+            <Icon name="chevron-right" size={12} />
           </button>
         </div>
       )}
-
-      <div className="sb-body" data-open={sidebarOpen}>
-        {sidebarOpen && section === 'files' && <FileTree />}
-        {sidebarOpen && section === 'search' && <SearchPanel />}
-        {sidebarOpen && section === 'git' && <GitPanel />}
-        {sidebarOpen && section === 'threads' && <ThreadsPanel />}
-      </div>
     </aside>
+  )
+}
+
+/** The sessions: one line of text and a time, exactly like the reference. */
+function ThreadsList(): React.ReactElement {
+  const t = useT()
+  const threads = useStore((s) => s.threads)
+  const activeId = useStore((s) => s.activeThreadId)
+  const select = useStore((s) => s.selectThread)
+  const remove = useStore((s) => s.deleteThread)
+  const runs = useStore((s) => s.runs)
+  const approvals = useStore((s) => s.approvalThreadId)
+  const [q, setQ] = useState('')
+  const filtered = q ? threads.filter((t) => t.title.toLowerCase().includes(q.toLowerCase())) : threads
+
+  return (
+    <div className="sb-threads">
+      {threads.length > 8 && (
+        <div className="tree-filter">
+          <Icon name="search" size={11} className="faint" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
+        </div>
+      )}
+      {filtered.map((thread) => (
+        <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>
+          <span
+            className="thread-dot"
+            data-busy={runs[thread.id] ? 'true' : undefined}
+            data-await={approvals === thread.id ? 'true' : undefined}
+            title={approvals === thread.id ? t('side.waitingYou') : runs[thread.id] ? t('side.working') : undefined}
+          />
+          <span className="ellipsis t-sm thread-title">{thread.title}</span>
+          <span className="thread-time">{timeAgo(thread.updatedAt)}</span>
+          <button
+            className="icon-btn thread-del"
+            style={{ width: 18, height: 18 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (window.confirm(t('side.deleteSession'))) void remove(thread.id)
+            }}
+          >
+            <Icon name="trash" size={11} />
+          </button>
+        </div>
+      ))}
+      {!filtered.length && <div className="t-xs ghost" style={{ padding: '6px 10px' }}>{t('side.noSessions')}</div>}
+    </div>
   )
 }
 
@@ -674,65 +743,6 @@ function GitPanel(): React.ReactElement {
             ))}
           </>
         )}
-      </div>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-/* Threads                                                             */
-/* ------------------------------------------------------------------ */
-
-function ThreadsPanel(): React.ReactElement {
-  const t = useT()
-  const threads = useStore((s) => s.threads)
-  const activeId = useStore((s) => s.activeThreadId)
-  const select = useStore((s) => s.selectThread)
-  const remove = useStore((s) => s.deleteThread)
-  const newThread = useStore((s) => s.newThread)
-  const [q, setQ] = useState('')
-  const runs = useStore((s) => s.runs)
-  const approvals = useStore((s) => s.approvalThreadId)
-  const filtered = q ? threads.filter((t) => t.title.toLowerCase().includes(q.toLowerCase())) : threads
-
-  return (
-    <div className="col grow" style={{ minHeight: 0 }}>
-      {threads.length > 6 && (
-        <div className="tree-filter">
-          <Icon name="search" size={11} className="faint" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
-        </div>
-      )}
-      <div className="tree-scroll">
-        {filtered.map((thread) => (
-          <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>
-            {/* a session that is working shows it from here, whichever one is
-                open — otherwise background work is invisible and reads as frozen */}
-            <span
-              className="thread-dot"
-              data-busy={runs[thread.id] ? 'true' : undefined}
-              data-await={approvals === thread.id ? 'true' : undefined}
-              title={approvals === thread.id ? t('side.waitingYou') : runs[thread.id] ? t('side.working') : undefined}
-            />
-            <div className="col grow" style={{ gap: 1, minWidth: 0 }}>
-              <span className="ellipsis t-sm thread-title">{thread.title}</span>
-              <span className="t-xs ghost thread-meta">
-                {t('side.msgs', { n: thread.messages.filter((m) => m.role === 'user').length })} · {timeAgo(thread.updatedAt)}
-              </span>
-            </div>
-            <button
-              className="icon-btn thread-del"
-              style={{ width: 18, height: 18 }}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (window.confirm(t('side.deleteSession'))) void remove(thread.id)
-              }}
-            >
-              <Icon name="trash" size={11} />
-            </button>
-          </div>
-        ))}
-        {!filtered.length && <div className="t-xs ghost" style={{ padding: 12 }}>{t('side.noSessions')}</div>}
       </div>
     </div>
   )

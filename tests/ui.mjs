@@ -99,23 +99,35 @@ const render = () => {
 useStore.setState({ settings: { ...useStore.getState().settings, locale: 'ru' } })
 useStore.setState({ sidebarOpen: true, sidebarSection: 'threads' })
 let html = render()
-for (const label of ['Сессии', 'Проводник', 'Поиск', 'Контроль версий', 'Настройки']) {
+for (const label of ['Новая сессия', 'Проводник', 'Поиск', 'Контроль версий', 'Настройки']) {
   check(`the sidebar says "${label}" in words`, html.includes(label), html.slice(0, 400))
 }
 check('there is no icon-only rail any more', !/class="sb-tab/.test(html), html.slice(0, 300))
 check('the open/close control is a real button in the header', html.includes('sb-tool'))
-check('the session list is the body of "Сессии"', html.includes('thread-row') && html.includes('Сделай мод про снег'))
+check('the sessions themselves are in the sidebar, like the reference', html.includes('thread-row') && html.includes('Сделай мод про снег'))
+check('a session shows its age, not a badge wall', /thread-time/.test(html))
 
-/* 2. a click switches the body -------------------------------------- */
+/* 2. a click opens a panel under the list, and the sessions stay put --- */
 useStore.setState({ sidebarSection: 'files' })
 html = render()
-check('picking "Проводник" swaps the body to the file tree', !html.includes('thread-row'))
+check('picking "Проводник" opens the file panel under the list', /sb-body" data-open="true"/.test(html))
+check('and the sessions do not disappear', html.includes('thread-row'))
 check('and marks the chosen row', /data-active="true"/.test(html))
 
 /* 3. the panel behind the sidebar is gone --------------------------- */
 check('the right-hand plan panel is removed from the store', !('rightPanel' in useStore.getState()))
 
-/* 4. a message has no avatar and no spine --------------------------- */
+/* 4. the default look is the calm light one -------------------------- */
+const dflt = require('node:fs').readFileSync(path.join(root, 'src/shared/types.ts'), 'utf8')
+check('a fresh install opens light, not dark', /theme: 'light'/.test(dflt), dflt.match(/theme: '[a-z]+'/)?.[0] || '')
+const themes = require('node:fs').readFileSync(path.join(root, 'src/renderer/src/styles/theme.css'), 'utf8')
+check('the light theme is a defined palette', /\[data-theme='light'\]/.test(themes))
+check(
+  'the composer shows the permission mode in one word',
+  require('node:fs').readFileSync(path.join(root, 'src/renderer/src/components/Chat.tsx'), 'utf8').includes('composer-access')
+)
+
+/* 5. a message has no avatar and no spine --------------------------- */
 const css = require('node:fs').readFileSync(path.join(root, 'src/renderer/src/styles/app.css'), 'utf8')
 check('no gutter/spine rules left in the stylesheet', !/\.msg-(gutter|spine|avatar)/.test(css))
 check('the transcript is one column of readable width', /\.messages\s*\{[^}]*max-width/.test(css))

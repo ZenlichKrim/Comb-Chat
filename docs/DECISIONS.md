@@ -40,3 +40,31 @@ limit / plan limit, or whose `Retry-After` is longer than 90 seconds, is a new
 permanent `quota` kind. It is thrown on the first answer, the run ends with a
 sentence that names the way out (top up on platform.deepseek.com), and
 `runAgent` reports `ok: false` for it instead of pretending the turn succeeded.
+
+## Iteration 45b — rebuilt against the reference, not just trimmed
+
+The first pass removed things but kept the old dark, dense frame. The user's
+reference is a different *shape*: white page, one column of text, sessions in the
+sidebar, one rounded field at the bottom. That is what this pass does.
+
+- **Light by default.** New theme `light`: white page, one hairline between
+  columns, ink text, a single near-black accent for the action you are about to
+  take. `paper` stays as the warm light option; the dark themes are still there
+  in Settings. Existing installs keep whatever they chose; `nativeTheme` and the
+  window background follow the light theme too.
+- **Sidebar is the session list.** New session is a row; sessions are one line of
+  text and their age (the reference's `15мин`); files, search and source control
+  are quieter rows below a divider that open their panel *under* the list instead
+  of replacing it. Settings lives at the bottom, alone.
+- **Composer.** One rounded field, the permission mode said in one word
+  («Полный доступ» / «Спрашивать») instead of two cryptic dots, a round send
+  button. No shadow ring on focus.
+- **Empty session has no header** — the greeting is the page.
+- **Settings** is a smaller sheet (880×640): section list on the left, sparse
+  rows on the right, no brand badge, the chosen row in grey rather than accent.
+- **Shadows** are soft everywhere; the dark-only `rgba(0,0,0,.7)` drops read as
+  soot on a white page.
+- `tests/preview.mjs` renders TitleBar + Sidebar + ChatPane + StatusBar through the
+  real store and the real stylesheet into `docs/preview.html`, so the window can
+  be looked at without a browser. `tests/ui.mjs` now also pins the light default,
+  the session list in the sidebar, and the one-word permission mode.

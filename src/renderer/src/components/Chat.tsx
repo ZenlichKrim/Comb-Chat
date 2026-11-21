@@ -336,22 +336,24 @@ export function ChatPane(): React.ReactElement {
           </div>
         </div>
       )}
-      <div className="chat-head" data-plain={isEmpty ? 'true' : undefined}>
-        <div className="col" style={{ minWidth: 0, gap: 1 }}>
+      {/* An empty session has no header at all: the reference opens on the
+          greeting, and a title above nothing is a label on an empty page. */}
+      {!isEmpty && (
+        <div className="chat-head">
           <span className="t-sm ellipsis" style={{ fontWeight: 600, color: 'var(--fg-0)' }}>
             {thread.title}
           </span>
           <span className="t-xs ghost ellipsis">
             {usage && usage.completionTokens > 0 ? `${formatTokens(usage.promptTokens + usage.completionTokens)} tok · ${formatCost(usage.cost)}` : timeAgo(thread.createdAt)}
           </span>
+          <span className="spacer" />
+          {checkpoints.length > 0 && (
+            <button className="btn ghost sm" data-tip={t('chat.undoRun')} onClick={() => void undoLastRun()}>
+              <Icon name="undo" size={11} /> {t('chat.undoRunShort')}
+            </button>
+          )}
         </div>
-        <span className="spacer" />
-        {checkpoints.length > 0 && (
-          <button className="btn ghost sm" data-tip={t('chat.undoRun')} onClick={() => void undoLastRun()}>
-            <Icon name="undo" size={11} /> {t('chat.undoRunShort')}
-          </button>
-        )}
-      </div>
+      )}
 
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {isEmpty ? (
@@ -759,17 +761,19 @@ export function ChatPane(): React.ReactElement {
                 </>
               )}
             </div>
-            {/* what is switched on stays visible, quietly: two tiny dots, not a row of pills */}
-            <span className="composer-state" data-tip={t('chat.stateTip')}>
-              {caps.edit !== 'ask' && (
-                <Icon
-                  name={caps.edit === 'auto' && caps.run === 'auto' ? 'zap' : 'edit'}
-                  size={10}
-                  className={caps.edit === 'auto' && caps.run === 'auto' ? 'err' : 'warn'}
-                />
-              )}
-              {notesCount > 0 && <span className="composer-state-badge">{notesCount}</span>}
-            </span>
+            {/* One word for the permission mode, the way the reference does it:
+                you should not have to decode two icons to know whether the agent
+                may touch your files. Clicking it opens the switches. */}
+            <button
+              className="composer-access"
+              data-wide={caps.edit === 'auto' && caps.run === 'auto' ? 'true' : undefined}
+              data-tip={t('chat.stateTip')}
+              onClick={() => setMenu((v) => !v)}
+            >
+              <Icon name={caps.edit === 'auto' && caps.run === 'auto' ? 'zap' : 'shield'} size={11} />
+              <span>{caps.edit === 'auto' && caps.run === 'auto' ? t('chat.permFull') : t('chat.permAskFirst')}</span>
+            </button>
+            {notesCount > 0 && <span className="composer-state-badge">{notesCount}</span>}
             <span className="spacer" />
             {usage && usage.promptTokens > 0 && (
               <span className="ctx-meter" data-tip={`${formatTokens(usage.promptTokens)} / ${formatTokens(model.contextWindow)} context`}>

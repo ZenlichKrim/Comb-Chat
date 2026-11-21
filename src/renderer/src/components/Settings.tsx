@@ -15,6 +15,7 @@ const TABS: { id: Tab; label: string; icon: Parameters<typeof Icon>[0]['name'] }
 ]
 
 const THEMES: { id: ThemeId; label: string }[] = [
+  { id: 'light', label: 'Light' },
   { id: 'comb', label: 'Comb' },
   { id: 'ember', label: 'Ember' },
   { id: 'forest', label: 'Forest' },
@@ -101,7 +102,6 @@ export function SettingsDialog(): React.ReactElement {
       <div className="settings" onClick={(e) => e.stopPropagation()}>
         <div className="settings-nav">
           <div className="settings-brand">
-            <Icon name="bee" size={16} className="acc" />
             <span style={{ fontWeight: 700 }}>{t('set.title')}</span>
           </div>
           {TABS.map((tabDef) => (
