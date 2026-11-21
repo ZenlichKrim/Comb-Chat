@@ -20,6 +20,18 @@ import { completeOnce } from './llm'
 
 const SPEC_FILE = 'SPEC.md'
 
+/**
+ * The spec is per task, not per project.
+ *
+ * It used to live in the project folder and survive everything: the next session
+ * — a different task, maybe a different game entirely — inherited the previous
+ * request's criteria, and the agent then bent the new task to the old contract.
+ * That is how a map for one game came out as a world for another. So the file
+ * records the request it was written for, and a spec written for something else
+ * is not a contract: it is ignored (and can be replaced).
+ */
+const SPEC_STAMP = '<!-- comb:request:'
+
 /** Words that promise a whole system rather than a tweak — any stack. */
 const BIG = /(игру|game|приложени|app|сайт|site|систем|system|движок|engine|плагин|plugin|аген|agent|редактор|editor|дашборд|dashboard|сервис|service|api\b|бэкенд|backend|фронтенд|frontend)/i
 
@@ -36,6 +48,41 @@ export function readSpec(workspace: string | null): string {
   } catch {
     return ''
   }
+}
+
+/** Two requests are the same task when their opening words agree. */
+function sameTask(a: string, b: string): boolean {
+  const norm = (t: string) => (t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+  const x = norm(a)
+  const y = norm(b)
+  if (!x || !y) return false
+  if (x === y) return true
+  const head = (t: string) => t.split(' ').slice(0, 12).join(' ')
+  return head(x) === head(y) || x.startsWith(head(y)) || y.startsWith(head(x))
+}
+
+/**
+ * The spec for this request, or '' when the file belongs to another task.
+ * A spec without a stamp predates this rule; it is trusted only when its
+ * criteria clearly came from this request's words.
+ */
+export function specForRequest(workspace: string | null, request: string): string {
+  const raw = readSpec(workspace)
+  if (!raw) return ''
+  const at = raw.indexOf(SPEC_STAMP)
+  if (at >= 0) {
+    const end = raw.indexOf('-->', at)
+    const stamped = end > at ? raw.slice(at + SPEC_STAMP.length, end) : ''
+    return sameTask(stamped, request) ? raw : ''
+  }
+  // legacy: unstamped spec — keep it only if the request shares its wording
+  const criteria = specCriteria(raw)
+  const words = (request || '').toLowerCase()
+  const hit = criteria.filter((c) => {
+    const key = c.toLowerCase().split(/\s+/).filter((w) => w.length > 4)[0]
+    return key ? words.includes(key) : false
+  })
+  return hit.length >= Math.min(2, criteria.length) ? raw : ''
 }
 
 /**
@@ -84,7 +131,7 @@ Rules:
 - Every criterion must be about observable behaviour: a class exists, a registry is populated, a command builds, a file lands on disk, an item appears in game.
 - Include a section «Границы»: what is explicitly NOT being done in this round, so the builder cannot pad instead of delivering.
 - Include a section «Доказательства»: one line per criterion saying how it will be proven (file path, command, screenshot).
-- If the user asked for a system, the spec must name the parts of that system. A "mod" is not "particles": say weather, items, blocks, mobs, effects — whatever the request implies — and mark which parts are this round.
+- If the user asked for a system, the spec must name the parts of that system, enumerate them from the request's own domain and technologies, and mark which parts are this round. Never narrow a request to one feature of it.
 - Never invent requirements the user did not imply. Ambiguity goes into «Открытые вопросы» as a decision you made with one line of reasoning.
 - Output ONLY the markdown spec. No preamble, no code fences around the whole thing.`
 
@@ -100,7 +147,7 @@ export async function ensureSpec(opts: {
   model: string
   signal?: AbortSignal
 }): Promise<{ spec: string; path: string | null; written: boolean }> {
-  const existing = readSpec(opts.workspace)
+  const existing = specForRequest(opts.workspace, opts.request)
   const criteria = specCriteria(existing)
   // A spec with real criteria is the project's memory: do not overwrite it with
   // a fresh reading of one sentence, or the next round forgets what was decided.
@@ -123,8 +170,12 @@ export async function ensureSpec(opts: {
     return { spec: '', path: null, written: false }
   }
   if (!body.trim()) return { spec: '', path: null, written: false }
-  const p = writeSpec(opts.workspace, body)
-  return { spec: body, path: p, written: !!p }
+  // Stamp the request this contract was written for: the next session in the
+  // same folder is a different task, and must not inherit these criteria.
+  const stamp = `<!-- comb:request:${opts.request.replace(/[\r\n-]+/g, ' ').slice(0, 240)} -->\n`
+  const stamped = stamp + body.trim() + '\n'
+  const p = writeSpec(opts.workspace, stamped)
+  return { spec: stamped, path: p, written: !!p }
 }
 
 /** The per-file excerpt the reviewer is allowed to see. */

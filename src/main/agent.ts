@@ -95,9 +95,22 @@ export function steerRun(runId: string, note: string): void {
 
 const active = new Map<string, ActiveRun>()
 
+/** runs the user stopped, remembered for a while so no later stage restarts them */
+const stoppedRuns = new Set<string>()
+
 export function stopRun(runId: string): void {
-  const run = active.get(runId)
-  if (run) {
+  // Stop means stop — for the whole run, not only the stage that happens to be
+  // running under the id the renderer knows. A team run is `base`, `base:brief`,
+  // `base:build`, `base:review`; aborting only `base` (which may not even exist
+  // as its own entry) left the stage in flight, and the next stage started right
+  // after it. Every stage that belongs to this run is aborted here.
+  stoppedRuns.add(runId)
+  if (stoppedRuns.size > 200) stoppedRuns.delete(stoppedRuns.values().next().value as string)
+  const ids = [...active.keys()].filter((k) => k === runId || k.startsWith(`${runId}:`))
+  if (!ids.length) return
+  for (const id of ids) {
+    const run = active.get(id)
+    if (!run) continue
     for (const [, fn] of run.approvals) fn('deny')
     run.approvals.clear()
     run.votes.clear()
@@ -196,6 +209,7 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - Never ship a stub: no TODO comments as your work, no empty class that "will be filled later", no method that returns a hardcoded value where behaviour was asked for. If you cannot do a thing, say it in the summary instead of leaving a placeholder that pretends.
 - The user's spec is a contract, not a mood board. Every numbered item in it is work you owe them: implement it or say explicitly which ones you could not and why. Never call finish while a plan item is open.
 - "Compiles" is not "works" and neither is "the code looks right". For a real project: build it, read the errors, fix them. For code against a version you do not remember exactly, read the actual jar/lockfile in the project instead of guessing API names.
+- Work in the task's own domain, whatever it is. If the request is about a game engine, a game map, a 3D asset, a web app or anything else, its words, file formats and tools come from the request and from what you find in the project — never from a previous task in this folder. A leftover file, a spec, or a note from an earlier session that mentions another technology is history, not instructions: read it if it helps, then ignore its domain.
 - Go straight at the task. Do not turn into a detective: read what this step needs, then act. If the obvious way fails, try the next method in the same step instead of spending rounds investigating why the first failed. Finishing beats fully understanding the project.`
     : `
 # No workspace open
@@ -820,13 +834,15 @@ export async function runAgent(
     }
 
     while (step < effectiveMaxSteps) {
-      step++
-      deps.emit({ type: 'step', runId: req.runId, step })
-      roundTools = []
+      // Stop is checked before the step exists: counting a step and only then
+      // noticing the abort is how a stopped run still happened to look busy.
       if (signal.aborted) {
         finalReason = 'stopped'
         break
       }
+      step++
+      deps.emit({ type: 'step', runId: req.runId, step })
+      roundTools = []
 
       compactHistory(history)
 
@@ -1506,9 +1522,17 @@ export async function runAgent(
         }
         roundProgressed = false
 
-        // Exploration budget: reading is not work, so it does not get the whole
-        // step budget. When it runs out the agent is told to act with what it has.
-        if (readOnlySteps > MAX_IDLE_READS && !touched.size && idleRounds > 0) {
+        // Exploration budget: reading is not work — but sometimes reading IS the
+        // work. A request about a large codebase, a spec to implement, a set of
+        // huge files to understand is a request to read a lot, and telling that
+        // run "you have read enough, now edit something" is how it starts editing
+        // what it has not understood. The budget only applies to a run whose own
+        // request does not ask for study, and never once a real edit happened.
+        const readsAreTheWork =
+          /(прочит|изуч|разбер|проанализ|read|study|analyz|understand|investigat|explore|обзор|review)/i.test(req.userMessage?.content || '') ||
+          specSections.length >= 4 ||
+          (settings.maxAgentSteps || 0) >= 40
+        if (readOnlySteps > MAX_IDLE_READS && !touched.size && idleRounds > 0 && !readsAreTheWork) {
           readOnlySteps = 0
           deps.emit({
             type: 'guard',
@@ -1641,10 +1665,14 @@ export async function runAgent(
           title: `Продлеваю прогон: в плане ещё ${planOpen} пункт(ов)`,
           detail: `лимит шагов поднят до ${effectiveMaxSteps} — работа не брошена на середине.`
         })
+      } else if (signal.aborted) {
+        finalReason = 'stopped'
       } else {
         finalReason = 'limit'
       }
     }
+    // Stop wins over every other ending: a run the user ended reports that.
+    if (signal.aborted) finalReason = 'stopped'
 
     // Label the files this run created or rewrote, in the background: by the time
     // the user opens the explorer they already read like known things.
@@ -1811,6 +1839,7 @@ export async function runAgent(
     }
     steerNotes.delete(req.runId)
     active.delete(req.runId)
+    stoppedRuns.delete(req.runId)
     deps.emit({ type: 'usage', runId: req.runId, usage })
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })
   }
@@ -2037,6 +2066,10 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
 
   // 1. the author thinks, talks and writes the brief
   const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split', spec: contract }, deps)
+  if (stoppedRuns.has(req.runId)) {
+    stoppedRuns.delete(req.runId)
+    return { ok: false, roles: ['author'], brief: null }
+  }
   if (!authorRes.ok) return { ok: false, error: authorRes.error, roles: ['author'] }
   let brief = parseBrief(authorRes.finalText || '')
   if (!brief) {
@@ -2098,6 +2131,11 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
   }
   buildReq.spec = contract
   buildReq.specAttempt = 0
+  // the user may press Stop between stages: a stage must not start after that
+  if (stoppedRuns.has(req.runId)) {
+    deps.emit({ type: 'run-end', runId: req.runId, reason: 'stopped' })
+    return { ok: false, roles: ['author', 'builder'], brief }
+  }
   let buildRes = await runAgent(buildReq, deps)
   let report = buildRes.finalText || ''
 
@@ -2191,7 +2229,7 @@ ${report.slice(0, 4000)}
           'Если что-то сделано неверно или не по брифу — скажи честно и конкретно, что не так. Без нового брифа.'
       }
     }
-    await runAgent(reviewReq, deps)
+    if (!stoppedRuns.has(req.runId)) await runAgent(reviewReq, deps)
   }
 
   return { ok: buildRes.ok, roles: ['author', 'builder', 'author'], brief }

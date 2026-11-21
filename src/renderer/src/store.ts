@@ -181,6 +181,9 @@ interface Actions {
 
 const MAX_HISTORY = 200
 
+/** sessions the user deleted: in-flight events for them are dropped, not placed */
+const deletedThreads = new Set<string>()
+
 function trimThread(t: Thread): Thread {
   return { ...t, messages: t.messages.slice(-MAX_HISTORY) }
 }
@@ -527,10 +530,26 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   deleteThread: async (id) => {
+    // A deleted session is deleted: its run is stopped (otherwise it keeps
+    // working and its messages arrive from nowhere — the exact bug the user
+    // reported), and its id is remembered so any event still in flight is dropped
+    // instead of being written into the session that took its place.
+    const gone = get().runs[id]?.runId
+    deletedThreads.add(id)
+    if (gone) void window.comb.agent.stop(gone)
     await window.comb.threads.delete(id)
     set((s) => {
       const threads = s.threads.filter((t) => t.id !== id)
-      return { threads, activeThreadId: s.activeThreadId === id ? (threads[0]?.id ?? null) : s.activeThreadId }
+      const runs = { ...s.runs }
+      delete runs[id]
+      return {
+        threads,
+        runs,
+        activeThreadId: s.activeThreadId === id ? (threads[0]?.id ?? null) : s.activeThreadId,
+        approvalThreadId: s.approvalThreadId === id ? null : s.approvalThreadId,
+        approvalRunId: s.approvalThreadId === id ? null : s.approvalRunId,
+        pendingApproval: s.approvalThreadId === id ? null : s.pendingApproval
+      }
     })
   },
 
@@ -788,6 +807,9 @@ export const useStore = create<State & Actions>((set, get) => ({
       (e.runId ? undefined : state.activeThreadId)
     const threadId = owner ?? null
     if (!threadId) return
+    // A deleted session must not keep talking: the run was stopped, but events
+    // already in the channel would otherwise find a new home.
+    if (deletedThreads.has(threadId) || !state.threads.some((t) => t.id === threadId)) return
     const activeRun = state.runs[threadId]
     // Same story for the message: a child stage writes into the bubble of the
     // session on screen if we let it fall back while another session is streaming.
@@ -799,9 +821,17 @@ export const useStore = create<State & Actions>((set, get) => ({
           t.id === threadId
             ? {
                 ...t,
-                messages: t.messages.map((m) =>
-                  m.id === messageId || (m.streaming && m.roleOf === get().activeRole) || (m.streaming && !messageId) ? fn(m) : m
-                )
+                // Which bubble this event belongs to: the run's own message id.
+                // The old fallbacks (`streaming && roleOf === activeRole`) pointed
+                // at whatever bubble in *this* thread happened to match, and with
+                // two sessions in flight the role chip came from the other one —
+                // so text streamed into a bubble that was then swept, and the
+                // author's answer disappeared. Only a run with no message id falls
+                // back to the last streaming bubble of this same thread.
+                messages: t.messages.map((m) => {
+                  if (messageId) return m.id === messageId ? fn(m) : m
+                  return m.streaming && m.role === 'assistant' ? fn(m) : m
+                })
               }
             : t
         )
@@ -1199,6 +1229,11 @@ export const useStore = create<State & Actions>((set, get) => ({
         if (stale) get().toast('warn', tr('chat.approvalExpired'))
         // A stage that streamed nothing leaves an empty bubble: remove it, or the
         // transcript ends with a blank block that looks like lost content.
+        // Only a stage that said nothing at all is removed. The old rule also
+        // looked at tools and steps, but a stage can hand its text to the next
+        // message and still own the calls — and the user watched the author's
+        // answer vanish when the builder's empty bubble was swept. Keep anything
+        // with any trace of work in it.
         set((s) => ({
           threads: s.threads.map((th) =>
             th.id !== threadId
@@ -1212,6 +1247,9 @@ export const useStore = create<State & Actions>((set, get) => ({
                       !!m.reasoning?.trim() ||
                       !!(m.tools || []).length ||
                       !!(m.steps || []).length ||
+                      !!(m.guards || []).length ||
+                      !!m.vote ||
+                      !!m.specReport ||
                       !!m.error
                   )
                 }

@@ -188,6 +188,31 @@ await useStore.getState().approve('allow')
 check('the decision goes to the run that asked', approvals.some(([r, c, d]) => r === liveB && c === 'call-write' && d === 'allow'), JSON.stringify(approvals))
 useStore.getState().selectThread(b)
 
+// A deleted session is deleted: its run is stopped and later events are dropped
+const stopCalls = []
+window.comb.agent.stop = async (id) => { stopCalls.push(id) }
+await useStore.getState().sendMessage('третья задача')
+const c = useStore.getState().activeThreadId
+const runIdC = useStore.getState().runs[c].runId
+await useStore.getState().deleteThread(c)
+const afterDelete = useStore.getState()
+check('deleting a session stops its run', stopCalls.includes(runIdC), JSON.stringify(stopCalls))
+check('a deleted session is gone from the list', !afterDelete.threads.some((t) => t.id === c))
+useStore.getState().handleEvent({ type: 'text-delta', runId: runIdC, text: 'ПРИЗРАК' })
+check('no messages arrive from a deleted session', !useStore.getState().threads.some((t) => t.messages.some((m) => (m.content || '').includes('ПРИЗРАК'))))
+
+// The author's answer must survive the stage that follows it
+useStore.getState().selectThread(a)
+await useStore.getState().sendMessage('четвёртая задача')
+const d = useStore.getState().activeThreadId
+const runIdD = useStore.getState().runs[d].runId
+useStore.getState().handleEvent({ type: 'role', runId: runIdD, role: 'author', phase: 'thinking' })
+useStore.getState().handleEvent({ type: 'text-delta', runId: runIdD, text: 'ВОТ ЧТО Я ДУМАЮ О ЗАДАЧЕ' })
+useStore.getState().handleEvent({ type: 'role', runId: `${runIdD}:build`, role: 'builder', phase: 'working', threadId: d })
+useStore.getState().handleEvent({ type: 'run-end', runId: `${runIdD}:build`, reason: 'done', threadId: d })
+const threadD = useStore.getState().threads.find((t) => t.id === d)
+check('the author\'s answer does not vanish when the next stage starts', threadD.messages.some((m) => (m.content || '').includes('ВОТ ЧТО Я ДУМАЮ')), threadD.messages.map((m) => (m.content || '').slice(0, 20)).join(' | '))
+
 // stopping is per session
 await useStore.getState().stopRun()
 

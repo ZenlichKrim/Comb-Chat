@@ -367,6 +367,53 @@ check('free mode does not gate "done"', !events.some((e) => e.type === 'guard' &
 check('free mode still ships the file it made', /Сделал свободную версию|free\.html/.test(text()), text().slice(0, 200))
 await setFreedom('checked')
 
+/* ------------------------------------------------------------------ */
+/* 12. Stop stops the whole team, not one stage                        */
+/* ------------------------------------------------------------------ */
+console.log('stop the team:')
+await setFreedom('checked')
+script = []
+for (let i = 0; i < 4000; i++) script.push({ text: 'Думаю.', tool: { name: 'list_dir', args: { path: '.' } } })
+events.length = 0
+const teamRun = runTeam(
+  { ...req, maxSteps: 20, capabilities: { edit: 'auto', run: 'auto', planner: 'always' }, userMessage: { id: 'u10', role: 'user', content: 'Сделай большую систему, сначала посмотри проект. Это длинная задача с архитектурой.', createdAt: Date.now() } },
+  deps
+)
+// stop once the run is genuinely in flight (the fake model is instant, so the
+// first steps can race the timer)
+const stopTimer = setInterval(async () => {
+  if (!events.some((e) => e.type === 'step')) return
+  clearInterval(stopTimer)
+  const { stopRun } = await import('../src/main/agent.ts')
+  stopRun(runId)
+}, 15)
+const tStop = Date.now()
+await teamRun
+const stopTook = Date.now() - tStop
+await new Promise((r) => setTimeout(r, 400))
+check('stop ends a team run', events.some((e) => e.type === 'run-end' && e.reason === 'stopped'), JSON.stringify(events.filter((e) => e.type === 'run-end')))
+const stepsAtStop = events.filter((e) => e.type === 'step').length
+await new Promise((r) => setTimeout(r, 300))
+const stepsLater = events.filter((e) => e.type === 'step').length
+check('stop does not leave the run working in the background', stepsLater - stepsAtStop <= 1, `${stepsAtStop} -> ${stepsLater} steps ${stopTook}ms`)
+check('no stage starts after a stop', !events.some((e) => e.type === 'run-start' && /:build|:review/.test(String(e.runId || ''))))
+
+/* 13. a spec written for another task is not adopted ---------------- */
+const { specForRequest, writeSpec } = await import('../src/main/spec.ts')
+writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. карта уровня\n2. файлы игры на месте')
+check('another task\'s spec is ignored', specForRequest(workspace, 'сделай мод про снег') === '', specForRequest(workspace, 'сделай мод про снег').slice(0, 60))
+check('the matching task keeps its spec', specForRequest(workspace, 'сделай карту для игры peak').includes('карта уровня'))
+
+/* 14. reading is not punished when reading is the job -------------- */
+console.log('reading as the job:')
+script = []
+for (let i = 0; i < 18; i++) script.push({ text: `Читаю файл ${i}.`, tool: { name: 'read_file', args: { path: 'hello.txt' } } })
+script.push({ text: 'Прочитал всё, теперь делаю.', tool: { name: 'write_file', args: { path: 'inventory.md', content: 'done\n' } } })
+script.push(finalText('Изучил проект и записал выводы.'))
+events.length = 0
+await runTeam({ ...req, maxSteps: 40, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u11', role: 'user', content: 'Изучи проект и прочитай все большие файлы, потом коротко напиши выводы в inventory.md.', createdAt: Date.now() } }, deps)
+check('a study task is not told to stop reading', !events.some((e) => e.type === 'guard' && /Бюджет на изучение|exploration budget/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard').map((e) => e.title)).slice(0, 240))
+
 server.close()
 console.log(`\nagent harness: ${pass + fail} checks, ${pass} passed${fail ? `, ${fail} FAILED` : ''}`)
 process.exit(fail ? 1 : 0)

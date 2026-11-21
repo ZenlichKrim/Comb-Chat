@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { AgentEvent, RunRequest, SpecReport } from '../shared/types'
 import { runAgent, type AgentDeps } from './agent'
-import { readSpec, specCriteria } from './spec'
+import { readSpec, specCriteria, specForRequest } from './spec'
 
 /**
  * The goal.
@@ -237,9 +237,9 @@ export async function driveGoal(opts: {
   return { rounds, stop: 'rounds-used', lastCheck, lastText }
 }
 
-/** read the contract once so the caller does not pass it around by hand */
-export function contractFor(workspace: string | null): string {
-  return readSpec(workspace)
+/** read the contract for this request, so another task's spec is never adopted */
+export function contractFor(workspace: string | null, request: string): string {
+  return specForRequest(workspace, request)
 }
 
 export type { AgentEvent }
