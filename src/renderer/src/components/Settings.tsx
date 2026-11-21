@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, formatCost, totalUsage } from '../store'
-import { MODELS, modelUse, type ThemeId, type Locale } from '../../../shared/types'
+import { modelsFor, modelUse, LOCAL_PRESETS, type CustomModel, type ThemeId, type Locale } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 type Tab = 'model' | 'agent' | 'appearance' | 'keys' | 'about'
@@ -119,7 +119,9 @@ export function SettingsDialog(): React.ReactElement {
             <Icon name="close" size={12} />
           </button>
 
-          {tab === 'model' && (
+          {tab === 'model' && <LocalModels />}
+
+          {tab === 'model' && settings.provider !== 'local' && (
             <Section title={t('set.modelSection')} desc={t('set.modelDesc')}>
               <Field label={t('set.apiKey')} hint={t('set.apiKeyHint')}>
                 <div className="row gap-2">
@@ -164,7 +166,7 @@ export function SettingsDialog(): React.ReactElement {
 
               <Field label={t('set.tabModel')}>
                 <div className="model-grid">
-                  {MODELS.map((m) => (
+                  {modelsFor(settings).map((m) => (
                     <button key={m.id} className="model-card" data-active={settings.model === m.id} onClick={() => void setSettings({ model: m.id })}>
                       <div className="row gap-2">
                         <Icon name={m.reasoning ? 'sparkles' : 'zap'} size={12} className={settings.model === m.id ? 'acc' : 'faint'} />
@@ -675,6 +677,160 @@ function Shortcuts(): React.ReactElement {
             ))}
           </div>
         ))}
+      </div>
+    </Section>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Local models                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * "Download DeepSeek once and stop paying" is not a thing — the weights are not
+ * public. What IS a thing: a model on your own disk, behind an OpenAI-compatible
+ * server. Two clicks here (Ollama, or LM Studio), one button that lists what is
+ * actually pulled, and the app stops asking for a key.
+ *
+ * Everything on this screen is honest about the trade: no bill, but slower and
+ * weaker than the cloud model, and it needs the disk.
+ */
+function LocalModels(): React.ReactElement {
+  const t = useT()
+  const settings = useStore((s) => s.settings)
+  const setSettings = useStore((s) => s.setSettings)
+  const [busy, setBusy] = useState(false)
+  const [found, setFound] = useState<string[] | null>(null)
+  const [error, setError] = useState('')
+  const [draft, setDraft] = useState('')
+  const [draftThinks, setDraftThinks] = useState(false)
+  const local = settings.provider === 'local'
+  const custom: CustomModel[] = settings.customModels || []
+
+  const check = async (): Promise<void> => {
+    setBusy(true)
+    setError('')
+    try {
+      const res = await window.comb.agent.listModels('', settings.baseUrl)
+      if (res.ok) {
+        setFound(res.models)
+        if (!res.models.length) setError(t('set.localPull'))
+      } else {
+        setFound(null)
+        setError(`${t('set.localServerDown')} ${res.error || ''}`.trim())
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const useLocal = async (baseUrl: string): Promise<void> => {
+    await setSettings({ provider: 'local', baseUrl })
+    setFound(null)
+  }
+
+  const addModel = async (name: string, thinks: boolean): Promise<void> => {
+    const id = name.trim()
+    if (!id) return
+    const next = [...custom.filter((m) => m.id !== id), { id, label: id, contextWindow: 32768, reasoning: thinks }]
+    await setSettings({ customModels: next, model: id, provider: 'local' })
+    setDraft('')
+    setDraftThinks(false)
+  }
+
+  return (
+    <Section title={t('set.localTitle')} desc={t('set.localDesc')}>
+      <div className="local-mode" data-on={local ? 'true' : undefined}>
+        <Icon name={local ? 'cpu' : 'layers'} size={13} className={local ? 'acc' : 'faint'} />
+        <span className="t-sm">{local ? t('set.localOn') : t('set.localOff')}</span>
+        <span className="spacer" />
+        <button
+          className="btn ghost sm"
+          onClick={() =>
+            void setSettings(
+              local
+                ? { provider: 'deepseek', baseUrl: 'https://api.deepseek.com' }
+                : { provider: 'local' }
+            )
+          }
+        >
+          {local ? t('set.localOff') : t('set.localOn')}
+        </button>
+      </div>
+
+      <Field label={t('set.localPresets')}>
+        <div className="local-presets">
+          {LOCAL_PRESETS.map((p) => (
+            <button key={p.id} className="local-preset" data-active={settings.baseUrl === p.baseUrl} onClick={() => void useLocal(p.baseUrl)}>
+              <span className="t-sm" style={{ fontWeight: 600 }}>{p.label}</span>
+              <span className="t-xs faint mono">{p.baseUrl}</span>
+              <span className="t-xs ghost mono">{p.note}</span>
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <Field label={t('set.localPresets')} hint={t('set.localNoKey')}>
+        <div className="row gap-2">
+          <input className="input" value={settings.baseUrl} spellCheck={false} onChange={(e) => void setSettings({ baseUrl: e.target.value })} />
+          <button className="btn" onClick={() => void check()} disabled={busy}>
+            {busy ? <span className="spinner" /> : <Icon name="refresh" size={11} />} {t('set.localTest')}
+          </button>
+        </div>
+        {error && (
+          <div className="test-result err">
+            <Icon name="info" size={11} />
+            <span className="t-xs">{error}</span>
+          </div>
+        )}
+      </Field>
+
+      {found && found.length > 0 && (
+        <Field label={t('set.localModels')} hint={String(found.length)}>
+          <div className="local-models">
+            {found.map((name) => (
+              <button key={name} className="local-model" data-active={settings.model === name} onClick={() => void addModel(name, /reason|r1|think|qwen3/i.test(name))}>
+                <Icon name="cpu" size={11} className="faint" />
+                <span className="mono t-xs ellipsis">{name}</span>
+                {settings.model === name ? <Icon name="check" size={11} className="acc" /> : <span className="t-xs faint">{t('set.localUse')}</span>}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      <Field label={t('set.localAdd')} hint={t('set.localAddHint')}>
+        <div className="row gap-2">
+          <input className="input mono" value={draft} spellCheck={false} placeholder="qwen2.5-coder:14b" onChange={(e) => setDraft(e.target.value)} />
+          <button className="btn" onClick={() => void addModel(draft, draftThinks)} disabled={!draft.trim()}>
+            <Icon name="plus" size={11} /> {t('set.localUse')}
+          </button>
+        </div>
+        <Toggle label={t('set.localThinkingHint')} value={draftThinks} onChange={setDraftThinks} />
+      </Field>
+
+      {custom.length > 0 && (
+        <Field label={t('set.tabModel')}>
+          <div className="model-grid">
+            {modelsFor(settings)
+              .filter((m) => m.local)
+              .map((m) => (
+                <button key={m.id} className="model-card" data-active={settings.model === m.id} onClick={() => void setSettings({ model: m.id, provider: 'local' })}>
+                  <div className="row gap-2">
+                    <Icon name="cpu" size={12} className={settings.model === m.id ? 'acc' : 'faint'} />
+                    <span className="mono t-sm" style={{ fontWeight: 600 }}>{m.label}</span>
+                    {settings.model === m.id && <Icon name="check" size={11} className="acc" style={{ marginLeft: 'auto' }} />}
+                  </div>
+                  <span className="t-xs ghost">{Math.round(m.contextWindow / 1024)}k · {m.reasoning ? 'thinking' : 'chat'} · $0</span>
+                </button>
+              ))}
+          </div>
+        </Field>
+      )}
+
+      <div className="setting-hint-card">
+        <Icon name="info" size={12} className="faint" />
+        <span className="t-xs faint">{t('set.localCost')}</span>
       </div>
     </Section>
   )

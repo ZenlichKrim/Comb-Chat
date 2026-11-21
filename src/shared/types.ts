@@ -36,7 +36,7 @@ export type ThoughtEffort = 'fast' | 'balanced' | 'deep' | 'max'
 export interface ModelInfo {
   id: string
   label: string
-  family: 'deepseek' | 'custom'
+  family: 'deepseek' | 'custom' | 'local'
   /** picks the mode in the UI; thinking is a request parameter on V4+, not a separate model */
   reasoning: boolean
   contextWindow: number
@@ -50,7 +50,9 @@ export interface ModelInfo {
   priceOutOffPeak?: number
   /** accepts image input */
   vision: boolean
-  blurbKey: 'model.blurbFlash' | 'model.blurbPro' | 'model.blurbV4Pro'
+  blurbKey: 'model.blurbFlash' | 'model.blurbPro' | 'model.blurbV4Pro' | 'model.blurbLocal'
+  /** a 0-price model that runs on this machine: no cost, no quota, no key */
+  local?: boolean
 }
 
 /**
@@ -107,6 +109,34 @@ export const MODELS: ModelInfo[] = [
 ]
 
 /** Wire model name for a UI model id — thinking is a request flag, not a model. */
+/** A hand-added model, shaped like the built-in ones so the whole UI can use it. */
+export function customToModel(m: CustomModel): ModelInfo {
+  return {
+    id: m.id,
+    label: m.label || m.id,
+    family: 'local',
+    reasoning: !!m.reasoning,
+    contextWindow: Math.max(2048, m.contextWindow || 32768),
+    maxOutput: 8192,
+    priceIn: 0,
+    priceInCached: 0,
+    priceOut: 0,
+    vision: false,
+    blurbKey: 'model.blurbLocal',
+    local: true
+  }
+}
+
+/** Everything the picker shows: DeepSeek's three, then anything added by hand. */
+export function modelsFor(settings: Pick<Settings, 'customModels'> | null | undefined): ModelInfo[] {
+  return [...MODELS, ...((settings?.customModels || []).map(customToModel))]
+}
+
+/** The model behind an id — a built-in or one the user added. */
+export function findModel(settings: Pick<Settings, 'customModels'> | null | undefined, id: string): ModelInfo | undefined {
+  return modelsFor(settings).find((m) => m.id === id)
+}
+
 export function wireModel(id: string): string {
   if (id === 'deepseek-flash-thinking') return 'deepseek-flash'
   if (id === 'deepseek-v4-pro-thinking') return 'deepseek-v4-pro'
@@ -148,6 +178,18 @@ export interface Settings {
   model: string
   /** how much room the thinking model gets before it answers */
   thoughtEffort: ThoughtEffort
+  /**
+   * Which kind of endpoint `baseUrl` points at. A cloud key and a local server
+   * are not the same thing: the local one needs no key, sends no `thinking`
+   * parameter, and its model names are whatever the user pulled.
+   */
+  provider?: 'deepseek' | 'local'
+  /**
+   * Extra OpenAI-compatible models the user typed in by hand (localhost, LM
+   * Studio, a farm machine). DeepSeek's own three come from MODELS; these are
+   * appended so a local setup shows up in the model picker like any other.
+   */
+  customModels?: CustomModel[]
   temperature: number
   maxTokens: number
   approvalPolicy: ApprovalPolicy
@@ -198,9 +240,27 @@ export interface Settings {
   projectMemory: boolean
 }
 
+/** A model the user added by hand: name, window, whether it thinks. */
+export interface CustomModel {
+  /** what the server calls it, e.g. qwen2.5-coder:14b */
+  id: string
+  label: string
+  contextWindow: number
+  reasoning: boolean
+}
+
+/** Ready-made local endpoints: the two servers people actually install. */
+export const LOCAL_PRESETS: { id: string; label: string; baseUrl: string; note: string }[] = [
+  { id: 'ollama', label: 'Ollama', baseUrl: 'http://127.0.0.1:11434/v1', note: 'ollama pull qwen2.5-coder:14b' },
+  { id: 'lmstudio', label: 'LM Studio', baseUrl: 'http://127.0.0.1:1234/v1', note: 'Local Server → Start' },
+  { id: 'llamacpp', label: 'llama.cpp / vLLM', baseUrl: 'http://127.0.0.1:8080/v1', note: 'llama-server -m model.gguf' }
+]
+
 export const DEFAULT_SETTINGS: Settings = {
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
+  provider: 'deepseek',
+  customModels: [],
   model: 'deepseek-flash-thinking',
   thoughtEffort: 'deep',
   temperature: 0.2,
@@ -718,6 +778,8 @@ export interface CombApi {
     approve(runId: string, callId: string, decision: 'allow' | 'allow-always' | 'deny', editedArgs?: Record<string, any>): Promise<void>
     onEvent(cb: (e: AgentEvent) => void): () => void
     testKey(apiKey: string, baseUrl: string): Promise<{ ok: boolean; message: string; models?: string[] }>
+    /** the names a server actually serves — a local user pulled these by hand */
+    listModels(apiKey: string, baseUrl: string): Promise<{ ok: boolean; models: string[]; error?: string }>
   }
   terminal: {
     create(opts: PtyCreateOptions): Promise<{ ok: boolean; error?: string; backend: string }>

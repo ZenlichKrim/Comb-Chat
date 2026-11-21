@@ -91,6 +91,13 @@ export interface StreamArgs {
   onRetry?: (r: { attempt: number; max: number; waitMs: number; reason: string }) => void
   /** how much room the model gets to think before it answers (thinking models only) */
   effort?: import('../shared/types').ThoughtEffort
+  /**
+   * A server on this machine (Ollama, LM Studio, llama.cpp). It speaks the same
+   * OpenAI dialect but none of DeepSeek's extras: no `thinking` budget, no
+   * reasoning replay rules, no key. Sending those to a local server is how a
+   * local setup fails on the first request with a 400 nobody can read.
+   */
+  local?: boolean
 }
 
 export function priceFor(model: string): { priceIn: number; priceInCached: number; priceOut: number; contextWindow: number; maxOutput: number } {
@@ -139,6 +146,30 @@ function normalizeBase(baseUrl: string): string {
   return `${b}/chat/completions`
 }
 
+/** the address without /chat/completions, for messages that talk about servers */
+export function normalizeBaseDisplay(baseUrl: string): string {
+  return (baseUrl || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '')
+}
+
+/**
+ * What models a server offers. DeepSeek wants a key for it; a local server does
+ * not, and this is how the app finds out the real names the user pulled instead
+ * of asking them to type one from memory.
+ */
+export async function listModels(apiKey: string, baseUrl: string): Promise<string[]> {
+  const url = `${normalizeBaseDisplay(baseUrl).replace(/\/v\d+$/, '')}/v1/models`
+  const res = await fetch(url, {
+    headers: apiKey.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {},
+    signal: AbortSignal.timeout(8000)
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const json: any = await res.json().catch(() => null)
+  const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : []
+  return list
+    .map((m: any) => (typeof m === 'string' ? m : m?.id || m?.name || ''))
+    .filter((x: string) => !!x)
+}
+
 export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok: boolean; message: string; models?: string[] }> {
   if (!apiKey.trim()) return { ok: false, message: 'API key is empty' }
   const endpoint = normalizeBase(baseUrl)
@@ -165,7 +196,18 @@ export async function testApiKey(apiKey: string, baseUrl: string): Promise<{ ok:
     const body = await res.text().catch(() => '')
     if (res.status === 401 || res.status === 403) return { ok: false, message: 'Invalid API key (401). Check the key in Settings.' }
     if (res.status === 402) return { ok: false, message: 'Insufficient balance on the DeepSeek account (402).' }
-    if (res.status === 404) return { ok: false, message: `Endpoint not found (404). Try ${baseUrl.replace(/\/$/, '')} or https://api.deepseek.com` }
+    if (res.status === 404) {
+      // On a local server 404 is almost always a model that is not pulled yet,
+      // not a wrong address — saying "try api.deepseek.com" sends the user off in
+      // exactly the wrong direction.
+      const local = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\])/i.test(normalizeBaseDisplay(baseUrl))
+      return {
+        ok: false,
+        message: local
+          ? `Сервер не нашёл эту модель (404). Скачайте её: ollama pull <модель>, или выберите имя из списка моделей сервера.`
+          : `Endpoint not found (404). Try ${baseUrl.replace(/\/$/, '')} or https://api.deepseek.com`
+      }
+    }
     return { ok: false, message: `HTTP ${res.status}: ${body.slice(0, 200)}` }
   } catch (e: any) {
     return { ok: false, message: `Network error: ${e?.message || 'unknown'}` }
@@ -204,7 +246,7 @@ export function repairsThinkingMode(messages: LlmMessage[]): boolean {
 }
 
 export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
-  const { apiKey, baseUrl, model, messages, tools, temperature, maxTokens, signal, onDelta, effort } = args
+  const { apiKey, baseUrl, model, messages, tools, temperature, maxTokens, signal, onDelta, effort, local } = args
   const endpoint = normalizeBase(baseUrl)
 
   const body: Record<string, any> = {
@@ -214,7 +256,9 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
     stream_options: { include_usage: true },
     max_tokens: Math.max(256, Math.min(maxTokens || 16384, 384_000)),
     temperature,
-    ...modelOptions(model, effort)
+    // A local server does not know DeepSeek's `thinking` object and rejects the
+    // request for it. Its own switch (if any) is off by default.
+    ...(local ? {} : modelOptions(model, effort))
   }
   if (tools.length) {
     body.tools = tools
@@ -228,7 +272,7 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
   // A thread like that (started before this field was kept, imported, or rebuilt
   // after a compaction) talks to a non-thinking model instead: the answer is the
   // same, the history stays valid, and the chat survives.
-  const repairsThinking = repairsThinkingMode(messages)
+  const repairsThinking = !local && repairsThinkingMode(messages)
   const effectiveModel = repairsThinking ? withoutThinking(model) : model
   if (repairsThinking) {
     body.model = wireModel(effectiveModel)
@@ -252,7 +296,7 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
   while (attempt < MAX_ATTEMPTS) {
     attempt++
     try {
-      return await runOnce({ endpoint, apiKey, body, signal, onDelta, model: effectiveModel, onUsage: args.onUsage, attempt })
+      return await runOnce({ endpoint, apiKey: local ? '' : apiKey, body, signal, onDelta, model: effectiveModel, onUsage: args.onUsage, attempt, local })
     } catch (e: any) {
       lastErr = e
       // The server refuses history without reasoning_content. If some turn still
@@ -368,6 +412,8 @@ async function runOnce(opts: {
   model: string
   /** which attempt this is, used only to keep the wire fresh */
   attempt?: number
+  /** a server on this machine: no key, and Ollama rejects an empty bearer */
+  local?: boolean
 }): Promise<LlmStreamResult> {
   const { endpoint, apiKey, body, signal, onDelta, model } = opts
   let res: Response
@@ -377,7 +423,7 @@ async function runOnce(opts: {
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
-        Authorization: `Bearer ${apiKey.trim()}`
+        ...(apiKey.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {})
       },
       body: JSON.stringify(body),
       signal
@@ -488,7 +534,9 @@ async function runOnce(opts: {
           completionTokens,
           cachedTokens,
           reasoningTokens,
-          cost: computeCost(model, promptTokens, cachedTokens, completionTokens)
+          // a model running on this machine costs nothing: showing a price for
+          // it is the one number a local user would call a lie
+          cost: opts.local ? 0 : computeCost(model, promptTokens, cachedTokens, completionTokens)
         })
       }
     }
@@ -573,7 +621,7 @@ async function runOnce(opts: {
     completionTokens,
     cachedTokens,
     reasoningTokens,
-    cost: computeCost(model, promptTokens, cachedTokens, completionTokens)
+    cost: opts.local ? 0 : computeCost(model, promptTokens, cachedTokens, completionTokens)
   }
 
   return { content, reasoning, toolCalls, usage, finishReason, promptTokens, completionTokens, cachedTokens }
@@ -701,13 +749,15 @@ export async function completeOnce(opts: {
   user: string
   maxTokens?: number
   signal?: AbortSignal
+  /** a server on this machine: no key, no DeepSeek-only request fields */
+  local?: boolean
 }): Promise<string> {
   const endpoint = normalizeBase(opts.baseUrl)
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${opts.apiKey.trim()}`
+      ...(opts.apiKey.trim() ? { Authorization: `Bearer ${opts.apiKey.trim()}` } : {})
     },
     body: JSON.stringify({
       model: wireModel(opts.model),
@@ -718,7 +768,7 @@ export async function completeOnce(opts: {
       stream: false,
       max_tokens: opts.maxTokens ?? 256,
       temperature: 0.2,
-      ...modelOptions(opts.model)
+      ...(opts.local ? {} : modelOptions(opts.model))
     }),
     signal: opts.signal ?? AbortSignal.timeout(45_000)
   })

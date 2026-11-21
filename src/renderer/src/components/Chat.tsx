@@ -9,7 +9,7 @@ import { NotePin, NotesPanel } from './Notes'
 import { useStore, useActiveThread, useThreadBusy, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
 import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/types'
-import { MODELS } from '../../../shared/types'
+import { findModel, modelsFor } from '../../../shared/types'
 
 /** One permission switch: a label and three words, the chosen one lit. */
 export function ChatPane(): React.ReactElement {
@@ -122,7 +122,7 @@ export function ChatPane(): React.ReactElement {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pinnedBottom = useRef(true)
   const messages = thread?.messages || []
-  const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+  const model = findModel(settings, settings.model) || modelsFor(settings)[0]
   const caps = settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
 
   // seconds spent on the current step, so a long read does not look frozen

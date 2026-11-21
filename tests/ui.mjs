@@ -32,6 +32,12 @@ const thread = {
   usage: { promptTokens: 0, completionTokens: 0, cachedTokens: 0, reasoningTokens: 0, cost: 0 },
   todos: []
 }
+// the store writes settings through the main-process module, which reads
+// COMB_TEST_DIR; without it the test would touch the real settings file
+process.env.COMB_TEST_DIR = (await import('node:fs')).mkdtempSync(
+  (await import('node:path')).join((await import('node:os')).tmpdir(), 'comb-ui-')
+)
+
 globalThis.window = {
   confirm: () => false,
   addEventListener: noop,

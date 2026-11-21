@@ -87,7 +87,9 @@ const api = {
     approve: (runId: string, callId: string, decision: string, editedArgs?: unknown) =>
       ipcRenderer.invoke('agent:approve', runId, callId, decision, editedArgs),
     onEvent: (cb: (e: unknown) => void) => on('agent:event', cb),
-    testKey: (key: string, baseUrl: string) => ipcRenderer.invoke('agent:testKey', key, baseUrl)
+    testKey: (key: string, baseUrl: string) => ipcRenderer.invoke('agent:testKey', key, baseUrl),
+    listModels: (key: string, baseUrl: string): Promise<{ ok: boolean; models: string[]; error?: string }> =>
+      ipcRenderer.invoke('agent:listModels', key, baseUrl)
   },
   files: {
     describe: (abs: string, ctx?: { task?: string }) => ipcRenderer.invoke('files:describe', abs, ctx),

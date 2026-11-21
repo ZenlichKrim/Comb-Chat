@@ -100,7 +100,7 @@ export async function describeFile(abs: string, ctx: DescribeContext | string = 
   if (SKIP_EXT.test(abs) || st.size > 400_000) return null
 
   const settings = await getSettings()
-  if (!settings.apiKey) throw new Error('No API key configured')
+  if (!settings.apiKey && settings.provider !== 'local') throw new Error('No API key configured')
 
   const fc = await readFileSafe(abs)
   if (!fc.content || fc.content.length < 4) return null
@@ -112,6 +112,7 @@ export async function describeFile(abs: string, ctx: DescribeContext | string = 
     apiKey: settings.apiKey,
     baseUrl: settings.baseUrl,
     model: settings.model,
+    local: settings.provider === 'local',
     system:
       'You label files in a coding agent\'s explorer so the user instantly understands what a file is THERE FOR. ' +
       'Reply with JSON only: {"purpose": string, "description": string|null}.\n' +

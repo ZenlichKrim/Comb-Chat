@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useT } from '../lib/i18n'
 import { useStore, formatCost } from '../store'
-import { MODELS } from '../../../shared/types'
+import { modelsFor, findModel } from '../../../shared/types'
 
 export function TitleBar(): React.ReactElement {
   const t = useT()
@@ -24,7 +24,8 @@ export function TitleBar(): React.ReactElement {
 
   const totalCost = threads.reduce((a, t) => a + t.usage.cost, 0)
   const wsName = workspace ? workspace.split(/[\\/]/).filter(Boolean).pop() : null
-  const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+  const models = modelsFor(settings)
+  const model = findModel(settings, settings.model) || models[0]
 
   return (
     <header className="titlebar" style={{ paddingLeft: isMac ? 78 : 8 }}>
@@ -74,7 +75,7 @@ export function TitleBar(): React.ReactElement {
             <div className="backdrop" onClick={() => setModelMenu(false)} />
             <div className="menu model-menu">
               <div className="menu-label">{t('title.model')}</div>
-              {MODELS.map((m) => (
+              {models.map((m) => (
                 <button
                   key={m.id}
                   className="menu-item"

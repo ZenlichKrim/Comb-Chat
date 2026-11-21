@@ -68,3 +68,28 @@ sidebar, one rounded field at the bottom. That is what this pass does.
   real store and the real stylesheet into `docs/preview.html`, so the window can
   be looked at without a browser. `tests/ui.mjs` now also pins the light default,
   the session list in the sidebar, and the one-word permission mode.
+
+## Iteration 46 — local models (the honest version of "no money")
+
+The user asked for DeepSeek Flash downloaded to the computer. It cannot be done:
+DeepSeek's models are not released as weights, so there is nothing to download.
+What the app *can* do — and now does — is run a model that IS published, on this
+machine, behind an OpenAI-compatible server.
+
+- `Settings.provider: 'deepseek' | 'local'`, plus `customModels[]` the user names
+  by hand. `modelsFor()` / `findModel()` merge them with DeepSeek's three, so the
+  picker, the title bar, the status bar and the context meter all work unchanged.
+- A local request sends **no** key, **no** `thinking` object, **no**
+  reasoning-replay requirement — Ollama answers 400 to every one of those. Cost is
+  reported as exactly $0, because a price on a model that runs on your own CPU is
+  the one number a user would call a lie.
+- Model routing is off for local runs: a run must never quietly reach for a cloud
+  model the user did not choose (that is a bill they never agreed to).
+- `agent:listModels` reads `/v1/models` so the app shows what is actually pulled
+  instead of asking the user to type a name from memory. A 404 from a localhost
+  server means "not pulled yet", not "wrong address" — the message says so.
+- Settings → Model opens with a "Local models" screen: Ollama / LM Studio /
+  llama.cpp presets, a check button, the pulled models as clickable rows, and one
+  honest line about the trade (free, slower, ~9 GB for a 14B model).
+- `tests/local-models.mjs` (14 checks) runs a fake Ollama: listing, the exact
+  request shape, a whole agent run with an empty API key, and $0 usage.

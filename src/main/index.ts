@@ -17,7 +17,7 @@ import * as store from './store'
 import * as fsops from './fsops'
 import { runTeam, stopRun, resolveApproval, answerVote, steerRun } from './agent'
 import { describeFile, getSummaries } from './describe'
-import { testApiKey } from './llm'
+import { testApiKey, listModels } from './llm'
 import { createTerminal, writeTerminal, resizeTerminal, killTerminal, killAllTerminals } from './terminal'
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL
@@ -403,6 +403,13 @@ function registerIpc(): void {
     void label
   })
   ipcMain.handle('agent:testKey', (_e, key: string, baseUrl: string) => testApiKey(key, baseUrl))
+  ipcMain.handle('agent:listModels', async (_e, key: string, baseUrl: string) => {
+    try {
+      return { ok: true, models: await listModels(key, baseUrl) }
+    } catch (e: any) {
+      return { ok: false, models: [], error: String(e?.message || e) }
+    }
+  })
 
   /* terminal */
   const termData = (e: TerminalDataEvent): void => mainWindow?.webContents.send('terminal:data', e)

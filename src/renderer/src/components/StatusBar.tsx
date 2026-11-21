@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, useActiveThread, formatTokens, formatCost } from '../store'
-import { MODELS } from '../../../shared/types'
+import { findModel, modelsFor } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 export function StatusBar(): React.ReactElement {
@@ -23,7 +23,7 @@ export function StatusBar(): React.ReactElement {
     setBackendOk(!!settings.apiKey)
   }, [settings.apiKey])
 
-  const model = MODELS.find((m) => m.id === settings.model) || MODELS[0]
+  const model = findModel(settings, settings.model) || modelsFor(settings)[0]
   const usagePct = thread ? Math.min(100, Math.round(((thread.usage.promptTokens || 0) / model.contextWindow) * 100)) : 0
 
   return (
@@ -89,7 +89,7 @@ export function StatusBar(): React.ReactElement {
         <Icon name="panel-bottom" size={11} />
       </button>
       <span className="sb-sep" />
-      <span className="sb-item faint" title={settings.model}>{settings.model.replace('deepseek-', '')}</span>
+      <span className="sb-item faint" title={settings.model}>{(model?.local ? '⌂ ' : '') + settings.model.replace('deepseek-', '')}</span>
     </footer>
   )
 }

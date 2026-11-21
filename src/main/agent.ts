@@ -310,7 +310,7 @@ export async function runAgent(
   deps: AgentDeps
 ): Promise<{ ok: boolean; error?: string; finalText?: string; touched?: string[]; todos?: TodoItem[] }> {
   const settings = await getSettings()
-  if (!settings.apiKey) {
+  if (!settings.apiKey && settings.provider !== 'local') {
     deps.emit({ type: 'error', runId: req.runId, message: 'No API key configured. Open Settings and paste your DeepSeek key.' })
     deps.emit({ type: 'run-end', runId: req.runId, reason: 'error' })
     return { ok: false, error: 'missing-api-key' }
@@ -798,7 +798,13 @@ export async function runAgent(
       // agentic coding (DeepSWE 77.0 vs 62.7, Terminal-Bench 42.3 vs 12.4) and it is
       // 3-7x cheaper, so Pro is the wrong default for editing files. Pro still wins
       // on deep text reasoning and long factual recall, so that is where it goes.
-      const routed = pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
+      // A local model is not routed: there is exactly one, it is on this disk,
+      // and silently swapping it for a cloud model would be a bill the user never
+      // agreed to.
+      const local = settings.provider === 'local'
+      const routed = local
+        ? req.model
+        : pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
 
       // one clock per step: when this burst of thought started
       let thoughtStart = 0
@@ -816,6 +822,7 @@ export async function runAgent(
         // 32k of thought — a long think on a trivial ask is money burned for
         // nothing. Substantial work and specs get the full setting.
         effort: substantial || specSections.length >= 4 ? req.thoughtEffort || 'deep' : 'fast',
+        local,
         onDelta: (d) => {
           // Time the thought here, on one clock. The renderer used to guess the
           // duration from the number of characters, which is why a 20-second think

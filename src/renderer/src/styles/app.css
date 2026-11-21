@@ -5285,3 +5285,69 @@ hr {
 .trace[data-empty='true'] {
   display: none;
 }
+
+/* ---- local models: the honest "no bill" screen ------------------------ */
+.local-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+}
+.local-mode[data-on='true'] {
+  border-color: var(--line-3);
+  background: var(--bg-2);
+}
+.local-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.local-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  text-align: left;
+  width: 100%;
+}
+.local-preset:hover {
+  background: var(--bg-2);
+}
+.local-preset[data-active='true'] {
+  border-color: var(--line-3);
+  background: var(--bg-2);
+}
+.local-models {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.local-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  width: 100%;
+  color: var(--fg-1);
+}
+.local-model:hover {
+  background: var(--bg-2);
+}
+.local-model[data-active='true'] {
+  background: var(--bg-3);
+}
+.local-model > .t-xs.faint {
+  margin-left: auto;
+}

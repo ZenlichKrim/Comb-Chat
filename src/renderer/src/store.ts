@@ -17,7 +17,7 @@ import type {
   TodoItem,
   FileContent
 } from '../../shared/types'
-import { DEFAULT_SETTINGS, MODELS } from '../../shared/types'
+import { DEFAULT_SETTINGS, findModel } from '../../shared/types'
 
 let idCounter = 0
 export function uid(prefix = 'id'): string {
@@ -1261,7 +1261,7 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   addContextFile: (a) => {
     if (a.kind === 'image') {
-      const m = MODELS.find((x) => x.id === get().settings.model)
+      const m = findModel(get().settings, get().settings.model)
       if (m && !m.vision) get().toast('warn', tr('chat.imageNotSupported'))
     }
     set((s) => ({
