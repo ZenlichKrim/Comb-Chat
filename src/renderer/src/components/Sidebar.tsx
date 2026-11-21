@@ -4,48 +4,63 @@ import { useStore, timeAgo, uid } from '../store'
 import { useT } from '../lib/i18n'
 import type { DirEntry, SearchHit, GitFile } from '../../../shared/types'
 
+export type SidebarSection = 'files' | 'search' | 'git' | 'threads'
+
 export function Sidebar(): React.ReactElement {
   const t = useT()
   const section = useStore((s) => s.sidebarSection)
-  const setSection = (v: 'files' | 'search' | 'git' | 'threads'): void => useStore.setState({ sidebarSection: v })
+  const sidebarOpen = useStore((s) => s.sidebarOpen)
   const git = useStore((s) => s.git)
   const refreshGit = useStore((s) => s.refreshGit)
-  const changes = (git?.files.length ?? 0)
+  const changes = git?.files.length ?? 0
+  const newThread = useStore((s) => s.newThread)
 
-  const sidebarOpen = useStore((s) => s.sidebarOpen)
-  // Collapsed the rail keeps working: clicking a section opens the panel again,
-  // so "hide the files" is one click, not a trip to a menu.
-  const pick = (v: 'files' | 'search' | 'git' | 'threads'): void => {
-    if (!sidebarOpen) {
-      useStore.setState({ sidebarSection: v, sidebarOpen: true })
-      return
-    }
-    if (section === v) {
-      useStore.setState({ sidebarOpen: false })
-      return
-    }
-    setSection(v)
+  // One column of names. The rail of icons next to it was the single busiest
+  // thing in the window: two navigation systems (icons and headers) for one
+  // list. The rows say what they are and the body below shows the choice.
+  const go = (v: SidebarSection): void => {
+    useStore.setState({ sidebarOpen: true, sidebarSection: v })
+    if (v === 'git') void refreshGit()
   }
-  const active = (v: string): 'true' | 'false' => (sidebarOpen && section === v ? 'true' : 'false')
+  const row = (v: SidebarSection, label: string, icon: Parameters<typeof Icon>[0]['name'], badge?: number): React.ReactElement => (
+    <button className="sb-row" data-active={section === v} onClick={() => go(v)}>
+      <Icon name={icon} size={12} className="sb-row-icon" />
+      <span className="ellipsis">{label}</span>
+      {badge ? <span className="sb-row-badge">{badge > 99 ? '99+' : badge}</span> : null}
+    </button>
+  )
 
   return (
     <aside className="sidebar" data-open={sidebarOpen}>
-      <div className="sb-tabs">
-        <button className="sb-tab" data-active={active('files')} onClick={() => pick('files')} data-tip={t('side.explorer')}>
-          <Icon name="file" size={13} />
-        </button>
-        <button className="sb-tab" data-active={active('search')} onClick={() => pick('search')} data-tip={t('side.searchTip')}>
-          <Icon name="search" size={13} />
-        </button>
-        <button className="sb-tab" data-active={active('git')} onClick={() => { pick('git'); void refreshGit() }} data-tip={t('side.sourceControl')}>
-          <Icon name="git" size={13} />
-          {changes > 0 && <span className="sb-badge">{changes > 99 ? '99+' : changes}</span>}
-        </button>
-        <button className="sb-tab" data-active={active('threads')} onClick={() => pick('threads')} data-tip={t('side.sessionsTip')}>
-          <Icon name="chat" size={13} />
-        </button>
+      <div className="sb-head">
+        {sidebarOpen && (
+          <button className="sb-tool" onClick={() => newThread()} data-tip={t('side.newSession')}>
+            <Icon name="plus" size={12} />
+          </button>
+        )}
         <span className="spacer" />
+        <button
+          className="sb-tool"
+          onClick={() => useStore.setState({ sidebarOpen: !sidebarOpen })}
+          data-tip={t('title.toggleSidebar')}
+        >
+          <Icon name={sidebarOpen ? 'chevron-left' : 'chevron-right'} size={12} />
+        </button>
       </div>
+
+      {sidebarOpen && (
+        <div className="sb-rows">
+          {row('threads', t('side.sessions'), 'chat')}
+          {row('files', t('side.explorer'), 'file')}
+          {row('search', t('side.search'), 'search')}
+          {row('git', t('side.sourceControl'), 'git', changes)}
+          <button className="sb-row" onClick={() => useStore.setState({ settingsOpen: true })}>
+            <Icon name="settings" size={12} className="sb-row-icon" />
+            <span className="ellipsis">{t('side.settings')}</span>
+          </button>
+        </div>
+      )}
+
       <div className="sb-body" data-open={sidebarOpen}>
         {sidebarOpen && section === 'files' && <FileTree />}
         {sidebarOpen && section === 'search' && <SearchPanel />}
@@ -682,17 +697,12 @@ function ThreadsPanel(): React.ReactElement {
 
   return (
     <div className="col grow" style={{ minHeight: 0 }}>
-      {/* Claude's sidebar: the new-session row sits above the list and looks like
-          a row of the list, not a header button. The list itself has no cards —
-          a session is one line of text and a dot. */}
-      <button className="sb-new-row" onClick={() => newThread()}>
-        <Icon name="plus" size={12} />
-        <span>{t('side.newSession')}</span>
-      </button>
-      <div className="tree-filter">
-        <Icon name="search" size={11} className="faint" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
-      </div>
+      {threads.length > 6 && (
+        <div className="tree-filter">
+          <Icon name="search" size={11} className="faint" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('side.searchSessions')} />
+        </div>
+      )}
       <div className="tree-scroll">
         {filtered.map((thread) => (
           <div key={thread.id} className="thread-row" data-active={thread.id === activeId} onClick={() => select(thread.id)}>

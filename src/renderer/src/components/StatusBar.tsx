@@ -15,8 +15,6 @@ export function StatusBar(): React.ReactElement {
   const thread = useActiveThread()
   const setBottomPanel = useStore((s) => s.setBottomPanel)
   const bottomPanel = useStore((s) => s.bottomPanel)
-  const setRightPanel = useStore((s) => s.setRightPanel)
-  const rightPanel = useStore((s) => s.rightPanel)
   const dirty = tabs.filter((t) => t.dirty).length
   const active = tabs.find((t) => t.path === activePath)
   const [backendOk, setBackendOk] = useState(true)
@@ -87,9 +85,6 @@ export function StatusBar(): React.ReactElement {
           <span className="sb-sep" />
         </>
       )}
-      <button className="sb-item" onClick={() => setRightPanel(rightPanel === 'none' ? 'plan' : 'none')} data-tip={t('status.toggleSidePanel')}>
-        <Icon name="panel-right" size={11} />
-      </button>
       <button className="sb-item" onClick={() => setBottomPanel(bottomPanel === 'terminal' ? 'none' : 'terminal')} data-tip={t('status.toggleTerminal')}>
         <Icon name="panel-bottom" size={11} />
       </button>

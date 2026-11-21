@@ -91,8 +91,8 @@
 
   --titlebar-h: 38px;
   --statusbar-h: 26px;
-  --sidebar-w: 260px;
-  --rail-w: 46px;
+  --sidebar-w: 244px;
+  --rail-w: 34px;
 
   /* accent: a manual pick wins, otherwise each theme supplies its own */
   --accent: var(--theme-accent, #7c9cff);
@@ -126,11 +126,11 @@
    different jobs: amber (#ffb86b) for the author thinking, honey-ink (#e8c37a)
    for the worker doing. Text is bone, never pure white. */
 [data-theme='comb'] {
-  --bg-0: #14110e;
-  --bg-1: #1a1613;
-  --bg-2: #211c17;
-  --bg-3: #2a241d;
-  --bg-4: #342d24;
+  --bg-0: #16130f;
+  --bg-1: #16130f;
+  --bg-2: #1e1a15;
+  --bg-3: #272119;
+  --bg-4: #332c23;
   --bg-hover: #26201a;
   --bg-active: #2e271e;
   --bg-inset: #0f0d0a;

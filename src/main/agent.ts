@@ -533,6 +533,8 @@ export async function runAgent(
 
   let step = 0
   let finalReason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' = 'done'
+  /** what to tell the user when the run dies on an API error */
+  let failureMessage = ''
   /** the last prose the model produced: the brief for the author, the report for the builder */
   let finalText = ''
 
@@ -595,13 +597,6 @@ export async function runAgent(
     if (/(ошибк|error|typo|опечатк|переименуй|rename|что такое|what is|как работает|how does)/i.test(q.slice(0, 200))) return false
     return true
   })()
-  /** does it produce something people look at or play? then craft matters double */
-  // Something people look at or play, in any stack — not "a Minecraft mod". The
-  // old pattern started with `мод`, and that one word set the tone of the whole
-  // run: the model read its own prompt as a hint about the domain.
-  const visualish = /(игр|game|интерфейс|interface|ui\b|ux\b|дизайн|design|визуал|visual|анимац|animat|атмосфер|atmospher|погод|weather|снег|snow|туман|fog|сайт|site|page|страниц|лендинг|dashboard|панель)/i.test(
-    (req.userMessage?.content || '').toLowerCase()
-  )
   const specSections = (() => {
     const raw = req.userMessage?.content || ''
     if (raw.length < 800) return [] as { n: number; title: string; hits: number }[]
@@ -625,7 +620,6 @@ export async function runAgent(
   let artifactRefused = 0
   let specPlanAsked = false
   let scopeRefused = 0
-  let designPassed = false
   /** the user asked for a build and we have not found it on disk yet */
   const artifactMissing = (): boolean => !!wantedArtifact && !artifactFound && artifactRefused < 2
   /** the user asked for a build artifact (jar/exe/appimage...) — we must find it */
@@ -1541,35 +1535,6 @@ export async function runAgent(
         })
       }
 
-      // The thing that separates a professional from a clerk is the pass nobody
-      // asked for: what will this feel like, what is missing from the spec, what
-      // would make it good rather than compliant. One round, before code.
-      if (step === 1 && substantial && !designPassed) {
-        designPassed = true
-        deps.emit({
-          type: 'guard',
-          runId: req.runId,
-          kind: 'steer',
-          title: 'Сначала проход автора, потом работа',
-          detail: 'Мудборд, композиция, что добавить сверх спеки.'
-        })
-        history.push({
-          role: 'user',
-          content:
-            '[author pass — before you start making anything]\n' +
-            'You have room here: this is your design as much as the request. Prefer the version you would be proud of over the smallest thing that satisfies the list — as long as it still runs and still fits what was asked.\n' +
-            'You are the author of this, not a contractor filling an order. Before touching files, decide and write short and concrete:\n' +
-            '1. WHAT THIS REALLY IS — one paragraph on what the user is actually asking for, in your words. If the request is vague or one part of it is impossible, say so here and say what you will do instead.\n' +
-            '2. WHAT IT IS JUDGED ON — the three things that will make the user say "yes, that is it" (for code: does it run, does it fit the codebase, is the API shaped sensibly; for a document: structure, accuracy, voice; for a refactor: invariants kept, nothing broken; for a dataset: coverage and correctness).\n' +
-            '3. WHAT THE REQUEST LEFT OUT — at least five things a professional would add without being told, specific to this task, and then add them for real. Not invented features: the details that separate done from well done — error paths, edge cases, empty states, a migration, a test, a fallback, naming that reads well.\n' +
-            '4. THE SHAPE — how it will be organised: which files/classes/sections, what goes where, what is reused instead of rewritten, what the one part the user will look at first is.\n' +
-            (visualish
-              ? '5. FOR SOMETHING SEEN OR FELT — composition and mood: where each element sits, what the eye hits first, what is only shown when relevant, the density of particles/fog/colour, day length, transitions, the single moment worth a screenshot. Add these for real, not as a mention.\n'
-              : '5. THE ONE THING — the single part that will make the user glad they asked you instead of anyone else. Build towards it.\n') +
-            'Write this to the user as your own thinking, then work. In the summary, say what you added beyond the request — this user explicitly welcomes it.'
-        })
-      }
-
       // A pasted spec with sections: the plan must be those sections, not a
       // vague three-step story. This runs before any exploring so the run has a
       // shape from the start, and it names every section explicitly.
@@ -1639,9 +1604,16 @@ export async function runAgent(
       // Protocol-level 400s are ours, not the user's problem to read: say what
       // happened in Russian instead of pasting the API's sentence.
       const raw = String(e?.message || e)
-      const message = /must be followed by tool messages|insufficient tool messages|tool_call_id/i.test(raw)
-        ? 'Агент потерял связку «вызов инструмента → результат». Такое не должно повторяться: прогон перезапущен, история почищена.'
-        : raw
+      const kind = (e as { kind?: string } | null)?.kind
+      const message =
+        kind === 'quota'
+          ? 'У ключа закончилась квота запросов — повторять бессмысленно. Пополните баланс на platform.deepseek.com и продолжите: работа сохранена, шаг начнётся с того же места.'
+          : kind === 'balance'
+            ? 'На аккаунте DeepSeek закончился баланс — пополните его на platform.deepseek.com и продолжите.'
+            : /must be followed by tool messages|insufficient tool messages|tool_call_id/i.test(raw)
+              ? 'Агент потерял связку «вызов инструмента → результат». Такое не должно повторяться: прогон перезапущен, история почищена.'
+              : raw
+      failureMessage = message
       deps.emit({ type: 'error', runId: req.runId, message })
     }
   } finally {
@@ -1789,6 +1761,10 @@ export async function runAgent(
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })
   }
 
+  // A run that died on an API error used to report ok:true to its caller: the
+  // transcript said "этот ход завершился ошибкой" while everything upstream
+  // treated the turn as a success, so nothing offered a retry.
+  if (finalReason === 'error') return { ok: false, error: failureMessage, finalText, touched: [...touched], todos }
   return { ok: true, finalText, touched: [...touched], todos }
 }
 

@@ -3,7 +3,6 @@ import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { EditorPane } from './components/Editor'
 import { ChatPane } from './components/Chat'
-import { RightPanel } from './components/RightPanel'
 import { BottomPanel } from './components/Terminal'
 import { StatusBar } from './components/StatusBar'
 import { SettingsDialog } from './components/Settings'
@@ -17,7 +16,6 @@ export function App(): React.ReactElement {
   const ready = useStore((s) => s.ready)
   const boot = useStore((s) => s.boot)
   const sidebarOpen = useStore((s) => s.sidebarOpen)
-  const rightPanel = useStore((s) => s.rightPanel)
   const bottomPanel = useStore((s) => s.bottomPanel)
   const workspace = useStore((s) => s.workspace)
   const [splitter, setSplitter] = useState(0.52)
@@ -77,9 +75,6 @@ export function App(): React.ReactElement {
       } else if (mod && e.key.toLowerCase() === 'b') {
         e.preventDefault()
         useStore.setState({ sidebarOpen: !st.sidebarOpen })
-      } else if (mod && e.key.toLowerCase() === 'j') {
-        e.preventDefault()
-        st.setRightPanel(st.rightPanel === 'none' ? 'plan' : 'none')
       } else if (mod && e.key === '`') {
         e.preventDefault()
         st.setBottomPanel(st.bottomPanel === 'terminal' ? 'none' : 'terminal')
@@ -136,21 +131,10 @@ export function App(): React.ReactElement {
     <div className="app">
       <TitleBar />
       <div className="app-body">
-        {/* The rail stays (four icons), the panel behind it opens and closes and
-            animates its width, so the editor does not jump — it slides. */}
+        {/* One column: header with the two buttons, the list of places, the body
+            of the choice. The open/close control lives in its own header now —
+            a floating chevron over the content was one more thing on screen. */}
         <Sidebar />
-        {/* The way out of the file panel is where it is in every editor: a small
-            chevron on its own edge, at the top. */}
-        {sidebarOpen && (
-          <button
-            className="sb-collapse"
-            onClick={() => useStore.setState({ sidebarOpen: false })}
-            data-tip={t('side.hide')}
-            aria-label={t('side.hide')}
-          >
-            <Icon name="chevron-left" size={9} />
-          </button>
-        )}
         <div className="workspace-area">
           <div className="main-split">
             {!editorHidden && (
@@ -198,7 +182,6 @@ export function App(): React.ReactElement {
             >
               <ChatPane />
             </div>
-            {rightPanel !== 'none' && <RightPanel />}
           </div>
           {bottomPanel !== 'none' && <BottomPanel />}
         </div>

@@ -4,15 +4,13 @@ import { useStore, formatCost, totalUsage } from '../store'
 import { MODELS, modelUse, type ThemeId, type Locale } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
-type Tab = 'model' | 'agent' | 'appearance' | 'editor' | 'terminal' | 'shortcuts' | 'about'
+type Tab = 'model' | 'agent' | 'appearance' | 'keys' | 'about'
 
 const TABS: { id: Tab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { id: 'model', label: 'set.tabModel', icon: 'cpu' },
   { id: 'agent', label: 'set.tabAgent', icon: 'zap' },
   { id: 'appearance', label: 'set.tabAppearance', icon: 'sun' },
-  { id: 'editor', label: 'set.tabEditor', icon: 'edit' },
-  { id: 'terminal', label: 'set.tabTerminal', icon: 'terminal' },
-  { id: 'shortcuts', label: 'set.tabKeys', icon: 'command' },
+  { id: 'keys', label: 'set.tabKeys', icon: 'command' },
   { id: 'about', label: 'set.tabAbout', icon: 'info' }
 ]
 
@@ -477,7 +475,7 @@ export function SettingsDialog(): React.ReactElement {
             </Section>
           )}
 
-          {tab === 'editor' && (
+          {tab === 'appearance' && (
             <Section title={t('set.editorSection')} desc={t('set.editorDesc')}>
               <Toggle label={t('set.lineNumbers')} value={settings.showLineNumbers} onChange={(v) => void setSettings({ showLineNumbers: v })} />
               <Toggle label={t('set.wordWrap')} hint={t('set.wordWrapHint')} value={settings.wordWrap} onChange={(v) => void setSettings({ wordWrap: v })} />
@@ -497,7 +495,7 @@ export function SettingsDialog(): React.ReactElement {
             </Section>
           )}
 
-          {tab === 'terminal' && (
+          {tab === 'appearance' && (
             <Section title={t('set.terminalSection')} desc={t('set.terminalDesc')}>
               <Field label={t('set.shell')} hint={window.comb.app.platform === 'win32' ? t('set.shellHintWin') : t('set.shellHintUnix')}>
                 <input
@@ -528,7 +526,7 @@ export function SettingsDialog(): React.ReactElement {
             </Section>
           )}
 
-          {tab === 'shortcuts' && <Shortcuts />}
+          {tab === 'keys' && <Shortcuts />}
 
           {tab === 'about' && (
             <Section title={t('set.aboutSection')} desc={t('set.aboutDesc')}>

@@ -341,9 +341,8 @@ export function ChatPane(): React.ReactElement {
           <span className="t-sm ellipsis" style={{ fontWeight: 600, color: 'var(--fg-0)' }}>
             {thread.title}
           </span>
-          <span className="t-xs ghost">
-            {timeAgo(thread.createdAt)} · {t('chat.turns', { n: messages.filter((m) => m.role === 'user').length })}
-            {usage && usage.completionTokens > 0 ? ` · ${formatTokens(usage.promptTokens + usage.completionTokens)} tok · ${formatCost(usage.cost)}` : ''}
+          <span className="t-xs ghost ellipsis">
+            {usage && usage.completionTokens > 0 ? `${formatTokens(usage.promptTokens + usage.completionTokens)} tok · ${formatCost(usage.cost)}` : timeAgo(thread.createdAt)}
           </span>
         </div>
         <span className="spacer" />
@@ -391,12 +390,8 @@ export function ChatPane(): React.ReactElement {
                     ← {lastPrompt}
                   </span>
                 )}
-                {changedFiles.length > 0 && (
-                  <span className="pill acc t-xs">{t('chat.filesTouched', { n: changedFiles.length })}</span>
-                )}
                 {activity && (
                   <span className="faint t-xs tabular" title={t('chat.runClockHint')}>
-                    {activity.thoughtMs ? t('chat.thoughtShort', { n: Math.round(activity.thoughtMs / 1000) }) + ' · ' : ''}
                     {elapsed}s
                   </span>
                 )}
@@ -1029,7 +1024,6 @@ function StepTrace({ steps, live }: { steps: NonNullable<ChatMessage['steps']>; 
                 onClick={() => open && toggleWide(s.id)}
                 title={open ? undefined : t('trace.expand')}
               >
-                <span className="trace-caret">&gt;&gt;</span>
                 <div className="chat-text">
                   <Markdown text={s.say} />
                 </div>
@@ -1244,12 +1238,6 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
 
   return (
     <div className="msg assistant" id={msg.streaming ? 'msg-live' : undefined}>
-      <div className="msg-gutter">
-        <span className="msg-avatar">
-          <Icon name="bee" size={12} />
-        </span>
-        <span className="msg-spine" />
-      </div>
       <div className="msg-main">
         {msg.reasoning && (
           <ReasoningBlock

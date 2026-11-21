@@ -52,7 +52,17 @@ export interface LlmToolSchema {
 
 export class LlmError extends Error {
   status?: number
-  kind: 'auth' | 'rate' | 'balance' | 'network' | 'server' | 'bad-request' | 'aborted' | 'truncated' | 'reasoning'
+  kind:
+    | 'auth'
+    | 'rate'
+    | 'quota'
+    | 'balance'
+    | 'network'
+    | 'server'
+    | 'bad-request'
+    | 'aborted'
+    | 'truncated'
+    | 'reasoning'
   /** what the server told us to wait, in ms */
   retryAfterMs?: number
   /** how far into the turn the connection died — a break at the start costs nothing */
@@ -271,7 +281,10 @@ export async function streamChat(args: StreamArgs): Promise<LlmStreamResult> {
       }
       // permanent: retrying cannot help, and a run you walked away from should
       // stop with a clear reason instead of hammering the API
-      if (e instanceof LlmError && (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'bad-request' || e.kind === 'reasoning')) {
+      if (
+        e instanceof LlmError &&
+        (e.kind === 'aborted' || e.kind === 'auth' || e.kind === 'balance' || e.kind === 'quota' || e.kind === 'bad-request' || e.kind === 'reasoning')
+      ) {
         throw e
       }
       if (signal.aborted) throw new LlmError('Stopped by user', 'aborted')
@@ -386,6 +399,20 @@ async function runOnce(opts: {
     if (res.status === 401 || res.status === 403) throw new LlmError(`Authentication failed: ${msg}`, 'auth', res.status)
     if (res.status === 402) throw new LlmError(`Insufficient balance: ${msg}`, 'balance', res.status)
     const retryAfter = parseRetryAfter(res.headers.get('retry-after'))
+    // A quota is not a busy minute. DeepSeek answers 429 both for "slow down for a
+    // second" and for "this key has spent its request budget", and treating the
+    // second one as retryable produced the worst screen in the app: five
+    // "Повторный запрос модели" rows in a row and then a dead run.
+    // Match the words that mean "nothing left", not the ones that mean "slow
+    // down": "Rate limit reached, please slow down" is the temporary kind and
+    // must keep its retries.
+    const quota =
+      /(quota|exhausted|insufficient[ _](quota|balance)|no (?:requests|balance) (?:left|remaining)|(?:daily|day|monthly|week|plan)[^.]{0,20}limit)/i.test(
+        msg
+      ) || (retryAfter !== undefined && retryAfter > 90_000)
+    if (res.status === 429 && quota) {
+      throw new LlmError(`Quota exhausted: ${msg}`, 'quota', res.status, retryAfter)
+    }
     if (res.status === 429) throw new LlmError(`Rate limited: ${msg}`, 'rate', res.status, retryAfter)
     if (res.status >= 500) throw new LlmError(`HTTP ${res.status}: ${msg}`, 'server', res.status, retryAfter)
     if (res.status === 400 || res.status === 422) {

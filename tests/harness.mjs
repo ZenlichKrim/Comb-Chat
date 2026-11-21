@@ -34,6 +34,12 @@ const server = http.createServer((req, res) => {
     }
     requests.push(JSON.parse(body || '{}'))
     const next = script.shift() || finalText('(script exhausted)')
+    // a scripted failure, for the cases where the API says no (quota, 5xx)
+    if (next.status && next.status !== 200) {
+      res.writeHead(next.status, { 'content-type': 'application/json', ...(next.headers || {}) })
+      res.end(typeof next.body === 'string' ? next.body : JSON.stringify(next.body || {}))
+      return
+    }
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
     const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`)
     const base = { id: 'x', object: 'chat.completion.chunk', created: 1, model: 'deepseek-flash' }
@@ -400,6 +406,49 @@ script.push(finalText('Изучил проект и записал выводы.
 events.length = 0
 await runTeam({ ...req, maxSteps: 40, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u11', role: 'user', content: 'Изучи проект и прочитай все большие файлы, потом коротко напиши выводы в inventory.md.', createdAt: Date.now() } }, deps)
 check('a study task is not told to stop reading', !events.some((e) => e.type === 'guard' && /Бюджет на изучение|exploration budget/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard').map((e) => e.title)).slice(0, 240))
+
+/* ------------------------------------------------------------------ */
+/* 15. a spent quota ends the run at once, without a retry spiral      */
+/* ------------------------------------------------------------------ */
+console.log('quota:')
+script = [
+  {
+    status: 429,
+    body: { error: { message: 'Insufficient quota: you have exhausted your request quota for this key', type: 'insufficient_quota' } }
+  }
+]
+events.length = 0
+// the previous run's file summaries land a moment later; they are another model
+// call and must not be counted as retries of this one
+await new Promise((r) => setTimeout(r, 1200))
+requests = []
+script = [
+  {
+    status: 429,
+    body: { error: { message: 'Insufficient quota: you have exhausted your request quota for this key', type: 'insufficient_quota' } }
+  }
+]
+const quotaStart = Date.now()
+const quotaRes = await runTeam({ ...req, maxSteps: 8, userMessage: { id: 'u12', role: 'user', content: 'Сделай мод про снег.', createdAt: Date.now() } }, deps)
+const quotaMs = Date.now() - quotaStart
+const retryRows = events.filter((e) => e.type === 'run-retry')
+const errEvent = events.find((e) => e.type === 'error')
+if (process.env.DUMPQ)
+  console.log(
+    'REQS',
+    JSON.stringify(requests.map((r) => [String(r.messages?.[0]?.content || '').slice(0, 40), r.messages.length, r.messages.at(-1)?.role, (r.tools || []).length])),
+    JSON.stringify(events.map((e) => [e.type, e.reason || e.kind, String(e.message || e.detail || '').slice(0, 60)]))
+  )
+const agentCalls = requests.filter((r) => /You are Comb, a precise/.test(String(r.messages?.[0]?.content || '')))
+check('a spent quota asks the API exactly once', agentCalls.length === 1, `${agentCalls.length} agent calls of ${requests.length}`)
+check('no "retrying the model" rows for a dead key', retryRows.length === 0, JSON.stringify(retryRows.map((r) => r.attempt)))
+check(
+  'the run ends and says so',
+  quotaRes.ok === false && events.some((e) => e.type === 'run-end' && e.reason === 'error'),
+  JSON.stringify({ ok: quotaRes.ok, err: quotaRes.error, end: events.filter((e) => e.type === 'run-end') })
+)
+check('the message names the quota and the way out', /квот/i.test(errEvent?.message || '') && /platform\.deepseek\.com/.test(errEvent?.message || ''), String(errEvent?.message || '').slice(0, 160))
+check('and it gives up in seconds, not minutes', quotaMs < 5000, `${quotaMs}ms`)
 
 server.close()
 console.log(`\nagent harness: ${pass + fail} checks, ${pass} passed${fail ? `, ${fail} FAILED` : ''}`)

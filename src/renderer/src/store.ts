@@ -50,7 +50,6 @@ export interface PaletteState {
 }
 
 export type BottomPanel = 'terminal' | 'problems' | 'output' | 'git'
-export type RightPanel = 'plan' | 'context' | 'history' | 'none'
 
 interface State {
   /** what the user typed while the agent was busy: sent, not lost */
@@ -68,7 +67,6 @@ interface State {
   dirCache: Record<string, DirEntry[]>
   git: GitStatus | null
   sidebarOpen: boolean
-  rightPanel: RightPanel
   bottomPanel: BottomPanel | 'none'
   bottomPanelHeight: number
   palette: PaletteState
@@ -163,7 +161,6 @@ interface Actions {
   dismissToast: (id: string) => void
   setPalette: (p: Partial<PaletteState>) => void
   setBottomPanel: (p: BottomPanel | 'none') => void
-  setRightPanel: (p: RightPanel) => void
   addContextFile: (a: Attachment) => void
   removeContextFile: (id: string) => void
   setActiveThreadTodos: (todos: TodoItem[]) => void
@@ -239,7 +236,6 @@ export const useStore = create<State & Actions>((set, get) => ({
   git: null,
   sidebarOpen: true,
   // shut by default: a panel full of zeros is furniture, not information
-  rightPanel: 'none',
   bottomPanel: 'none',
   bottomPanelHeight: 240,
   palette: { open: false, mode: 'commands' },
@@ -1215,7 +1211,6 @@ export const useStore = create<State & Actions>((set, get) => ({
 
   setPalette: (p) => set((s) => ({ palette: { ...s.palette, ...p } })),
   setBottomPanel: (p) => set({ bottomPanel: p }),
-  setRightPanel: (p) => set({ rightPanel: p }),
 
   addNote: (n) => {
     const text = n.text.trim()

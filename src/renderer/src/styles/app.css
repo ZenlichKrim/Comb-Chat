@@ -18,7 +18,10 @@
   align-items: center;
   gap: 8px;
   padding-right: 6px;
-  background: var(--bg-1);
+  /* The bar is part of the page, not a utensil bar: same colour as the window,
+     one hairline under it. Two filled strips (this one and the status bar) plus
+     a rule between every panel is what made the app read as busy. */
+  background: var(--bg-0);
   border-bottom: 1px solid var(--line-1);
   -webkit-app-region: drag;
   position: relative;
@@ -158,65 +161,14 @@
   width: var(--sidebar-w);
   flex: none;
   display: flex;
-  background: var(--bg-1);
+  flex-direction: column;
+  min-width: 0;
+  /* One tone for the whole left side, separated by a hairline rather than a
+     darker gutter: the rail used to be a second colour inside the panel and
+     every vertical line in the window competed with the content. */
+  background: var(--bg-0);
   border-right: 1px solid var(--line-1);
   min-height: 0;
-}
-.sb-tabs {
-  width: var(--rail-w);
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 0;
-  border-right: 1px solid var(--line-1);
-  background: var(--bg-0);
-}
-.sb-tab {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-sm);
-  color: var(--fg-3);
-  transition: all var(--dur-fast);
-}
-.sb-tab:hover {
-  color: var(--fg-0);
-  background: var(--bg-hover);
-}
-.sb-tab[data-active='true'] {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.sb-tab[data-active='true']::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 8px;
-  bottom: 8px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.sb-badge {
-  position: absolute;
-  top: 2px;
-  right: 0;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: var(--r-full);
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 8px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 .sb-body {
   flex: 1;
@@ -232,7 +184,6 @@
   height: 30px;
   flex: none;
   padding: 0 6px 0 12px;
-  border-bottom: 1px solid var(--line-1);
   color: var(--fg-2);
 }
 .sb-section-head .cap {
@@ -873,10 +824,16 @@
   }
 }
 .messages {
-  padding: 16px 16px 28px;
+  /* One calm column, the width of a paragraph. The old 16px gutters with an
+     avatar and a spine next to every message put a second vertical line inside
+     the transcript; without the gutter the text simply starts at the reader. */
+  padding: 18px 20px 32px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
 }
 .chat-empty {
   padding: 32px 20px;
@@ -1164,35 +1121,6 @@ a.code-ref code {
 }
 .msg.assistant {
   align-items: stretch;
-}
-.msg-gutter {
-  width: 20px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.msg-avatar {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--r-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  color: var(--accent);
-  flex: none;
-}
-.msg-spine {
-  flex: 1;
-  width: 1px;
-  background: var(--line-1);
-  margin-bottom: -16px;
-}
-.msg:last-child .msg-spine {
-  display: none;
 }
 .msg-main {
   flex: 1;
@@ -1610,13 +1538,15 @@ a.code-ref code {
 }
 .composer-wrap {
   flex: none;
-  padding: 6px 12px 4px;
-  background: linear-gradient(to top, var(--bg-0) 70%, transparent);
+  padding: 6px 20px 6px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
 }
 .composer {
   border: 1px solid var(--line-2);
   border-radius: var(--r-lg);
-  background: var(--bg-1);
+  background: var(--bg-2);
   transition: border-color var(--dur), box-shadow var(--dur);
   /* not hidden: the note popover has to escape the composer box */
   position: relative;
@@ -2209,9 +2139,10 @@ a.code-ref code {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 6px;
-  background: var(--bg-1);
-  border-top: 1px solid var(--line-1);
+  padding: 0 8px;
+  /* No fill and no rule: the status line is a whisper under the window, and a
+     second bordered strip at the bottom was half of the "loaded" feeling. */
+  background: transparent;
   font-size: var(--fs-2xs);
   color: var(--fg-3);
   overflow: hidden;
@@ -4112,9 +4043,7 @@ hr {
 .sb-body {
   transition: opacity 0.12s ease;
 }
-.sb-tabs {
-  border-right: 1px solid transparent;
-}
+
 
 /* ---------------------------------------------------------------- */
 /* Big launcher: one rounded card with the four places to go         */
@@ -4209,39 +4138,6 @@ hr {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
-}
-
-/* ---------------------------------------------------------------- */
-/* Sidebar: the handle you can actually find                        */
-/* ---------------------------------------------------------------- */
-.sb-collapse {
-  position: absolute;
-  z-index: 60;
-  top: calc(var(--titlebar-h) + 14px);
-  left: calc(var(--rail-w) + var(--sidebar-w) - 9px);
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: var(--bg-3);
-  border: 1px solid var(--line-2);
-  color: var(--fg-3);
-  opacity: 0;
-  transition:
-    opacity 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease;
-}
-.sidebar:hover ~ .sb-collapse,
-.sb-collapse:hover,
-.sb-collapse:focus-visible {
-  opacity: 1;
-}
-.sb-collapse:hover {
-  color: var(--accent);
-  border-color: var(--accent-line);
 }
 
 /* the chat/editor seam: a real toggle, centred in the seam */
@@ -5059,23 +4955,72 @@ hr {
   line-height: 1.6;
 }
 
-/* ---- sidebar: rows, not cards ---------------------------------------- */
-.sb-new-row {
+/* ---- sidebar: one column of names ------------------------------------ */
+.sb-head {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  flex: none;
+  padding: 0 6px;
+  gap: 4px;
+}
+.sb-tool {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--fg-3);
+}
+.sb-tool:hover {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+.sb-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 6px 8px;
+  flex: none;
+}
+.sb-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: calc(100% - 16px);
-  margin: 4px 8px 6px;
-  padding: 7px 9px;
-  border-radius: var(--r-md);
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
   font-size: var(--fs-sm);
-  color: var(--fg-1);
-  background: var(--bg-2);
-  transition: background var(--dur), color var(--dur);
+  color: var(--fg-2);
+  text-align: left;
+  white-space: nowrap;
 }
-.sb-new-row:hover {
-  background: var(--bg-3);
+.sb-row:hover {
+  background: var(--bg-2);
   color: var(--fg-0);
+}
+.sb-row[data-active='true'] {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+.sb-row-icon {
+  flex: none;
+  opacity: 0.7;
+}
+.sb-row-badge {
+  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-4);
+  color: var(--fg-2);
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .thread-row {
   align-items: center;

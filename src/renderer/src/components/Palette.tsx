@@ -48,10 +48,6 @@ export function CommandPalette(): React.ReactElement {
       { id: 'save', label: t('cmd.save'), icon: 'save', keys: 'Ctrl S', run: () => void st.saveTab() },
       { id: 'saveall', label: t('cmd.saveAll'), icon: 'save', run: () => void st.saveAllTabs() },
       { id: 'terminal', label: t('cmd.terminal'), icon: 'terminal', keys: 'Ctrl `', run: () => st.setBottomPanel(st.bottomPanel === 'terminal' ? 'none' : 'terminal') },
-      { id: 'output', label: t('cmd.output'), icon: 'zap', run: () => st.setBottomPanel('output') },
-      { id: 'plan', label: t('cmd.plan'), icon: 'check-circle', keys: 'Ctrl J', run: () => st.setRightPanel(st.rightPanel === 'none' ? 'plan' : 'none') },
-      { id: 'history', label: t('cmd.history'), icon: 'history', run: () => st.setRightPanel('history') },
-      { id: 'context', label: t('cmd.context'), icon: 'layers', run: () => st.setRightPanel('context') },
       { id: 'undo-run', label: t('cmd.undoRun'), icon: 'undo', run: () => void st.undoLastRun() },
       {
         id: 'approve',
@@ -71,12 +67,6 @@ export function CommandPalette(): React.ReactElement {
         icon: 'zap',
         run: () => void st.setSettings({ capabilities: { edit: 'auto', run: 'auto' } })
       },
-      { id: 'git', label: t('cmd.git'), icon: 'git', run: () => void st.refreshGit() },
-      { id: 'theme', label: t('cmd.theme'), icon: 'sun', run: () => {
-        const order = ['comb', 'midnight', 'graphite', 'electric', 'nord', 'paper'] as const
-        const idx = order.indexOf(st.settings.theme as any)
-        void st.setSettings({ theme: order[(idx + 1) % order.length] })
-      } },
       { id: 'stop', label: t('cmd.stop'), icon: 'stop', run: () => void st.stopRun() }
     ]
     for (const tab of st.tabs) {
