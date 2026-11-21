@@ -49,6 +49,8 @@ export function TitleBar(): React.ReactElement {
       </div>
 
       <div className="tb-center">
+        {/* The middle of the bar is the one place a long run says what it is
+            doing in a sentence. It used to say "ready" forever. */}
         <div className="tb-crumbs">
           {running ? (
             <>
@@ -56,10 +58,7 @@ export function TitleBar(): React.ReactElement {
               <span className="tb-status acc">{t('title.agentRunning')}</span>
             </>
           ) : (
-            <>
-              <span className="dot" style={{ background: 'var(--ok)' }} />
-              <span className="tb-status">{t('title.ready')}</span>
-            </>
+            <span className="tb-status ghost">{model.label}</span>
           )}
         </div>
       </div>
@@ -67,8 +66,7 @@ export function TitleBar(): React.ReactElement {
       <div className="tb-right">
         <button className="model-chip" onClick={() => setModelMenu((v) => !v)}>
           <Icon name="cpu" size={12} />
-          <span>{model.label}</span>
-          {model.reasoning && <span className="pill acc" style={{ height: 15, padding: '0 4px' }}>R1</span>}
+          <span>{t('title.modelChip')}</span>
           <Icon name="chevron-down" size={10} />
         </button>
         {modelMenu && (
@@ -103,8 +101,10 @@ export function TitleBar(): React.ReactElement {
             </div>
           </>
         )}
-        <span className="tb-cost" data-tip={t('title.totalSpend')}>
-          {formatCost(totalCost)}
+        {/* Money is not a first-class fact on a new user's screen: it lives in
+            the tooltip and in Settings, where someone looks when they care. */}
+        <span className="tb-cost" data-tip={`${t('title.totalSpend')}: ${formatCost(totalCost)}`}>
+          <Icon name="wallet" size={11} />
         </span>
         <button className="icon-btn" data-tip={t('title.settings')} onClick={() => useStore.setState({ settingsOpen: true })}>
           <Icon name="settings" size={14} />

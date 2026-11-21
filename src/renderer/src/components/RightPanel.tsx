@@ -109,7 +109,13 @@ function PlanStats(): React.ReactElement {
         </div>
         <div className="rp-kv">
           <span className="faint">{t('rp.policy')}</span>
-          <span className="mono">{settings.approvalPolicy}</span>
+          <span className="mono">
+            {(settings.capabilities || { edit: 'ask', run: 'ask' }).edit === 'auto'
+              ? (settings.capabilities || { edit: 'ask', run: 'ask' }).run === 'auto'
+                ? t('chat.permAutoAll')
+                : t('chat.permAutoEdit')
+              : t('chat.permAsk')}
+          </span>
         </div>
         <div className="rp-kv">
           <span className="faint">{t('rp.model')}</span>

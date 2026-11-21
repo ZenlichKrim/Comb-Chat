@@ -3,7 +3,8 @@ import { Icon, type IconName } from './Icon'
 import { CombMark } from './TitleBar'
 import { Markdown } from './Markdown'
 import { ToolCard } from './ToolCard'
-import { VoteCard, GuardNote, Suggestions, SpecCard } from './AgentNotes'
+import { VoteCard, GuardNote, Suggestions } from './AgentNotes'
+import { PermRow } from './Settings'
 import { NotePin, NotesPanel } from './Notes'
 import { useStore, useActiveThread, useThreadBusy, formatCost, formatTokens, timeAgo } from '../store'
 import { useT } from '../lib/i18n'
@@ -11,31 +12,6 @@ import type { Attachment, ChatMessage, ApprovalPolicy } from '../../../shared/ty
 import { MODELS } from '../../../shared/types'
 
 /** One permission switch: a label and three words, the chosen one lit. */
-function PermRow({
-  label,
-  value,
-  options,
-  onChange
-}: {
-  label: string
-  value: string
-  options: { value: string; label: string }[]
-  onChange: (v: string) => void
-}): React.ReactElement {
-  return (
-    <div className="perm-row">
-      <span className="perm-label">{label}</span>
-      <span className="perm-seg">
-        {options.map((o) => (
-          <button key={o.value} className="perm-opt" data-on={value === o.value} onClick={() => onChange(o.value)}>
-            {o.label}
-          </button>
-        ))}
-      </span>
-    </div>
-  )
-}
-
 export function ChatPane(): React.ReactElement {
   const t = useT()
   const [dragging, setDragging] = useState(false)
@@ -132,7 +108,6 @@ export function ChatPane(): React.ReactElement {
   const bottomPanel = useStore((s) => s.bottomPanel)
 
   const activity = useStore((s) => s.activity)
-  const activeRole = useStore((s) => s.activeRole)
   const lastPrompt = useStore((s) => s.lastPrompt)
   const changedFiles = useStore((s) => s.changedFiles)
   const [elapsed, setElapsed] = useState(0)
@@ -382,7 +357,14 @@ export function ChatPane(): React.ReactElement {
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {isEmpty ? (
           <div className="chat-empty">
-            <Onboarding workspace={workspace} onOpen={() => void openWorkspace()} />
+            <Onboarding
+              workspace={workspace}
+              onOpen={() => void openWorkspace()}
+              onStart={(text) => {
+                setInput(text)
+                inputRef.current?.focus()
+              }}
+            />
           </div>
         ) : (
           <div className="messages">
@@ -401,11 +383,6 @@ export function ChatPane(): React.ReactElement {
             {running && (
               <div className="thinking-row">
                 <span className="spinner" />
-                {activeRole && (
-                  <span className="role-chip" data-role={activeRole}>
-                    {activeRole === 'author' ? t('chat.roleAuthor') : t('chat.roleBuilder')}
-                  </span>
-                )}
                 <span className="faint t-xs ellipsis" style={{ minWidth: 0 }}>
                   {activity ? `${t('chat.stepLabel', { n: activity.step })} · ${activity.label}` : t('chat.working')}
                 </span>
@@ -674,13 +651,19 @@ export function ChatPane(): React.ReactElement {
                 data-on={launcher}
                 data-tip={t('chat.attachTip')}
                 aria-label={t('chat.attachTip')}
-                onClick={() => setLauncher(true)}
+                onClick={() => {
+                  setLauncher(false)
+                  setMenu((v) => !v)
+                }}
               >
                 <Icon name="plus" size={12} strokeWidth={2} />
               </button>
               {menu && (
                 <>
                   <div className="composer-menu-sheet" onClick={() => setMenu(false)} />
+                  {/* The same menu the + button opens, reachable from the keyboard
+                      (Ctrl+K) and from the model line: one place where everything
+                      you can turn on lives. */}
                   <div className="composer-menu" role="menu">
                     <button
                       className="composer-menu-item"
@@ -777,55 +760,18 @@ export function ChatPane(): React.ReactElement {
                       ]}
                       onChange={(v) => void setSettings({ capabilities: { ...caps, run: v as 'ask' | 'auto' | 'off' } })}
                     />
-                    <PermRow
-                      label={t('chat.permPlanner')}
-                      value={caps.planner}
-                      options={[
-                        { value: 'auto', label: t('chat.permPlannerAuto') },
-                        { value: 'always', label: t('chat.permPlannerAlways') },
-                        { value: 'off', label: t('chat.permPlannerOff') }
-                      ]}
-                      onChange={(v) => void setSettings({ capabilities: { ...caps, planner: v as 'auto' | 'always' | 'off' } })}
-                    />
-                    <div className="composer-menu-sep" />
-                    {/* The switch that changes the whole character of a run, one
-                        click away: checked work is for code that must not break,
-                        free work is for making something that has to be good. */}
-                    <button
-                      className="composer-menu-item"
-                      data-on={(settings.freedom || 'checked') === 'free'}
-                      onClick={() => {
-                        setMenu(false)
-                        void setSettings({ freedom: (settings.freedom || 'checked') === 'free' ? 'checked' : 'free' })
-                      }}
-                    >
-                      <Icon name="sparkles" size={12} className={(settings.freedom || 'checked') === 'free' ? 'acc' : 'faint'} />
-                      {t('chat.freedomTip')}
-                      <span className="composer-menu-state">{(settings.freedom || 'checked') === 'free' ? t('set.freedomFree') : t('set.freedomChecked')}</span>
-                    </button>
-                    <button
-                      className="composer-menu-item"
-                      data-on={settings.stableMode && (settings.freedom || 'checked') !== 'free'}
-                      data-disabled={(settings.freedom || 'checked') === 'free' || undefined}
-                      onClick={() => {
-                        if ((settings.freedom || 'checked') === 'free') return
-                        setMenu(false)
-                        void setSettings({ stableMode: !settings.stableMode })
-                      }}
-                    >
-                      <Icon name="shield" size={12} className={settings.stableMode ? 'ok' : 'faint'} />
-                      {t('chat.stableTip')}
-                      <span className="composer-menu-state">{settings.stableMode ? t('common.on') : t('common.off')}</span>
-                    </button>
                   </div>
                 </>
               )}
             </div>
             {/* what is switched on stays visible, quietly: two tiny dots, not a row of pills */}
             <span className="composer-state" data-tip={t('chat.stateTip')}>
-              {settings.stableMode && <Icon name="shield" size={10} className="ok" />}
-              {settings.approvalPolicy !== 'ask' && (
-                <Icon name={settings.approvalPolicy === 'yolo' ? 'zap' : 'edit'} size={10} className={settings.approvalPolicy === 'yolo' ? 'err' : 'warn'} />
+              {caps.edit !== 'ask' && (
+                <Icon
+                  name={caps.edit === 'auto' && caps.run === 'auto' ? 'zap' : 'edit'}
+                  size={10}
+                  className={caps.edit === 'auto' && caps.run === 'auto' ? 'err' : 'warn'}
+                />
               )}
               {notesCount > 0 && <span className="composer-state-badge">{notesCount}</span>}
             </span>
@@ -868,11 +814,7 @@ export function ChatPane(): React.ReactElement {
           {/* One short phrase. The full model blurb belongs in the picker and in
               Settings, not under every composer: it was the single longest line
               of text on the screen and it said the same thing every time. */}
-          <span className="t-xs ghost composer-model-hint">
-            {model.label}
-            {settings.capabilities?.planner !== 'off' && <span className="dot-sep">·</span>}
-            {settings.capabilities?.planner !== 'off' && t('chat.teamBadge')}
-          </span>
+          <span className="t-xs ghost composer-model-hint">{model.label}</span>
           <span className="spacer" />
           <span className="t-xs ghost composer-keys">
             {settings.sendOnEnter ? (
@@ -1351,8 +1293,6 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             end; these are the files and the artifact, right under the answer. */}
         {!msg.streaming && ((msg.tools?.length || 0) > 0 || (msg.presented?.length || 0) > 0) && <ResultFiles msg={msg} />}
 
-        {msg.specReport && !msg.streaming && <SpecCard report={msg.specReport} />}
-
         {(msg.guards || []).map((g) => (
           <GuardNote key={g.id} kind={g.kind} title={g.title} detail={g.detail} />
         ))}
@@ -1389,7 +1329,7 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
             anything to show, not only when prose and tool calls both exist — a
             message that ended on a checker card was printing its cost inside the
             bubble as a bare number. */}
-        {!msg.streaming && (hasText || tools.length > 0 || !!msg.specReport || !!msg.presented?.length || !!msg.guards?.length) && (
+        {!msg.streaming && (hasText || tools.length > 0 || !!msg.presented?.length || !!msg.guards?.length) && (
           <div className="msg-actions">
             {hasText && (
               <button className="msg-action" onClick={copy} data-tip={t('common.copy')}>
@@ -1410,12 +1350,24 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
                 <Icon name="refresh" size={11} />
               </button>
             )}
+            {/* Tokens and cost are details, not a headline: the exact numbers
+                are one hover away, and Settings has the total for anyone who
+                wants to look. A line of numbers under every answer reads as
+                telemetry, not as an answer. */}
             {msg.usage && msg.usage.completionTokens > 0 && (
-              <span className="msg-usage t-xs ghost">
-                {formatTokens(msg.usage.promptTokens)} {t('chat.usageIn')} · {formatTokens(msg.usage.completionTokens)} {t('chat.usageOut')}
-                {msg.usage.cachedTokens > 0 ? ` · ${formatTokens(msg.usage.cachedTokens)} ${t('chat.usageCached')}` : ''}
-                {reasoningTokens > 0 ? ` · ${formatTokens(reasoningTokens)} ${t('chat.usageReasoning')}` : ''}
-                {` · ${formatCost(msg.usage.cost)}`}
+              <span
+                className="msg-usage t-xs ghost"
+                data-tip={[
+                  `in ${formatTokens(msg.usage.promptTokens)}`,
+                  `out ${formatTokens(msg.usage.completionTokens)}`,
+                  msg.usage.cachedTokens > 0 ? `cached ${formatTokens(msg.usage.cachedTokens)}` : '',
+                  reasoningTokens > 0 ? `thinking ${formatTokens(reasoningTokens)}` : '',
+                  formatCost(msg.usage.cost)
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              >
+                {formatCost(msg.usage.cost)}
               </span>
             )}
             {msg.stopped && <span className="pill warn">{t('chat.stopped')}</span>}
@@ -1436,9 +1388,18 @@ function MessageRow({ msg, isLast, index }: { msg: ChatMessage; isLast: boolean;
  * old version here was a 2x2 grid of cards plus a dashed "new project" button —
  * five boxes competing with the composer for the same job.
  */
-function Onboarding({ workspace, onOpen }: { workspace: string | null; onOpen: () => void }): React.ReactElement {
+function Onboarding({
+  workspace,
+  onOpen,
+  onStart
+}: {
+  workspace: string | null
+  onOpen: () => void
+  /** put a starting sentence in the box instead of sending it: a new user
+   *  should be able to read and edit what the example actually says */
+  onStart: (text: string) => void
+}): React.ReactElement {
   const t = useT()
-  const sendMessage = useStore((s) => s.sendMessage)
   const openMenu = (): void => {
     // the same ＋ menu the composer has: hints are useless if they are not where
     // you already are
@@ -1447,8 +1408,8 @@ function Onboarding({ workspace, onOpen }: { workspace: string | null; onOpen: (
   }
   const rows = [
     { icon: 'search' as const, title: t('onb.explainTitle'), prompt: t('onb.explainPrompt') },
-    { icon: 'zap' as const, title: t('onb.bugTitle'), prompt: '' },
-    { icon: 'sparkles' as const, title: t('onb.featureTitle'), prompt: '' },
+    { icon: 'zap' as const, title: t('onb.bugTitle'), prompt: t('onb.bugPrompt') },
+    { icon: 'sparkles' as const, title: t('onb.featureTitle'), prompt: t('onb.featurePrompt') },
     { icon: 'shield' as const, title: t('onb.reviewTitle'), prompt: t('onb.reviewPrompt') }
   ]
   return (
@@ -1464,11 +1425,7 @@ function Onboarding({ workspace, onOpen }: { workspace: string | null; onOpen: (
           <button
             key={r.title}
             className="onb-row"
-            onClick={() => {
-              if (!workspace) onOpen()
-              else if (r.prompt) void sendMessage(r.prompt)
-              else useStore.getState().toast('info', t('onb.typeRequest'))
-            }}
+            onClick={() => (workspace ? onStart(r.prompt) : onOpen())}
           >
             <Icon name={r.icon} size={12} className="onb-row-icon" />
             <span>{r.title}</span>

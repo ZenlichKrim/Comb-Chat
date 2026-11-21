@@ -15,25 +15,8 @@ import type {
 import { streamChat, toApiHistory, type LlmContentPart, type LlmMessage } from './llm'
 import { TOOL_SCHEMAS, executeTool, toolNeedsApproval, previewTool, READ_ONLY_TOOLS, type ToolContext } from './tools'
 import { describeInBackground } from './describe'
-import {
-  authorPrompt,
-  builderPrompt,
-  modelForRole,
-  parseBrief,
-  planRoles,
-  resolvePolicy,
-  toolsForRole
-} from './roles'
-import type { AgentRole, Brief, Capabilities, FileSummary, SpecReport } from '../shared/types'
-import {
-  changedFileExcerpts,
-  checkAgainstSpec,
-  ensureSpec,
-  needsSpec,
-  reworkBrief,
-  specForBuilder
-} from './spec'
-import { driveGoal, shouldContinue, type GoalOutcome } from './goal'
+import { resolvePolicy } from './roles'
+import type { Capabilities, FileSummary } from '../shared/types'
 
 /** never spend a request describing media, bundles or lockfiles */
 const SKIP_DESCRIBE = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|mp3|mp4|zip|tar|gz|7z|dmg|exe|dll|so|dylib|pdf|apk|jar)$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb)$/i
@@ -164,8 +147,10 @@ function systemPrompt(opts: {
   custom: string
   contextFiles: string[]
   locale: string
-  /** no gates: the creative session, where invention is the point */
-  free?: boolean
+  /** decisions from earlier sessions in this folder, framed as history */
+  memory?: string
+  /** what this session already established, so a continuation continues */
+  plan?: string
 }): string {
   const extra = (opts.roots || []).slice(1)
   const rootsLine = extra.length
@@ -202,8 +187,8 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 - Hand the user the artifact, do not point at it. When the work produced a file they should take away (a jar, an exe, a report, a config), attach it with attach_file so it appears in the chat with its path and an open button, and mention it by name.
 - Name paths so they are clickable: write them in backticks, like src/app.ts:42, or as a markdown link to the path. A path in plain prose is a path the user has to hunt for.
 
-- You are the author, not a clerk — for every task, not just creative ones. Before starting, think about what this is judged on, what the request left out, and what a professional would add unasked. Then add it. Work that only satisfies the literal list reads as cheap and the user notices immediately.
-- Before finishing, do the check a careful author does: what will the user look at first, what is missing that would make this feel finished, which edge case will bite them in five minutes.
+- You are an author, not a clerk — for every task, not just creative ones. Think about what this is judged on, what the request left out, what a professional would add unasked. Then add it: work that only satisfies the literal list reads as cheap, and the user notices in five seconds.
+- Before finishing, do the check a careful author does: what will they look at first, what is missing that would make this feel finished, which edge case bites them in five minutes.
 - When the result is something you can look at — a page, a UI, a texture, a scene, a mockup — look at it before you call it done. \`preview_page\` renders an HTML file or local app to a screenshot you can see; \`view_image\` opens any picture. Judge spacing, hierarchy, contrast, what the eye hits first, what is empty when there is no data. A layout nobody looked at is a guess, and the user will see the guess in five seconds.
 - Think on paper when the work is creative: \`leave_note\` with kind "idea" is the place for the idea you do not want to lose mid-task, kind "risk" for what could break, kind "question" for what the user should decide later. They land on the notes board, not in the scrollback.
 - Never ship a stub: no TODO comments as your work, no empty class that "will be filled later", no method that returns a hardcoded value where behaviour was asked for. If you cannot do a thing, say it in the summary instead of leaving a placeholder that pretends.
@@ -216,9 +201,6 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 # No workspace open
 The user has not opened a folder. You cannot read or write files. Answer questions, explain code, design architecture — and tell them to open a workspace (⌘/Ctrl+O) when they need edits.`
 
-  const freeLine = opts.free
-    ? `\n# Room to invent\n- Nobody is checking your work against a list in this session. That is not permission to be sloppy; it is permission to be good. Pick the version you would be proud of, then prove it works the way you usually would.\n- Your taste is part of the deliverable. For anything seen, heard or played: composition, rhythm, contrast, timing, the moment worth a screenshot. Decide it deliberately and say what you chose.\n- Invent beyond the request when the invention makes the thing better, and tell the user in one line what you added. A safe, literal result is the failure here — the user asked for this because literal is what they already got.\n`
-    : ''
   return `You are Comb, a precise and senior software engineering agent running inside a desktop IDE called Comb Chat. You work directly on the user's machine.
 
 # Environment
@@ -232,35 +214,34 @@ ${toolsGuide}
 ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFiles.map((f) => `- ${f}`).join('\n')}` : ''}
 
 # How you talk
-- You are a colleague working next to the user, not a mute tool. Talk as you work: what you noticed in the code, what you think of the approach, what you are about to do and why. The user wants your head, not just your hands.
-- Every tool accepts an optional note field: one line, in the interface language, about what this call is for — "смотрю, как устроен потребитель события", "грепаю, где ещё используется это имя". Put it on the calls that need context; skip it on obvious ones. It is cheap (it rides on the call you were already making), it shows up right above the tool row, and it is the main way the user follows your thinking.
-- The very first turn of a task is words only: what you understood, what you are about to do, and any question. No tool call in that message at all.
-- A tool call is a promise. Never say "сейчас сделаю X" and then end the turn without calling the tool that does X. Plan-then-stop is the single most useless failure mode: the user reads the plan, waits, and nothing happens.
-- There is no length budget on your prose. A thought that needs three paragraphs gets three paragraphs; a mechanical step gets one line. Say what is worth saying and stop — do not pad, do not trim a real thought to fit.
-- Do not write status reports. "Сейчас я прочитаю файл, затем внесу правку, затем запущу тесты" is noise — the transcript already shows every call. Say the part that is only in your head: why, what you expect, what surprised you, what you would do differently.
-- If the user wrote you a message, answer it in words before you touch anything — even when the task looks obvious. No headings, no bullet lists of steps.
-- When you form an opinion about the project — how it is put together, what is fragile, what is worth changing, what you would build differently — say it. That read is part of the work, not an interruption of it.
+- Like a colleague typing next to the user, not a support desk. No "Конечно! С радостью помогу", no headings over two sentences, no restating the request back at them.
+- Before a real piece of work, say it in one line: "смотрю, как устроен этот роутер", then call the tools. One line, not a plan.
+- The user sees every tool call and its output. Do not narrate what is already on screen: no "сейчас я прочитаю файл, затем внесу правку, затем запущу тесты". Say the part only your head knows — why this path, what surprised you, what you would do differently.
+- Thinking happens on the reasoning channel, which the user can read if they open it. Do not paste your deliberation into the answer: the answer is the conclusion.
+- There is no length budget: a real thought gets three paragraphs, a mechanical step gets one line. Never pad, never trim a thought to fit.
+- A tool call is a promise. Never say "сейчас сделаю X" and then end the turn without the call that does X — the user reads the plan, waits, and nothing happens.
+- If the user wrote you a message, answer it in words before you touch anything.
+- Have opinions about the code: what is fragile, what you would change, what is wrong with the request. Say them.
+- \`ask_user\` only when a real fork blocks you: 2-4 options with \`recommend\`, once per task. Then keep working with your recommendation and mention the open question in the summary.
+- After an answer, \`suggest\` 2-4 clickable follow-ups when they are obvious. Long task and the user may be away: one \`notify_user\` when you are done or stuck. Something they must do themselves: \`leave_note\`.
 
 # How you work
-- Make the change instead of describing what you would change. Only ask questions when a real fork in the road blocks you.
-- Match the existing code style exactly: indentation, quotes, naming, error handling, comment density. Read neighbouring files first.
-- Keep diffs minimal. Do not reformat, rename or "improve" unrelated code. Never delete functionality you were not asked to touch.
-- Dense, not terse: cut filler, hedging and restating the request, never cut the thought itself. Use markdown, code blocks with a language tag, and file references like \`src/app.ts:42\`. No emoji unless the user uses them first.
-- If a tool fails, read the error, fix the cause, try once more — do not repeat the identical failing call.
-- Long task, user may be away: call \`notify_user\` once when you are done or when you are stuck and need them. It is a desktop ping, not a substitute for talking in the transcript.
-- When a decision genuinely changes the result and you cannot infer the answer from the code, call \`ask_user\` with 2-4 concrete options and set \`recommend\`. Once per task at most: guessing is better than asking twice.
-- \`ask_user\` does not stop you: keep working with your recommended option and mention the open question in your summary.
-- Something the user must do or know outside this task: \`leave_note\` — a sticky note, not a paragraph.
-- After an answer, call \`suggest\` with 2-4 clickable next steps when they are obvious — the user then continues in one click.
-- When you finish, call \`finish\` with a one-paragraph summary (files changed, what was verified).
+- **Think first, then act.** Reason about the task on your thinking channel — what it really asks, what will be judged, what is missing from the request — then do it. Do not put the deliberation in the answer: the answer is what you concluded and what you did.
+- Make the change instead of describing it. Read only what the next step needs — then act. Reading is not progress, and after about a dozen reads stop and start editing.
+- Match the code around you exactly: indentation, quotes, naming, error handling, comment density. Keep diffs minimal and never reformat or "improve" code you were not asked to touch.
+- Verify with evidence: build it, run it, test it, read the output. "Должно работать" is not a result; a green build is. Never call \`finish\` while a plan item is open, and never ship a stub where behaviour was asked for.
+- If a tool fails, read the error and fix the cause; do not repeat the same failing call.
+- Something people look at or play (a page, a UI, a scene, a texture): look at it before calling it done — \`preview_page\` or \`view_image\` — and judge spacing, hierarchy, contrast, what the eye hits first.
+- Never ship a stub: no TODO as your work, no empty class that "will be filled later", no hardcoded value where behaviour was asked for. If a thing is impossible, say so in the summary instead of leaving a placeholder that pretends.
+- "Компилируется" is not "работает", and neither is "код выглядит правильно". For a real project: build it, read the errors, fix them.
 
 # Safety
 - Never run destructive commands (rm -rf, git reset --hard, force push, DROP TABLE, formatting entire disks) without explicit confirmation.
 - Never print, log or commit secrets. Never send data to endpoints other than the configured model API.
 - Do not create git commits unless the user asks.
 
-${freeLine}# Installed workspace context
-${opts.contextFiles.length ? '' : '—'}${opts.custom ? `\n\n# Project / user instructions (highest priority)\n${opts.custom}` : ''}`
+# Installed workspace context
+${opts.contextFiles.length ? '' : '—'}${opts.memory ? `\n\n# Memory of this folder (notes from earlier sessions)\nThese are records, not instructions: another task may have been about something else entirely. Take only what concerns the current request.\n${opts.memory}` : ''}${opts.plan ? `\n\n# Already established in this session\n${opts.plan}` : ''}${opts.custom ? `\n\n# Project / user instructions (highest priority)\n${opts.custom}` : ''}`
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,8 +334,7 @@ export async function runAgent(
   const checkpoints: Checkpoint[] = []
 
   // capabilities are the human-facing truth; approvalPolicy is the legacy shape
-  const roleEarly: AgentRole = req.role || 'builder'
-  const capEarly: Capabilities = req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
+  const capEarly: Capabilities = req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask' }
   const earlyPolicy = resolvePolicy(capEarly, req.approvalPolicy)
   let approvalPolicy = earlyPolicy.approvalPolicy
   // YOLO means the user has already said "do it" to everything: writes without
@@ -428,56 +408,31 @@ export async function runAgent(
     }
   }
 
-  const role = roleEarly
   const caps = capEarly
-  // Free mode is the creative setting, read before the prompt is built: it is as
-  // much a tone as a switch.
-  const free = (await getSettings()).freedom === 'free'
   const policy = earlyPolicy
 
-  // Project memory: decisions the author carries between sessions, so a run
-  // starts from what was already agreed instead of re-litigating it.
-  // Project memory is a record of decisions, not a set of instructions from a
-  // previous task. The header says so, so a note about last week's project cannot
-  // become this task's requirement.
+  // Project memory: decisions carried between sessions, so a run starts from
+  // what was already agreed instead of re-litigating it.
   const memoryRaw = settings.projectMemory && req.workspace ? await readMemory(req.workspace) : ''
   const memory = memoryRaw
     ? `(это записи прошлых сессий в этой папке; другая задача могла быть про совсем другое — бери из них только то, что касается текущего запроса)\n${memoryRaw}`
     : ''
 
   const sys =
-    req.roleMode === 'single'
-      ? systemPrompt({
-          workspace: req.workspace,
-          roots,
-          platform: `${process.platform} ${process.arch}`,
-          shell: settings.shell || (process.platform === 'win32' ? 'PowerShell / cmd' : process.env.SHELL || '/bin/bash'),
-          now: new Date().toISOString(),
-          approvalPolicy: policy.approvalPolicy,
-          fullDisk,
-          custom: req.customInstructions || settings.customInstructions || '',
-          contextFiles: (req.openFiles || []).map((f) => f.rel),
-          locale: settings.locale || 'en',
-          free
-        })
-      : role === 'author'
-        ? authorPrompt({
-            locale: settings.locale || 'en',
-            workspace: req.workspace,
-            memory,
-            custom: req.customInstructions || settings.customInstructions || '',
-            history: ''
-          })
-        : builderPrompt({
-            locale: settings.locale || 'en',
-            workspace: req.workspace,
-            brief: req.brief || null,
-            memory,
-            caps,
-            // the criteria come from the user, not from the brief: without them
-            // the builder is free to satisfy its own reading of the task
-            contract: specForBuilder(req.spec || '', caps, req.specAttempt || 0)
-          })
+    systemPrompt({
+      workspace: req.workspace,
+      roots: req.extraRoots,
+      platform: `${process.platform} ${process.arch}`,
+      shell: settings.shell || (process.platform === 'win32' ? 'PowerShell / cmd' : process.env.SHELL || '/bin/bash'),
+      now: new Date().toISOString(),
+      approvalPolicy: policy.approvalPolicy,
+      fullDisk,
+      custom: req.customInstructions || settings.customInstructions || '',
+      contextFiles: (req.openFiles || []).map((f) => f.rel),
+      locale: settings.locale || 'en',
+      memory,
+      plan: req.plan || ''
+    })
 
   // A last-line reminder in the user turn itself: models drift back to English
   // in long runs when every tool output is English.
@@ -543,13 +498,11 @@ export async function runAgent(
   const NO_NOTE = new Set(['leave_note', 'finish', 'suggest'])
   // The author cannot write: not "should not", cannot — its tool list has no
   // write tool in it. Capabilities can take away what is left.
-  const roleAllowed = new Set(toolsForRole(req.role || 'builder', TOOL_SCHEMAS.map((t) => t.function.name)))
   const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'multi_edit', 'delete_path', 'move_path'])
   const tools = req.workspace || fullDisk
     ? TOOL_SCHEMAS.filter(
         (t) =>
           !disabled.has(t.function.name) &&
-          roleAllowed.has(t.function.name) &&
           !(policy.writesOff && WRITE_TOOLS.has(t.function.name)) &&
           !(policy.commandsOff && t.function.name === 'run_command')
       ).map((t) =>
@@ -576,32 +529,26 @@ export async function runAgent(
     : []
 
   deps.emit({ type: 'run-start', runId: req.runId, threadId: req.threadId, messageId: req.messageId })
-  deps.emit({
-    type: 'role',
-    runId: req.runId,
-    role,
-    phase: role === 'author' ? 'thinking' : 'working'
-  })
+  deps.emit({ type: 'role', runId: req.runId, role: 'agent', phase: 'working' })
 
   let step = 0
   let finalReason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' = 'done'
   /** the last prose the model produced: the brief for the author, the report for the builder */
   let finalText = ''
 
-  /* --- stable-mode state ------------------------------------------------ */
-  // Stability is the baseline of this build, not a switch at the bottom of the
-  // composer: the guards below run unless someone explicitly opts out.
-  // Free mode is the creative setting: the same agent, without the six gates.
-  // What stays is what protects the work from itself (a repeated failing call, a
-  // "done" with nothing done, a design nobody looked at); what goes is the
-  // contract, the verification pass, the reviewer and the goal rounds — the
-  // machinery that makes a good implementation and a dull invention.
-  const stableMode = free ? false : req.mode ? req.mode === 'stable' : settings.stableMode !== false
-  /** rounds of pure reading allowed before the agent is told to act */
+  /* --- guards -----------------------------------------------------------
+   * Every guard below protects the work from itself: a repeated failing call, a
+   * "done" with nothing done, a design nobody looked at, a plan that never
+   * advances. None of them is a switch any more — a new user should never have
+   * to know they exist, and the one question they used to answer ("checked or
+   * free?") was the app asking them to configure its character instead of just
+   * being good.
+   */
+    /** rounds of pure reading allowed before the agent is told to act */
   const MAX_IDLE_READS = 14
   /** consecutive idle rounds before the "stop researching, do something" nudge */
   const MAX_IDLE_ROUNDS = 4
-  const costCap = stableMode ? Math.max(0, req.costCap ?? 0) : 0
+  const costCap = Math.max(0, req.costCap ?? 0)
   // "make sure the first steps are solid": collect what went wrong before deciding
   const errorsSoFar: { step: number; name: string; error: string }[] = []
   const callCounts = new Map<string, number>()
@@ -707,7 +654,7 @@ export async function runAgent(
 
   /** Ask the model to verify before it is allowed to finish (stable mode). */
   const pushVerifyPrompt = async (): Promise<void> => {
-    if (!stableMode || verifyStage !== 'pending') return
+    if (verifyStage !== 'pending') return
     // Nothing was written: there is nothing to verify, and asking anyway would
     // cost a round trip on every "what does this file do?" question.
     if (!touched.size) {
@@ -857,14 +804,7 @@ export async function runAgent(
       // agentic coding (DeepSWE 77.0 vs 62.7, Terminal-Bench 42.3 vs 12.4) and it is
       // 3-7x cheaper, so Pro is the wrong default for editing files. Pro still wins
       // on deep text reasoning and long factual recall, so that is where it goes.
-      // The role decides the model before the step does. The author thinks — it
-      // is writing a brief someone will be held to. The builder executes, so it
-      // gets the cheap non-thinking pass unless the user forced Pro.
-      const roleModel = modelForRole(role, req.model, req.thoughtEffort || 'deep')
-      const routed =
-        role === 'author'
-          ? roleModel.model
-          : pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
+      const routed = pickModelForStep(req, step, { substantial, specSections: specSections.length, planning: step <= 2 })
 
       // one clock per step: when this burst of thought started
       let thoughtStart = 0
@@ -881,12 +821,7 @@ export async function runAgent(
         // Thinking budget: the user's setting, but a one-line question never gets
         // 32k of thought — a long think on a trivial ask is money burned for
         // nothing. Substantial work and specs get the full setting.
-        effort:
-          role === 'author'
-            ? roleModel.effort
-            : substantial || specSections.length >= 4
-              ? req.thoughtEffort || 'deep'
-              : 'fast',
+        effort: substantial || specSections.length >= 4 ? req.thoughtEffort || 'deep' : 'fast',
         onDelta: (d) => {
           // Time the thought here, on one clock. The renderer used to guess the
           // duration from the number of characters, which is why a 20-second think
@@ -935,7 +870,10 @@ export async function runAgent(
       history.push(assistantMsg)
       // One step = one intention + the calls that carry it out. This is the unit
       // the transcript shows, so it is captured here and handed to the UI.
-      roundNarration = result.content.trim()
+      // The one line the model said before the calls. A long paragraph here is
+      // the model narrating its plan into the trace; the trace is for what it
+      // decided, so keep the first sentence and let the tool chips carry the rest.
+      roundNarration = result.content.trim().split(/\n\n/)[0].slice(0, 400)
 
       // A turn that fires tools without a single word of prose reads as a black
       // box: the user sees files being edited and no idea why. Ask for the
@@ -987,7 +925,7 @@ export async function runAgent(
           /(сделаю|добавлю|провер[юи]|сейчас|начну|приступаю|исправ|перепиш|установл|создам|I'?ll|let me|now I|starting|going to)/i.test(
             result.content.slice(0, 600)
           )
-        if (stableMode && !askedQuestion && promisesWork && !touched.size && step < 10 && silentRounds < 3) {
+        if (!askedQuestion && promisesWork && !touched.size && step < 10 && silentRounds < 3) {
           silentRounds++
           history.push({
             role: 'user',
@@ -1004,11 +942,11 @@ export async function runAgent(
           history.push({ role: 'user', content: 'Continue — and call finish when the task is complete.' })
           continue
         }
-        if (stableMode && verifyStage === 'pending') {
+        if (verifyStage === 'pending') {
           await pushVerifyPrompt()
           continue
         }
-        if (stableMode) verifyStage = 'done'
+        if (verifyStage === 'done')
         finalReason = 'done'
         break
       }
@@ -1097,7 +1035,7 @@ export async function runAgent(
           // The author's question is the checkpoint before any work happens, so it
           // waits like a person would: ten minutes, not ninety seconds. A builder
           // question would be different, but the builder has no ask_user at all.
-          const waitDefault = role === 'author' ? 600 : 90
+          const waitDefault = 90
           voteWait = new Promise<string | null>((resolve) => {
             const timer = setTimeout(() => {
               run.votes.delete(call.id)
@@ -1139,7 +1077,7 @@ export async function runAgent(
 
         const t0 = Date.now()
         const outcome = await executeTool(call.name, args, ctx)
-        if (stableMode) {
+        if (true) {
           const sig = `${call.name}:${JSON.stringify(args).slice(0, 200)}`
           const seen = (callCounts.get(sig) || 0) + 1
           callCounts.set(sig, seen)
@@ -1236,7 +1174,7 @@ export async function runAgent(
         }
 
         roundTools.push({ id: call.id, name: call.name, ok: outcome.ok, error: outcome.error || outcome.output || '', args })
-        if (stableMode) {
+        if (true) {
           const sig = `${call.name}:${JSON.stringify(args).slice(0, 240)}`
           const key = `${outcome.ok ? 'ok' : 'fail'}|${sig}`
           const seen = (roundSignatures.get(key) || 0) + 1
@@ -1299,7 +1237,7 @@ export async function runAgent(
         // A thirteen-section spec that produced three files is not a finished mod.
         // This is a floor, not a quota: one refusal, and only when the output is
         // absurdly small for the ask — not a lever that pushes towards padding.
-        if (call.name === 'finish' && stableMode && specSections.length >= 6
+        if (call.name === 'finish' && specSections.length >= 6
             && touched.size < Math.min(5, Math.max(3, specSections.length / 3))
             && scopeRefused < 1) {
           scopeRefused++
@@ -1323,7 +1261,7 @@ export async function runAgent(
           continue
         }
 
-        if (call.name === 'finish' && stableMode && artifactMissing()) {
+        if (call.name === 'finish' && artifactMissing()) {
           const found = await findArtifact(req.workspace || '', wantedArtifact)
           if (!found) {
             artifactRefused++
@@ -1391,7 +1329,7 @@ export async function runAgent(
           // costs one round and is the difference between "красиво" and "я так думаю".
           // Evidence, not vocabulary: the run produced something you can look at.
           const madeVisual = [...touched].some((p) => /\.(html?|css|svg|png|jpe?g|webp)$/i.test(p))
-          if (call.name === 'finish' && stableMode && madeVisual && previewsTaken === 0 && designRefused < 1) {
+          if (call.name === 'finish' && madeVisual && previewsTaken === 0 && designRefused < 1) {
             designRefused++
             deps.emit({
               type: 'guard',
@@ -1490,11 +1428,11 @@ export async function runAgent(
         break
       }
       if (halted === 'done') {
-        if (stableMode && verifyStage === 'pending') {
+        if (verifyStage === 'pending') {
           await pushVerifyPrompt()
           continue
         }
-        if (stableMode) verifyStage = 'done'
+        if (verifyStage === 'done')
         finalReason = 'done'
         break
       }
@@ -1503,7 +1441,7 @@ export async function runAgent(
         break
       }
 
-      if (stableMode) {
+      if (true) {
           // A round that only read files and changed nothing: fine for a while, then
         // it becomes the "slowly treading water" the user sees. Count it and push.
         if (!roundProgressed) {
@@ -1786,7 +1724,7 @@ export async function runAgent(
         runId: req.runId,
         kind: 'done',
         title: `файлов — ${touched.size}, шагов — ${step}, $${usage.cost.toFixed(4)}`,
-        detail: verifyStage === 'done' ? 'Результат проверен перед тем, как сказать «готово».' : undefined
+        detail: String(verifyStage) === 'done' ? 'Результат проверен перед тем, как сказать «готово».' : undefined
       })
       if (wantedArtifact) {
         const built = artifactFound || (await findArtifact(req.workspace || '', wantedArtifact))
@@ -1831,7 +1769,7 @@ export async function runAgent(
         detail: 'Прогон не остановлен: агент пробовал другие пути. Смотрите карточки инструментов выше.'
       })
     }
-    if (stableMode && errorsSoFar.length) {
+    if (errorsSoFar.length) {
       const uniq = [...new Map(errorsSoFar.map((e) => [e.name + e.error, e])).values()]
       deps.emit({
         type: 'guard',
@@ -1851,7 +1789,6 @@ export async function runAgent(
     deps.emit({ type: 'run-end', runId: req.runId, reason: finalReason })
   }
 
-  lastFinalText.set(req.runId, finalText)
   return { ok: true, finalText, touched: [...touched], todos }
 }
 
@@ -1981,277 +1918,30 @@ export function pickModelForStep(
 
 
 /* ------------------------------------------------------------------ */
-/* The team: author -> builder -> author review                        */
+/* One day of work                                                     */
 /* ------------------------------------------------------------------ */
 
-export interface TeamResult {
+export interface RunResult {
   ok: boolean
   error?: string
-  brief?: Brief | null
-  roles: AgentRole[]
 }
 
 /**
- * Who does what, and in which order.
+ * The run.
  *
- * The old design had one agent trying to be a colleague and a compiler at the
- * same time, which is why it answered a request for a mod with a README and a
- * request for an explanation with a plan. Splitting them fixes the behaviour at
- * the root: the author has no write tools, so it cannot "just start", and the
- * builder has no questions, so it cannot drift.
+ * This used to be a team: an author that only talked and wrote a brief, a
+ * builder that only executed, and a review pass where the author read the
+ * report. It produced two characters in the user's conversation and a brief that
+ * had to be parsed out of a code fence, and the actual agent — the one that
+ * thinks and then edits files — was split across three prompts.
  *
- * Nothing here is a straight line: the author sees the builder's report and the
- * files it touched, and can send it back once. That is the review the user was
- * missing, and it costs one cheap round instead of a broken deliverable.
+ * Now it is one run. The agent reads, thinks on the reasoning stream, says what
+ * it is doing in one line, calls the tools, and reports what it verified. What
+ * survives from the team is the only part that earned its keep: the guards
+ * inside the loop (a "done" with nothing done, a design nobody looked at, a plan
+ * that never advances, a step budget that would cut real work short).
  */
-export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamResult> {
-  const settings = await getSettings()
-  const caps: Capabilities =
-    req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
-  const text = req.userMessage?.content || ''
-  // Free mode is one mind, not a process: the same agent that designs also
-  // builds, and nobody hands it a checklist first. Splitting the roles was the
-  // fix for a single agent that answered a request with a plan; for creative work
-  // the split is what turns an idea into a ticket.
-  if ((settings.freedom || 'checked') === 'free') {
-    const res = await runAgent({ ...req, role: req.role || 'builder', roleMode: 'single' }, deps)
-    return { ok: res.ok, error: res.error, roles: ['builder'] }
-  }
-  const plan = planRoles({ text, planner: caps.planner, substantial: text.length > 400 })
-  // Main has no dictionary of its own: the two strings the app itself narrates
-  // come from here so they read in the user's language like everything else.
-  const ru = (settings.locale || 'ru') === 'ru'
-  const labels = {
-    specWriting: ru ? 'Пишу контракт приёмки (SPEC.md)' : 'Writing the acceptance contract (SPEC.md)',
-    specChecking: ru ? 'Проверяю работу по вашим критериям' : 'Checking the work against your criteria'
-  }
-
-  // questions are answered by the author alone; with the planner off, everything
-  // is the old single agent
-  if (plan.roles.length === 1 && plan.roles[0] === 'author') {
-    return runAuthorOnly(req, deps)
-  }
-  if (plan.roles[0] === 'builder' && caps.planner === 'off') {
-    return { ok: (await runAgent({ ...req, roleMode: 'single', role: 'builder' }, deps)).ok, roles: ['builder'] }
-  }
-  if (plan.roles[0] === 'builder') {
-    // small mechanical work: straight to the hands, with the old prompt so the
-    // builder still knows how to talk about what it did
-    return { ok: (await runAgent({ ...req, role: 'builder', roleMode: 'split' }, deps)).ok, roles: ['builder'] }
-  }
-
-  // 0. the contract. A task big enough to be worth doing is big enough to be
-  // written down as checks, and those checks come from the user's words — not
-  // from whatever the builder decides it accomplished.
-  let contract = ''
-  const wantsContract = settings.stableMode !== false && needsSpec(req.userMessage?.content || '')
-  if (wantsContract) {
-    // Writing the spec takes a model round trip of its own: without this the
-    // header stays blank for a minute and the run looks hung.
-    deps.emit({ type: 'activity', runId: req.runId, step: 0, label: labels.specWriting })
-    const spec = await ensureSpec({
-      workspace: req.workspace,
-      request: req.userMessage?.content || '',
-      apiKey: settings.apiKey,
-      baseUrl: settings.baseUrl,
-      model: 'deepseek-flash'
-    })
-    if (spec.spec) {
-      contract = spec.spec
-      const criteria = spec.spec
-        .split(/\r?\n/)
-        .filter((l) => /^\s*(?:[-*]|\d+[.)])\s+/.test(l)).length
-      deps.emit({
-        type: 'guard',
-        runId: req.runId,
-        kind: 'contract',
-        title: spec.written ? `Контракт записан: ${criteria} критериев в SPEC.md` : 'Контракт взят из SPEC.md проекта',
-        detail: spec.path || undefined
-      })
-    }
-  }
-
-  // 1. the author thinks, talks and writes the brief
-  const authorRes = await runAgent({ ...req, role: 'author', roleMode: 'split', spec: contract }, deps)
-  if (stoppedRuns.has(req.runId)) {
-    stoppedRuns.delete(req.runId)
-    return { ok: false, roles: ['author'], brief: null }
-  }
-  if (!authorRes.ok) return { ok: false, error: authorRes.error, roles: ['author'] }
-  let brief = parseBrief(authorRes.finalText || '')
-  if (!brief) {
-    // The author narrated a whole design and forgot the block. Ending here throws
-    // that work away — and this is not a conversation, it is a job left unstarted.
-    // Ask once, plainly, for the brief it was supposed to write.
-    deps.emit({
-      type: 'guard',
-      runId: req.runId,
-      kind: 'steer',
-      title: 'Прошу бриф ещё раз',
-      detail: 'Автор расписал задачу словами, но не выдал блок brief — повторяю запрос.'
-    })
-    const retry = await runAgent(
-      {
-        ...req,
-        runId: `${req.runId}:brief`,
-        messageId: `${req.messageId}:brief`,
-        role: 'author',
-        roleMode: 'split',
-        spec: contract,
-        history: [],
-        userMessage: {
-          ...req.userMessage,
-          content:
-            `Задача:\n"""${(req.userMessage?.content || '').slice(0, 6000)}"""\n\n` +
-            (contract ? `Контракт (критерии приёмки):\n${contract.slice(0, 4000)}\n\n` : '') +
-            'Ты уже разобрался в задаче и написал разбор, но забыл сам бриф. Сейчас нужен ТОЛЬКО блок в формате:\n' +
-            '```brief\nЦЕЛЬ: …\nСДЕЛАТЬ:\n- …\nПРОВЕРИТЬ:\n- …\nДОБАВИТЬ:\n- …\n```\n' +
-            'В СДЕЛАТЬ — конкретные файлы и классы, не темы. Если задача большая, перечисли этапы и скажи, какой делаем сейчас.'
-        }
-      },
-      deps
-    )
-    brief =
-      parseBrief(retry.finalText || '') || parseBrief(`${authorRes.finalText || ''}\n${retry.finalText || ''}`)
-  }
-  if (!brief) {
-    deps.emit({
-      type: 'guard',
-      runId: req.runId,
-      kind: 'steer',
-      title: 'Бриф не получен, задача не начата',
-      detail: 'Дважды не пришёл блок brief. Напишите «сделай по плану» — Автор повторит, уже без разбора.'
-    })
-    return { ok: true, roles: ['author'], brief: null }
-  }
-
-  // 2. the builder executes it
-  const buildReq: RunRequest = {
-    ...req,
-    runId: `${req.runId}:build`,
-    messageId: `${req.messageId}:build`,
-    role: 'builder',
-    roleMode: 'split',
-    brief,
-    history: [],
-    userMessage: { ...req.userMessage, content: brief.raw }
-  }
-  buildReq.spec = contract
-  buildReq.specAttempt = 0
-  // the user may press Stop between stages: a stage must not start after that
-  if (stoppedRuns.has(req.runId)) {
-    deps.emit({ type: 'run-end', runId: req.runId, reason: 'stopped' })
-    return { ok: false, roles: ['author', 'builder'], brief }
-  }
-  let buildRes = await runAgent(buildReq, deps)
-  let report = buildRes.finalText || ''
-
-  // 2b. the independent check. Not the author's opinion and not the builder's
-  // report: a separate pass reads the criteria against the changed files and can
-  // fail the work. This is the step that would have caught "тебя просили мод, а
-  // ты сделал частицы на пауков".
-  //
-  // A failed check does not end the run either: the goal below keeps opening
-  // rounds until the criteria are actually met, the work stalls, or the round
-  // budget is spent. That is the difference between "остановился на середине" and
-  // "довёл до конца".
-  let lastCheck: SpecReport | null = null
-  let goalRounds = 1
-  if (contract && buildRes.ok) {
-    const roundCheck = async (round: number): Promise<SpecReport | null> => {
-      deps.emit({ type: 'activity', runId: req.runId, step: round, label: labels.specChecking })
-      const c = await checkAgainstSpec({
-        request: req.userMessage?.content || '',
-        spec: contract,
-        report,
-        files: changedFileExcerpts(req.workspace, buildRes.touched || []),
-        apiKey: settings.apiKey,
-        baseUrl: settings.baseUrl,
-        model: 'deepseek-flash'
-      })
-      if (c) {
-        lastCheck = c
-        deps.emit({ type: 'spec-check', runId: req.runId, report: c, attempt: round, refused: c.verdict === 'rework' })
-      }
-      return c
-    }
-
-    lastCheck = await roundCheck(1)
-    const maxRounds = Math.max(1, settings.goalRounds || 1)
-    const signal = shouldContinue(contract, lastCheck, buildRes.todos || [])
-    if (signal && maxRounds > 1) {
-      const outcome = await driveGoal({
-        req: { ...buildReq, userMessage: { ...req.userMessage, content: req.userMessage.content } },
-        deps,
-        signal,
-        maxRounds,
-        usedRounds: 1,
-        contract,
-        afterRound: roundCheck
-      })
-      goalRounds = outcome.rounds
-      lastCheck = outcome.lastCheck || lastCheck
-      report = outcome.lastText || report
-      if (outcome.stop === 'rounds-used') {
-        deps.emit({
-          type: 'guard',
-          runId: req.runId,
-          kind: 'rework',
-          title: `Цель не закрыта за ${outcome.rounds} раунд(а)`,
-          detail: 'Критерии всё ещё не подтверждены — продолжите, и я возьму следующий раунд с того же места.'
-        })
-      }
-    } else if (signal) {
-      deps.emit({
-        type: 'guard',
-        runId: req.runId,
-        kind: 'rework',
-        title: 'Критерии не подтверждены',
-        detail: 'Авто-раунды выключены (Настройки → раунды цели). Работа не закончена.'
-      })
-    }
-  }
-
-  // 3. the author checks the result and speaks to the user about it
-  if (settings.reviewPass && buildRes.ok) {
-    const reviewReq: RunRequest = {
-      ...req,
-      runId: `${req.runId}:review`,
-      messageId: `${req.messageId}:review`,
-      role: 'author',
-      roleMode: 'split',
-      brief,
-      history: [],
-      userMessage: {
-        ...req.userMessage,
-        content:
-          `Бриф:
-${brief.raw}
-
-Отчёт сборщика:
-${report.slice(0, 4000)}
-
-` +
-          'Проверь результат по коду (read_file по изменённым файлам, если нужно) и ответь пользователю: что сделано, что проверено, что осталось. ' +
-          'Если что-то сделано неверно или не по брифу — скажи честно и конкретно, что не так. Без нового брифа.'
-      }
-    }
-    if (!stoppedRuns.has(req.runId)) await runAgent(reviewReq, deps)
-  }
-
-  return { ok: buildRes.ok, roles: ['author', 'builder', 'author'], brief }
+export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<RunResult> {
+  const res = await runAgent(req, deps)
+  return { ok: res.ok, error: res.error }
 }
-
-/** A question: the author answers, no builder, no tools beyond reading. */
-async function runAuthorOnly(req: RunRequest, deps: AgentDeps): Promise<TeamResult> {
-  const res = await runAgent({ ...req, role: 'author', roleMode: 'split' }, deps)
-  return { ok: res.ok, error: res.error, roles: ['author'] }
-}
-
-/** The assistant text of the last turn, for the pipeline's stage handoff. */
-function lastAssistantText(req: RunRequest): string {
-  return lastFinalText.get(req.runId) || ''
-}
-
-/** runAgent keeps its last prose here so runTeam can hand it to the next stage. */
-const lastFinalText = new Map<string, string>()

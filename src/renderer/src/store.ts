@@ -80,9 +80,7 @@ interface State {
   streamingMessageId: string | null
   pendingApproval: ToolResultView | null
   /** what the agent is doing right now, derived from the live tool stream */
-  activity: { step: number; label: string; since: number; thoughtMs?: number; role?: 'author' | 'builder' } | null
-  /** who is speaking in the current run: author talks, builder works */
-  activeRole: 'author' | 'builder' | null
+  activity: { step: number; label: string; since: number; thoughtMs?: number } | null
   approvalRunId: string | null
   /** which session is waiting for the approval dialog */
   approvalThreadId: string | null
@@ -252,7 +250,6 @@ export const useStore = create<State & Actions>((set, get) => ({
   pendingApproval: null,
   queued: [],
   activity: null,
-  activeRole: null,
   approvalRunId: null,
   approvalThreadId: null,
   toasts: [],
@@ -520,8 +517,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       approvalThreadId: get().approvalThreadId,
       retryInfo: null,
       activity: null,
-      activeRole: null,
-      running: !!live,
+          running: !!live,
       runId: live?.runId ?? null,
       streamingMessageId: live?.messageId ?? null
     })
@@ -658,7 +654,7 @@ export const useStore = create<State & Actions>((set, get) => ({
       temperature: settings.temperature,
       maxTokens: settings.maxTokens,
       approvalPolicy: settings.approvalPolicy,
-      capabilities: settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' },
+      capabilities: settings.capabilities || { edit: 'ask', run: 'ask' },
       maxSteps: settings.maxAgentSteps,
       autoContext: settings.autoContext,
       describeFiles: settings.describeFiles,
@@ -672,7 +668,6 @@ export const useStore = create<State & Actions>((set, get) => ({
       notes: get()
         .notes.filter((n) => n.status === 'pending' && !n.byAgent)
         .map((n) => ({ text: n.text, target: n.target })),
-      mode: settings.stableMode ? 'stable' : 'normal',
       costCap: settings.costCap,
       verifyCommand: settings.verifyCommand
     }
@@ -876,69 +871,11 @@ export const useStore = create<State & Actions>((set, get) => ({
     switch (e.type) {
       case 'run-start':
         break
-      case 'role': {
-        // The pipeline announces who is at the table — and each stage is its own
-        // message. The author's answer and the builder's work used to share one
-        // message id, so the first step-note of the builder blanked the text the
-        // author had just streamed: the answer visibly vanished mid-run.
-        const prev = get()
-        const stageKey = e.runId
-        void stageKey
-        // The role chip and the activity line describe the session on screen. A
-        // second session working in the background must not relabel this one.
-        if (isVisible()) {
-          set((s) => ({ activeRole: e.role, activity: s.activity ? { ...s.activity, role: e.role } : s.activity }))
-        }
-        updateAssistant((m) => (m.streaming ? { ...m, streaming: false } : m))
-        // Each stage announces itself at least twice (author → builder → author)
-        // and the goal opens new builder rounds. A stage that produced nothing is
-        // not a new bubble: it would render as a stray avatar with an empty trace.
-        const cur = get().threads.find((t) => t.id === threadId)?.messages.find((m) => m.id === messageId)
-        const curEmpty =
-          !!cur &&
-          !cur.content?.trim() &&
-          !cur.reasoning?.trim() &&
-          !(cur.tools || []).length &&
-          !(cur.steps || []).length &&
-          !cur.specReport
-        if (curEmpty && cur && cur.roleOf === e.role) {
-          updateAssistant((m) => ({ ...m, streaming: true }))
-          break
-        }
-        if (curEmpty && cur) {
-          set((s) => ({
-            threads: s.threads.map((t) =>
-              t.id !== threadId ? t : { ...t, messages: t.messages.filter((m) => m.id !== cur.id) }
-            )
-          }))
-        }
-        const fresh: ChatMessage = {
-          id: uid('msg'),
-          role: 'assistant',
-          content: '',
-          reasoning: '',
-          createdAt: Date.now(),
-          model: prev.settings.model,
-          tools: [],
-          streaming: true,
-          roleOf: e.role,
-          stage: e.phase
-        }
-        set((s) => ({
-          // the stage message belongs to this run, not to the window
-          runs: s.runs[threadId]
-            ? { ...s.runs, [threadId]: { ...s.runs[threadId], messageId: fresh.id } }
-            : s.runs,
-          streamingMessageId: s.activeThreadId === threadId ? fresh.id : s.streamingMessageId,
-          threads: s.threads.map((t) =>
-            t.id === threadId ? { ...t, messages: [...t.messages, fresh], updatedAt: Date.now() } : t
-          )
-        }))
-        // Who is speaking is already said by the stage chip and the avatar; the
-        // stage announcement itself is not a step. Empty steps rendered as a lone
-        // ">>" and then as a stray number once the trace compacted.
+      case 'role':
+        // One agent, one bubble: the run announced itself at run-start and every
+        // event lands in the message this run was started with. There is no
+        // second character to hand the turn to, so this event has nothing to do.
         break
-      }
       case 'reasoning-delta': {
         // The clock is main's, not ours: `deltaMs` is time since this burst of
         // thought began, so the number can only grow and can never lie.
@@ -1073,78 +1010,6 @@ export const useStore = create<State & Actions>((set, get) => ({
         // header alive instead of leaving the last label from three steps ago.
         if (isVisible()) set({ activity: { step: e.step, label: e.label, since: Date.now() }, retryInfo: null })
         break
-      case 'goal-round': {
-        // The run is not over: it is continuing, and the user should see that
-        // instead of a stopped transcript that looks abandoned.
-        set((s) => ({
-          activity: {
-            step: e.round,
-            since: Date.now(),
-            label:
-              (e.reason === 'criteria' ? tr('goal.roundCriteria') : tr('goal.roundPlan')) +
-              ` · ${e.round}/${e.maxRounds}` +
-              (e.detail ? ` · ${e.detail}` : '')
-          }
-        }))
-        updateAssistant((m) => ({
-          ...m,
-          guards: [
-            ...(m.guards || []),
-            {
-              id: uid('guard'),
-              kind: 'goal',
-              title: tr('goal.roundTitle', { n: String(e.round), max: String(e.maxRounds) }),
-              detail: e.detail || (e.reason === 'criteria' ? tr('goal.roundCriteria') : tr('goal.roundPlan'))
-            }
-          ]
-        }))
-        break
-      }
-      case 'goal-end': {
-        const label =
-          e.stop === 'contract-met'
-            ? tr('goal.met', { n: String(e.rounds) })
-            : e.stop === 'rounds-used'
-              ? tr('goal.roundsUsed', { n: String(e.rounds) })
-              : e.stop === 'no-progress'
-                ? tr('goal.stalled', { n: String(e.rounds) })
-                : tr('goal.failed')
-        updateAssistant((m) => ({
-          ...m,
-          guards: [...(m.guards || []), { id: uid('guard'), kind: e.stop === 'contract-met' ? 'done' : 'rework', title: label }]
-        }))
-        break
-      }
-      case 'spec-check': {
-        // The evidence behind «готово»: what was checked and what it rests on.
-        // A refused check is not the end — the goal opens another round — so the
-        // header must say that instead of freezing on the old label.
-        if (e.refused) {
-          set((s) => ({
-            activity: {
-              step: s.activity?.step || 1,
-              label: tr('goal.specRefused'),
-              since: s.activity?.since || Date.now()
-            }
-          }))
-        }
-        updateAssistant((m) => ({
-          ...m,
-          specReport: e.report,
-          guards: e.refused
-            ? [
-                ...(m.guards || []),
-                {
-                  id: uid('guard'),
-                  kind: 'rework',
-                  title: `Приёмка не прошла: ${e.report.checks.filter((c) => c.status === 'fail').length} из ${e.report.checks.length}`,
-                  detail: e.report.summary
-                }
-              ]
-            : m.guards
-        }))
-        break
-      }
       case 'guard': {
         const note = { id: uid('guard'), kind: e.kind, title: e.title, detail: e.detail }
         updateAssistant((m) => ({ ...m, guards: [...(m.guards || []), note] }))
@@ -1263,8 +1128,7 @@ export const useStore = create<State & Actions>((set, get) => ({
                   pendingApproval: null,
                   activity: null,
                   retryInfo: null,
-                  activeRole: null,
-                  runId: null
+                                  runId: null
                 }
               : {})
           }
@@ -1293,7 +1157,6 @@ export const useStore = create<State & Actions>((set, get) => ({
                       !!(m.steps || []).length ||
                       !!(m.guards || []).length ||
                       !!m.vote ||
-                      !!m.specReport ||
                       !!m.error
                   )
                 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 import { useStore, formatCost, totalUsage } from '../store'
-import { MODELS, modelUse, type ApprovalPolicy, type ThemeId, type Locale } from '../../../shared/types'
+import { MODELS, modelUse, type ThemeId, type Locale } from '../../../shared/types'
 import { useT } from '../lib/i18n'
 
 type Tab = 'model' | 'agent' | 'appearance' | 'editor' | 'terminal' | 'shortcuts' | 'about'
@@ -29,6 +29,31 @@ const THEMES: { id: ThemeId; label: string }[] = [
 
 // 'auto' keeps each theme's own pair; these are manual overrides
 const ACCENTS = ['auto', '#ffb86b', '#c792ea', '#f2c14e', '#7cc8a6', '#e06b5c', '#7c9cff', '#8fd6d1']
+
+export function PermRow({
+  label,
+  value,
+  options,
+  onChange
+}: {
+  label: string
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (v: string) => void
+}): React.ReactElement {
+  return (
+    <div className="perm-row">
+      <span className="perm-label">{label}</span>
+      <span className="perm-seg">
+        {options.map((o) => (
+          <button key={o.value} className="perm-opt" data-on={value === o.value} onClick={() => onChange(o.value)}>
+            {o.label}
+          </button>
+        ))}
+      </span>
+    </div>
+  )
+}
 
 export function SettingsDialog(): React.ReactElement {
   const t = useT()
@@ -221,19 +246,44 @@ export function SettingsDialog(): React.ReactElement {
 
           {tab === 'agent' && (
             <Section title={t('set.agentSection')} desc={t('set.agentDesc')}>
-              <Field label={t('set.approvalPolicy')}>
-                <div className="policy-grid">
-                  {([
-                    ['ask', t('set.policyAsk'), t('set.policyAskDesc'), 'shield'],
-                    ['auto-edit', t('set.policyAuto'), t('set.policyAutoDesc'), 'edit'],
-                    ['yolo', t('set.policyYolo'), t('set.policyYoloDesc'), 'zap']
-                  ] as [ApprovalPolicy, string, string, any][]).map(([id, title, desc, icon]) => (
-                    <button key={id} className="policy-card" data-active={settings.approvalPolicy === id} data-danger={id === 'yolo'} onClick={() => void setSettings({ approvalPolicy: id })}>
-                      <Icon name={icon} size={12} className={settings.approvalPolicy === id ? (id === 'yolo' ? 'err' : 'acc') : 'faint'} />
-                      <span className="t-sm" style={{ fontWeight: 600 }}>{title}</span>
-                      <span className="t-xs faint" style={{ lineHeight: 1.5 }}>{desc}</span>
-                    </button>
-                  ))}
+              {/* What the agent may do without asking. Three dots, said in
+                  consequences rather than in permission jargon. */}
+              <Field label={t('chat.permTitle')}>
+                <div className="perm-grid">
+                  <PermRow
+                    label={t('chat.permEdit')}
+                    value={(settings.capabilities || { edit: 'ask', run: 'ask' }).edit}
+                    options={[
+                      { value: 'ask', label: t('chat.permAsk') },
+                      { value: 'auto', label: t('chat.permAuto') },
+                      { value: 'off', label: t('chat.permOff') }
+                    ]}
+                    onChange={(v) =>
+                      void setSettings({
+                        capabilities: {
+                          ...(settings.capabilities || { edit: 'ask', run: 'ask' }),
+                          edit: v as 'ask' | 'auto' | 'off'
+                        }
+                      })
+                    }
+                  />
+                  <PermRow
+                    label={t('chat.permRun')}
+                    value={(settings.capabilities || { edit: 'ask', run: 'ask' }).run}
+                    options={[
+                      { value: 'ask', label: t('chat.permAsk') },
+                      { value: 'auto', label: t('chat.permAuto') },
+                      { value: 'off', label: t('chat.permOff') }
+                    ]}
+                    onChange={(v) =>
+                      void setSettings({
+                        capabilities: {
+                          ...(settings.capabilities || { edit: 'ask', run: 'ask' }),
+                          run: v as 'ask' | 'auto' | 'off'
+                        }
+                      })
+                    }
+                  />
                 </div>
               </Field>
               <Field label={t('set.alwaysAllowed')} hint={t('set.alwaysAllowedHint')}>
@@ -272,46 +322,8 @@ export function SettingsDialog(): React.ReactElement {
               </Row>
               <Toggle label={t('set.autoContext')} hint={t('set.autoContextHint')} value={settings.autoContext} onChange={(v) => void setSettings({ autoContext: v })} />
 
-              {/* stability: the guarantees that make an unattended run safe */}
-              <div className="setting-group-title">{t('set.stableGroup')}</div>
-              {/* The one switch that decides how much the app holds the agent to
-                  a checklist. Read first, because it changes everything below. */}
-              <Field label={t('set.freedom')} hint={t('set.freedomHint')}>
-                <div className="segmented">
-                  {(['checked', 'free'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      data-active={(settings.freedom || 'checked') === mode}
-                      onClick={() => void setSettings({ freedom: mode })}
-                    >
-                      {mode === 'checked' ? t('set.freedomChecked') : t('set.freedomFree')}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-              <Toggle
-                label={t('set.stableMode')}
-                hint={t('set.stableModeHint')}
-                value={settings.stableMode !== false}
-                disabled={(settings.freedom || 'checked') === 'free'}
-                onChange={(v) => void setSettings({ stableMode: v })}
-              />
-              <Row label={t('set.goalRounds')} hint={t('set.goalRoundsHint')}>
-                <div className="row gap-3" style={{ alignItems: 'center' }}>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={settings.goalRounds || 1}
-                    style={{ ['--fill' as any]: `${((Math.max(1, settings.goalRounds || 1) - 1) / 9) * 100}%` }}
-                    onChange={(e) => void setSettings({ goalRounds: Number(e.target.value) })}
-                  />
-                  <span className="mono t-sm" style={{ width: 28 }}>
-                    {settings.goalRounds > 1 ? settings.goalRounds : t('common.off')}
-                  </span>
-                </div>
-              </Row>
+              {/* limits of an unattended run: what it may spend, and what proves it */}
+              <div className="setting-group-title">{t('set.limitsGroup')}</div>
               <Row label={t('set.costCap')} hint={t('set.costCapHint')}>
                 <div className="row gap-2" style={{ alignItems: 'center' }}>
                   <span className="t-sm faint">$</span>

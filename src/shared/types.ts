@@ -5,36 +5,26 @@
 
 export type ApprovalPolicy = 'ask' | 'auto-edit' | 'yolo'
 
-/** Who may write files / run commands / plan, in words a person can act on. */
+/** Who may write files / run commands, in words a person can act on. */
 export type EditPermission = 'ask' | 'auto' | 'off'
 export type RunPermission = 'ask' | 'auto' | 'off'
-/** The planner talks to the user and hands a brief to the builder. */
-export type PlannerMode = 'auto' | 'always' | 'off'
 
+/**
+ * Two switches, and that is the whole permission model.
+ *
+ * The old shape had a third one — a "planner" that decided whether a second
+ * agent should write a brief first. A new user could not answer that question
+ * and did not have to: there is one agent, and it plans inside its own head.
+ */
 export interface Capabilities {
   edit: EditPermission
   run: RunPermission
-  planner: PlannerMode
+  /** how often the agent shows its work as it goes; a display choice, not a gate */
+  ask?: 'auto'
 }
 
-/**
- * Two agents, one conversation.
- *
- * `author` is the one the user talks to: it reads, argues, invents and writes a
- * brief. It cannot write files — that is not a promise in a prompt, it is the
- * absence of write tools in its list. `builder` executes the brief with the full
- * toolset and writes the report the author checks.
- */
-export type AgentRole = 'author' | 'builder'
-
-/** What the author hands the builder: a paragraph of instruction, not a mood. */
-export interface Brief {
-  goal: string
-  points: string[]
-  check: string[]
-  extra: string[]
-  raw: string
-}
+/** One agent. Kept as a named type because events still carry the stage. */
+export type AgentRole = 'agent'
 export type ThemeId = 'comb' | 'ember' | 'forest' | 'midnight' | 'graphite' | 'electric' | 'nord' | 'paper'
 export type Role = 'user' | 'assistant' | 'system'
 /** UI language. 'auto' follows the OS locale on first run. */
@@ -151,7 +141,6 @@ export function modelOptions(
  * picked automatically (long task, full-disk access, or the user asked for it in
  * the prompt) — it is a guaranteed baseline, not a switch people have to know.
  */
-export type RunMode = 'normal' | 'stable'
 
 export interface Settings {
   apiKey: string
@@ -190,8 +179,6 @@ export interface Settings {
   alphaFeatures: boolean
   /** let the model label the files it wrote, in the background */
   describeFiles: boolean
-  /** extra-hardening on top of the always-on guards: verification, cost ceiling, stuck detection */
-  stableMode: boolean
   /** stop a run when it costs more than this, in USD (0 = no ceiling) */
   costCap: number
   /** command the stable mode runs before claiming success, e.g. `npm test` (empty = auto) */
@@ -207,24 +194,8 @@ export interface Settings {
   proposeVotes: boolean
   allowedTools: string[]
   locale: Locale
-  /** the author writes a brief before anyone touches a file */
-  planner: PlannerMode
-  /** the author reads the builder's report and diffs before the user does */
-  reviewPass: boolean
-  /** how many rounds one goal may run before it stops and says so (1 = off) */
-  goalRounds: number
-  /** .comb/memory.md: decisions the author carries between sessions */
+  /** .comb/memory.md: decisions the agent carries between sessions */
   projectMemory: boolean
-  /**
-   * How much the app is allowed to hold the agent to a checklist.
-   *
-   * checked (the default) is the professional pass: a contract, a verification
-   * step, an independent checker, review rounds. It is what production work
-   * needs, and it is also what makes a creative task come out safe and dull —
-   * six gates and no room to invent. free drops the gates and keeps the one
-   * rule that matters: look at your own result before calling it done.
-   */
-  freedom: 'checked' | 'free'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -259,8 +230,6 @@ export const DEFAULT_SETTINGS: Settings = {
   fullDiskAccess: false,
   alphaFeatures: false,
   describeFiles: true,
-  stableMode: true,
-  goalRounds: 4,
   costCap: 0.5,
   verifyCommand: '',
   notifyDesktop: true,
@@ -269,11 +238,8 @@ export const DEFAULT_SETTINGS: Settings = {
   proposeVotes: true,
   allowedTools: [],
   locale: 'en',
-  capabilities: { edit: 'ask', run: 'ask', planner: 'auto' },
-  planner: 'auto',
-  reviewPass: true,
-  projectMemory: true,
-  freedom: 'checked'
+  capabilities: { edit: 'ask', run: 'ask' },
+  projectMemory: true
 }
 
 /* ------------------------------------------------------------------ */
@@ -474,34 +440,10 @@ export interface StickyNote {
   byAgent?: boolean
 }
 
-/** One criterion of the contract, judged against the real files. */
-export interface SpecCheck {
-  /** the acceptance criterion in the user's words */
-  claim: string
-  status: 'done' | 'fail'
-  /** what in the code proves it */
-  evidence?: string
-  /** what the builder must do when it fails */
-  fix?: string
-}
-
-/**
- * The verdict of the independent review: not the builder grading itself, but a
- * separate pass reading the contract against the changed files. It is the
- * reason "готово" can mean something.
- */
-export interface SpecReport {
-  verdict: 'done' | 'rework'
-  checks: SpecCheck[]
-  summary: string
-  at: number
-}
-
 export interface ChatMessage {
   id: string
   role: Role
-  /** which stage of the pipeline produced this bubble */
-  roleOf?: AgentRole
+  /** which stage produced this bubble */
   stage?: 'thinking' | 'working' | 'review'
   content: string
   reasoning?: string
@@ -525,8 +467,6 @@ export interface ChatMessage {
   streaming?: boolean
   /** stable-mode guard notes attached to the turn they happened in */
   guards?: { id: string; kind: string; title: string; detail?: string }[]
-  /** contract check shown under the answer: criterion by criterion, with proof */
-  specReport?: SpecReport
   /** files this run hands over, with their absolute path so a click opens them */
   presented?: { path: string; rel: string; kind: 'file' | 'artifact' }[]
   /** an open/answered question from the agent */
@@ -581,7 +521,7 @@ export type AgentEvent = (AgentEventBody & { threadId?: string })
 
 export type AgentEventBody =
   | { type: 'run-start'; runId: string; threadId: string; messageId: string }
-  /** who is speaking right now: the author talks to the user, the builder works */
+  /** a new stage of the same run: thinking, working, or the closing pass */
   | { type: 'role'; runId: string; role: AgentRole; phase: 'thinking' | 'working' | 'review' }
   | { type: 'reasoning-delta'; runId: string; text: string; /** ms since this burst of thought began */ deltaMs: number }
   | { type: 'text-delta'; runId: string; text: string }
@@ -644,22 +584,8 @@ export type AgentEventBody =
       title: string
       detail?: string
     }
-  /** the contract check came back: this is the evidence behind «готово» */
-  | { type: 'spec-check'; runId: string; report: SpecReport; attempt: number; refused: boolean }
   /** what the app itself is doing between model calls: a live header, not a hung screen */
   | { type: 'activity'; runId: string; step: number; label: string }
-  /** the goal opened another round: the run is not over, it is continuing */
-  | {
-      type: 'goal-round'
-      runId: string
-      round: number
-      maxRounds: number
-      /** why: unconfirmed criteria or an unfinished plan */
-      reason: 'criteria' | 'plan'
-      detail?: string
-    }
-  /** the goal stopped, and here is why — never silent */
-  | { type: 'goal-end'; runId: string; rounds: number; stop: 'contract-met' | 'rounds-used' | 'no-progress' | 'failed' | 'off' }
   | { type: 'run-end'; runId: string; reason: 'done' | 'stopped' | 'error' | 'limit' | 'guard' }
 
 export interface RunRequest {
@@ -691,20 +617,8 @@ export interface RunRequest {
   openFiles?: { rel: string; path: string }[]
   /** only run these tool ids: used by "apply" flows */
   disabledTools?: string[]
-  /** stable = verification pass + guards; defaults to normal */
-  mode?: RunMode
-  /** who is running: the author writes briefs, the builder executes them */
-  role?: AgentRole
-  /** 'single' keeps the old one-agent prompt: used when the planner is off */
-  roleMode?: 'single' | 'split'
-  /** the brief the author wrote, handed to the builder as its whole task */
-  brief?: Brief
-  /** the contract this run is held to (SPEC.md criteria); the builder must see it */
-  spec?: string
-  /** which pass this is against the contract: 0 the first, 1 the rework */
-  specAttempt?: number
-  /** the author reviews the builder's report before the user sees it */
-  review?: { report: string; changed: string[] }
+  /** the run's own plan, so a second pass continues instead of starting over */
+  plan?: string
   /** the user's notes for this task: the agent has to respect them */
   notes?: { text: string; target?: string }[]
   /** USD ceiling for this run (0 = off) */

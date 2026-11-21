@@ -76,7 +76,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'comb-data-'))
 process.env.COMB_TEST_DIR = dataDir
 fs.writeFileSync(
   path.join(dataDir, 'settings.json'),
-  JSON.stringify({ apiKey: 'sk-test', baseUrl, model: 'deepseek-flash', locale: 'ru', capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, allowedTools: [] })
+  JSON.stringify({ apiKey: 'sk-test', baseUrl, model: 'deepseek-flash', locale: 'ru', capabilities: { edit: 'auto', run: 'auto' }, allowedTools: [] })
 )
 
 const { runTeam, resolveApproval } = await import('../src/main/agent.ts')
@@ -103,14 +103,13 @@ const req = {
   temperature: 0.2,
   maxTokens: 4096,
   approvalPolicy: 'auto',
-  capabilities: { edit: 'auto', run: 'auto', planner: 'auto' },
+  capabilities: { edit: 'auto', run: 'auto' },
   maxSteps: 12,
   autoContext: true,
   customInstructions: '',
   history: [],
   userMessage: { id: 'u1', role: 'user', content: 'Прочитай hello.txt и скажи, что там.', createdAt: Date.now() },
-  attachments: [],
-  role: 'builder'
+  attachments: []
 }
 
 const kinds = () => events.map((e) => e.type)
@@ -192,7 +191,7 @@ console.log('step limit:')
 script = []
 for (let i = 0; i < 40; i++) script.push({ text: 'Смотрю папку.', tool: { name: 'list_dir', args: { path: '.' } } })
 events.length = 0
-res = await runTeam({ ...req, maxSteps: 3, capabilities: { edit: 'auto', run: 'auto', planner: 'off' } }, deps)
+res = await runTeam({ ...req, maxSteps: 3, capabilities: { edit: 'auto', run: 'auto' } }, deps)
 check('a limited run reports why it stopped', events.some((e) => e.type === 'run-end' && (e.reason === 'limit' || e.reason === 'stopped')), JSON.stringify(events.filter((e) => e.type === 'run-end')))
 check('a limited run leaves a message in the transcript', text().length > 0 || events.some((e) => e.type === 'guard'), text().slice(0, 200))
 
@@ -210,7 +209,7 @@ const yoloReq = {
   // the message names a folder the user can see in the picker but that is not
   // in the workspace: this is the exact case that used to answer "escapes workspace"
   userMessage: { id: 'u2', role: 'user', content: `Прочитай файл neighbour.txt в ${sibling} и свери с inner.txt.`, createdAt: Date.now() },
-  capabilities: { edit: 'ask', run: 'ask', planner: 'off' },
+  capabilities: { edit: 'ask', run: 'ask' },
   fullDiskAccess: true
 }
 script = [
@@ -272,7 +271,7 @@ script = [
   finalText('План закрыт, файл переписан.')
 ]
 events.length = 0
-res = await runTeam({ ...req, maxSteps: 10, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u4', role: 'user', content: 'Перепиши вторую строку в hello.txt.', createdAt: Date.now() } }, deps)
+res = await runTeam({ ...req, maxSteps: 10, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u4', role: 'user', content: 'Перепиши вторую строку в hello.txt.', createdAt: Date.now() } }, deps)
 check('an open plan is reported to the UI', events.some((e) => e.type === 'todos' && e.todos.length === 2))
 check('"done" with an open plan is refused', events.some((e) => e.type === 'guard' && /готово|done|план/i.test(JSON.stringify(e))), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 300))
 check('the file was actually rewritten', /edited/.test(fs.readFileSync(path.join(workspace, 'hello.txt'), 'utf8')))
@@ -289,7 +288,7 @@ script = [
 ]
 events.length = 0
 const t0 = Date.now()
-res = await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, userMessage: { id: 'u5', role: 'user', content: 'Как думаешь, какую строку в hello.txt стоит менять?', createdAt: Date.now() } }, deps)
+res = await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u5', role: 'user', content: 'Как думаешь, какую строку в hello.txt стоит менять?', createdAt: Date.now() } }, deps)
 const took = Date.now() - t0
 if (process.env.DUMP) {
   console.log('ROLE:', events.find((e) => e.type === 'role')?.role)
@@ -314,7 +313,7 @@ script = [
   finalText('Страница готова: тёмный фон, крупный заголовок.')
 ]
 events.length = 0
-res = await runTeam({ ...req, maxSteps: 8, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u6', role: 'user', content: 'Сделай красивую страницу page.html.', createdAt: Date.now() } }, deps)
+res = await runTeam({ ...req, maxSteps: 8, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u6', role: 'user', content: 'Сделай красивую страницу page.html.', createdAt: Date.now() } }, deps)
 check('"done" on a page nobody looked at is refused', events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 300))
 check('the refusal names the way to look', JSON.stringify(events).includes('preview_page') || JSON.stringify(events).includes('view_image'))
 check('the run still ends with an answer', res.ok === true && text().length > 0)
@@ -325,58 +324,41 @@ script = [
   { text: 'Готово.', tool: { name: 'finish', args: { summary: 'Записал plain.txt.', work_done: true } } }
 ]
 events.length = 0
-await runTeam({ ...req, maxSteps: 5, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u7', role: 'user', content: 'Запиши hello в plain.txt.', createdAt: Date.now() } }, deps)
+await runTeam({ ...req, maxSteps: 5, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u7', role: 'user', content: 'Запиши hello в plain.txt.', createdAt: Date.now() } }, deps)
 check('a non-visual task is not nagged about previews', !events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
 
 /* ------------------------------------------------------------------ */
-/* 11. free mode: one mind, no gates, still eyes                      */
+/* 11. one agent: no second character, no staged handoff               */
 /* ------------------------------------------------------------------ */
-console.log('free mode:')
-const { setSettings } = await import('../src/main/store.ts')
-const setFreedom = async (mode) => {
-  await setSettings({ freedom: mode })
-}
-script = [
-  { text: 'Делаю страницу.', tool: { name: 'write_file', args: { path: 'free.html', content: '<!doctype html><html><body><h1>x</h1></body></html>' } } },
-  { text: 'Готово.', tool: { name: 'finish', args: { summary: 'Страница готова, проверил.', work_done: true } } },
-  finalText('Страница free.html готова.')
-]
-events.length = 0
-requests = []
-await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, userMessage: { id: 'u8', role: 'user', content: 'Сделай красивую страницу free.html, как хочешь.', createdAt: Date.now() } }, deps)
-// write settings first, then run
-await setFreedom('free')
+console.log('one agent:')
 events.length = 0
 requests = []
 script = [
-  { text: 'Придумал: тёмный фон, крупный заголовок, узкая колонка.', tool: { name: 'write_file', args: { path: 'free.html', content: '<!doctype html><html><body style="background:#14110e;color:#f4ece1"><h1>Comb</h1></body></html>' } } },
-  finalText('Сделал свободную версию free.html.')
+  { text: 'Смотрю проект, потом делаю страницу.', tool: { name: 'read_file', args: { path: 'hello.txt' } } },
+  { text: 'Пишу страницу: тёмный фон, крупный заголовок.', tool: { name: 'write_file', args: { path: 'solo.html', content: '<!doctype html><html><body style="background:#14110e;color:#f4ece1"><h1>Comb</h1></body></html>' } } },
+  { text: 'Проверил: файл на месте.', tool: { name: 'read_file', args: { path: 'solo.html' } } },
+  finalText('Сделал solo.html: тёмный фон, крупный заголовок. Проверил содержимое.')
 ]
-const freeRes = await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, userMessage: { id: 'u9', role: 'user', content: 'Сделай красивую страницу free.html, как хочешь.', createdAt: Date.now() } }, deps)
-// the first request of a run is the background file-labeller; the run's own
-// system prompt is the one that introduces the agent
-const sys = String(requests.map((r) => r.messages?.[0]?.content || '').find((c) => /You are Comb/.test(c)) || '')
-check('free mode runs without a contract round', !events.some((e) => e.type === 'guard' && e.kind === 'contract'), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
-check('free mode has no separate checker', !events.some((e) => e.type === 'spec-check'), 'a spec report was produced in free mode')
-check('free mode runs one agent, not a team', requests.length >= 1 && !events.some((e) => e.type === 'role' && e.role === 'author'), 'the author ran in free mode')
-check('the prompt grants room to invent', /Room to invent/i.test(sys), sys.slice(0, 120))
-check('the run still finishes', freeRes.ok === true, JSON.stringify(freeRes))
-// free mode does not put a gate in front of finish: the permission to invent is
-// also the permission to decide when a thing is good
-check('free mode does not gate "done"', !events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 240))
-check('free mode still ships the file it made', /Сделал свободную версию|free\.html/.test(text()), text().slice(0, 200))
-await setFreedom('checked')
+const soloRes = await runTeam({ ...req, maxSteps: 8, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u8', role: 'user', content: 'Сделай страницу solo.html, как хочешь.', createdAt: Date.now() } }, deps)
+const sysPrompts = requests.map((r) => String(r.messages?.[0]?.content || ''))
+const sysAll = sysPrompts.join('\n---\n')
+check('one run, one agent — no stage handoff', !events.some((e) => e.type === 'role' && e.role !== 'agent'), JSON.stringify(events.filter((e) => e.type === 'role')).slice(0, 200))
+check('no brief is parsed out of a code fence', !events.some((e) => /brief|Бриф/i.test(String(e.title || '') + String(e.detail || ''))), 'a brief stage ran')
+check('no separate contract round', !events.some((e) => e.type === 'guard' && e.kind === 'contract'), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
+check('no separate checker pass', !events.some((e) => e.type === 'spec-check'), 'a spec report was produced')
+check('the prompt is one voice, not two characters', !/Ты — Автор|Ты — Сборщик/.test(sysAll), sysAll.slice(0, 120))
+check('the prompt asks for thinking before acting', /подумай, потом действуй|think first/i.test(sysAll), sysAll.slice(0, 160))
+check('the run still finishes and reports', soloRes.ok === true && /solo\.html/.test(text()), text().slice(0, 200))
 
 /* ------------------------------------------------------------------ */
 /* 12. Stop stops the whole team, not one stage                        */
 /* ------------------------------------------------------------------ */
 console.log('stop the team:')
-await setFreedom('checked')
 script = []
 for (let i = 0; i < 4000; i++) script.push({ text: 'Думаю.', tool: { name: 'list_dir', args: { path: '.' } } })
 events.length = 0
 const teamRun = runTeam(
-  { ...req, maxSteps: 20, capabilities: { edit: 'auto', run: 'auto', planner: 'always' }, userMessage: { id: 'u10', role: 'user', content: 'Сделай большую систему, сначала посмотри проект. Это длинная задача с архитектурой.', createdAt: Date.now() } },
+  { ...req, maxSteps: 20, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u10', role: 'user', content: 'Сделай большую систему, сначала посмотри проект. Это длинная задача с архитектурой.', createdAt: Date.now() } },
   deps
 )
 // stop once the run is genuinely in flight (the fake model is instant, so the
@@ -391,7 +373,7 @@ const tStop = Date.now()
 await teamRun
 const stopTook = Date.now() - tStop
 await new Promise((r) => setTimeout(r, 400))
-check('stop ends a team run', events.some((e) => e.type === 'run-end' && e.reason === 'stopped'), JSON.stringify(events.filter((e) => e.type === 'run-end')))
+check('stop ends the run', events.some((e) => e.type === 'run-end' && e.reason === 'stopped'), JSON.stringify(events.filter((e) => e.type === 'run-end')))
 const stepsAtStop = events.filter((e) => e.type === 'step').length
 await new Promise((r) => setTimeout(r, 300))
 const stepsLater = events.filter((e) => e.type === 'step').length
@@ -416,7 +398,7 @@ for (let i = 0; i < 18; i++) script.push({ text: `Читаю файл ${i}.`, to
 script.push({ text: 'Прочитал всё, теперь делаю.', tool: { name: 'write_file', args: { path: 'inventory.md', content: 'done\n' } } })
 script.push(finalText('Изучил проект и записал выводы.'))
 events.length = 0
-await runTeam({ ...req, maxSteps: 40, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u11', role: 'user', content: 'Изучи проект и прочитай все большие файлы, потом коротко напиши выводы в inventory.md.', createdAt: Date.now() } }, deps)
+await runTeam({ ...req, maxSteps: 40, capabilities: { edit: 'auto', run: 'auto' }, userMessage: { id: 'u11', role: 'user', content: 'Изучи проект и прочитай все большие файлы, потом коротко напиши выводы в inventory.md.', createdAt: Date.now() } }, deps)
 check('a study task is not told to stop reading', !events.some((e) => e.type === 'guard' && /Бюджет на изучение|exploration budget/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard').map((e) => e.title)).slice(0, 240))
 
 server.close()

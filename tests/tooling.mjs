@@ -6,15 +6,13 @@
  *     an argument name and wasting a round;
  *  2. a big command output that stays reachable — the full text goes to disk and
  *     the model is told where, instead of being cut off at the first 24k chars;
- *  3. the round ledger that carries settled facts into the next goal round
- *     instead of starting from a blank context.
+ *  3. a contract stamped for one task is never applied to another.
  */
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { executeTool, spillText, READ_ONLY_TOOLS } from '../src/main/tools.ts'
-import { mergeLedger, roundPrompt, shouldContinue } from '../src/main/goal.ts'
 import { specForRequest, writeSpec } from '../src/main/spec.ts'
 import { scoreAppMatch } from '../src/main/discover.ts'
 
@@ -79,20 +77,6 @@ assert.match(cmd.output, /\[exit 0\]/)
 assert.match(cmd.output, /LAST-LINE/)
 assert.match(cmd.output, /\.comb\/output\//)
 
-/* 3. the ledger carries facts between rounds ------------------------- */
-const written = path.join(workspace, 'src', 'Main.java')
-fs.mkdirSync(path.dirname(written), { recursive: true })
-fs.writeFileSync(written, 'class Main {}')
-
-let ledger = mergeLedger({ done: [], ruledOut: [] }, { touched: [written], report: 'Сделал Main.java.', workspace })
-assert.equal(ledger.done.length, 1)
-assert.match(ledger.done[0], /src\/Main\.java/)
-
-ledger = mergeLedger(ledger, { touched: [written], report: 'Невозможно собрать: нет JDK на этой машине.', workspace })
-assert.equal(ledger.done.length, 1, 'the same file is not recorded twice')
-assert.equal(ledger.ruledOut.length, 1)
-assert.match(ledger.ruledOut[0], /нет JDK/)
-
 /* the contract must never travel between tasks or domains */
 writeSpec(workspace, '<!-- comb:request:сделай карту для игры peak -->\n1. [[карта]] уровня\n2. файлы игры на месте')
 assert.equal(specForRequest(workspace, 'сделай карту для игры peak'), specForRequest(workspace, 'сделай карту для игры peak'))
@@ -104,30 +88,6 @@ assert.equal(specForRequest(workspace, 'сделай карту для игры 
 // a legacy unstamped spec is never adopted
 fs.writeFileSync(path.join(workspace, 'SPEC.md'), '1. карта уровня\n2. ванильный мир Minecraft Java')
 assert.equal(specForRequest(workspace, 'сделай карту для игры peak'), '')
-
-const prompt = roundPrompt({
-  objective: 'Собрать мод',
-  round: 2,
-  maxRounds: 4,
-  signal: { unmet: ['Билд проходит'], openTodos: [] },
-  criteria: ['Билд проходит', 'Есть jar'],
-  attemptsSoFar: 1,
-  ledger,
-  previousReport: 'Сделал Main.java.'
-})
-assert.match(prompt, /Уже сделано и проверено/)
-assert.match(prompt, /src\/Main\.java/)
-assert.match(prompt, /не повторяй/)
-assert.match(prompt, /Раунд 2 из 4/)
-
-// the ledger never grows without bound
-let grown = { done: [], ruledOut: [] }
-for (let i = 0; i < 40; i++) grown = mergeLedger(grown, { touched: [path.join(workspace, `f${i}.txt`)], workspace })
-assert.ok(grown.done.length <= 14, `ledger stayed at ${grown.done.length}`)
-assert.ok(grown.ruledOut.length <= 6)
-
-// a clean verdict still ends the goal: bookkeeping never outranks the checker
-assert.equal(shouldContinue('1. Билд проходит', { verdict: 'done', checks: [{ claim: 'Билд проходит', status: 'pass' }] }, []), null)
 
 /* 4. finding things nobody said the location of -------------- */
 // a game folder on "another drive", a studio install, a built jar

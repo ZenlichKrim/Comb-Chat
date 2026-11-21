@@ -53,9 +53,24 @@ export function CommandPalette(): React.ReactElement {
       { id: 'history', label: t('cmd.history'), icon: 'history', run: () => st.setRightPanel('history') },
       { id: 'context', label: t('cmd.context'), icon: 'layers', run: () => st.setRightPanel('context') },
       { id: 'undo-run', label: t('cmd.undoRun'), icon: 'undo', run: () => void st.undoLastRun() },
-      { id: 'approve', label: t('cmd.policyAsk'), icon: 'shield', run: () => void st.setSettings({ approvalPolicy: 'ask' }) },
-      { id: 'autoedit', label: t('cmd.policyAuto'), icon: 'edit', run: () => void st.setSettings({ approvalPolicy: 'auto-edit' }) },
-      { id: 'yolo', label: t('cmd.policyYolo'), icon: 'zap', run: () => void st.setSettings({ approvalPolicy: 'yolo' }) },
+      {
+        id: 'approve',
+        label: t('cmd.policyAsk'),
+        icon: 'shield',
+        run: () => void st.setSettings({ capabilities: { edit: 'ask', run: 'ask' } })
+      },
+      {
+        id: 'autoedit',
+        label: t('cmd.policyAuto'),
+        icon: 'edit',
+        run: () => void st.setSettings({ capabilities: { edit: 'auto', run: 'ask' } })
+      },
+      {
+        id: 'yolo',
+        label: t('cmd.policyYolo'),
+        icon: 'zap',
+        run: () => void st.setSettings({ capabilities: { edit: 'auto', run: 'auto' } })
+      },
       { id: 'git', label: t('cmd.git'), icon: 'git', run: () => void st.refreshGit() },
       { id: 'theme', label: t('cmd.theme'), icon: 'sun', run: () => {
         const order = ['comb', 'midnight', 'graphite', 'electric', 'nord', 'paper'] as const

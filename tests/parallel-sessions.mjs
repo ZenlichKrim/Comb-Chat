@@ -229,7 +229,9 @@ useStore.getState().selectThread(a)
 await useStore.getState().sendMessage('пятая задача')
 const e = useStore.getState().activeThreadId
 const runE = useStore.getState().runs[e].runId
-const streamed = ['Автор', ' думает', ' вслух,', ' и это', ' важно.', ' Сборщик', ' делает.', ' Ревью', ' проверяет.']
+// one agent now: the same run thinks out loud, works, and answers — every
+// sentence of it must reach the user, in the bubble they are reading
+const streamed = ['Думаю', ' над задачей', ' — понял,', ' что нужно.', ' Правлю', ' файл.', ' Проверил', ' и отчитываюсь.']
 useStore.getState().handleEvent({ type: 'role', runId: runE, role: 'author', phase: 'thinking', threadId: e })
 for (const chunk of streamed.slice(0, 5)) useStore.getState().handleEvent({ type: 'text-delta', runId: runE, text: chunk, threadId: e })
 useStore.getState().handleEvent({ type: 'role', runId: `${runE}:build`, role: 'builder', phase: 'working', threadId: e })
@@ -239,7 +241,13 @@ useStore.getState().handleEvent({ type: 'role', runId: `${runE}:review`, role: '
 for (const chunk of streamed.slice(7)) useStore.getState().handleEvent({ type: 'text-delta', runId: `${runE}:review`, text: chunk, threadId: e })
 useStore.getState().handleEvent({ type: 'run-end', runId: runE, reason: 'done', threadId: e })
 const allText = useStore.getState().threads.find((t) => t.id === e).messages.map((m) => m.content || '').join('')
-check('every streamed sentence survives a full multi-stage run', streamed.every((c) => allText.includes(c)), allText.replace(/\n/g, ' ').slice(0, 200))
+check('every streamed sentence survives the whole run', streamed.every((c) => allText.includes(c)), allText.replace(/\n/g, ' ').slice(0, 200))
+
+// The one agent's stream lands in one bubble: a role event mid-run no longer
+// switches characters, so the text the user watched being written is still
+// there when the run ends.
+const bubbles = useStore.getState().threads.find((t) => t.id === e).messages.filter((m) => m.role === 'assistant' && streamed.some((c) => (m.content || '').includes(c)))
+check('one run writes into one bubble, not a stage per character', bubbles.length === 1, `${bubbles.length} bubbles`)
 
 // stopping is per session
 await useStore.getState().stopRun()

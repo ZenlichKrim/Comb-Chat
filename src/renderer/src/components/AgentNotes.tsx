@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import type { AgentVote, SpecReport } from '../../../shared/types'
+import type { AgentVote } from '../../../shared/types'
 import { Icon, type IconName } from './Icon'
 import { useStore } from '../store'
 import { useT } from '../lib/i18n'
@@ -82,9 +82,6 @@ export function VoteCard({ vote }: { vote: AgentVote }): React.ReactElement {
 const GUARD_ICON: Record<string, IconName> = {
   done: 'check-circle',
   verify: 'shield',
-  contract: 'file',
-  rework: 'alert',
-  goal: 'arrow-right',
   cost: 'wallet',
   stuck: 'alert',
   errors: 'alert',
@@ -97,9 +94,6 @@ export function GuardNote({ kind, title, detail }: { kind: string; title: string
   const labels: Record<string, DictKey> = {
     done: 'guard.done',
     verify: 'guard.verify',
-    contract: 'guard.contract',
-    rework: 'guard.rework',
-    goal: 'guard.goal',
     cost: 'guard.cost',
     stuck: 'guard.stuck',
     errors: 'guard.errors',
@@ -135,35 +129,3 @@ export function Suggestions({ items }: { items: string[] }): React.ReactElement 
 }
 
 
-/**
- * The contract check, as the user reads it: every criterion in their own words,
- * either with the file that proves it or with the reason it is missing. This is
- * what makes «готово» a claim with evidence instead of a word from a model.
- */
-export function SpecCard({ report }: { report: SpecReport }): React.ReactElement {
-  const t = useT()
-  const failed = report.checks.filter((c) => c.status === 'fail')
-  return (
-    <div className="spec-card" data-verdict={failed.length ? 'rework' : 'done'}>
-      <div className="spec-head">
-        <Icon name={failed.length ? 'alert' : 'check-circle'} size={12} className="spec-icon" />
-        <span className="spec-title">
-          {failed.length ? t('spec.rework', { n: String(failed.length), total: String(report.checks.length) }) : t('spec.passed', { n: String(report.checks.length) })}
-        </span>
-      </div>
-      <ul className="spec-list">
-        {report.checks.map((c, i) => (
-          <li key={i} data-status={c.status}>
-            <Icon name={c.status === 'done' ? 'check' : 'alert'} size={10} className="spec-mark" />
-            <div className="col" style={{ gap: 1 }}>
-              <span className="spec-claim">{c.claim}</span>
-              {(c.evidence || c.fix) && (
-                <span className="spec-proof">{c.status === 'done' ? c.evidence : c.fix}</span>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}

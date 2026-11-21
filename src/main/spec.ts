@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { Capabilities, SpecCheck, SpecReport } from '../shared/types'
+import type { Capabilities } from '../shared/types'
 import { completeOnce } from './llm'
 import { foreignDomains } from './domains'
 
@@ -141,49 +141,6 @@ Rules:
 - Never invent requirements the user did not imply. Ambiguity goes into «Открытые вопросы» as a decision you made with one line of reasoning.
 - Output ONLY the markdown spec. No preamble, no code fences around the whole thing.`
 
-/**
- * Write SPEC.md for this request, unless the project already has one that is
- * still relevant. Returns the spec text ('' when there is none to write).
- */
-export async function ensureSpec(opts: {
-  workspace: string | null
-  request: string
-  apiKey: string
-  baseUrl: string
-  model: string
-  signal?: AbortSignal
-}): Promise<{ spec: string; path: string | null; written: boolean }> {
-  const existing = specForRequest(opts.workspace, opts.request)
-  const criteria = specCriteria(existing)
-  // A spec with real criteria is the project's memory: do not overwrite it with
-  // a fresh reading of one sentence, or the next round forgets what was decided.
-  if (existing && criteria.length >= 3) {
-    return { spec: existing, path: specPath(opts.workspace), written: false }
-  }
-  if (!opts.apiKey) return { spec: '', path: null, written: false }
-  let body = ''
-  try {
-    body = await completeOnce({
-      apiKey: opts.apiKey,
-      baseUrl: opts.baseUrl,
-      model: opts.model,
-      system: SPEC_SYSTEM,
-      user: `Запрос пользователя:\n\n${opts.request.slice(0, 6000)}\n\nНапиши SPEC.md.`,
-      maxTokens: 2000,
-      signal: opts.signal
-    })
-  } catch {
-    return { spec: '', path: null, written: false }
-  }
-  if (!body.trim()) return { spec: '', path: null, written: false }
-  // Stamp the request this contract was written for: the next session in the
-  // same folder is a different task, and must not inherit these criteria.
-  const stamp = `<!-- comb:request:${opts.request.replace(/[\r\n-]+/g, ' ').slice(0, 240)} -->\n`
-  const stamped = stamp + body.trim() + '\n'
-  const p = writeSpec(opts.workspace, stamped)
-  return { spec: stamped, path: p, written: !!p }
-}
-
 /** The per-file excerpt the reviewer is allowed to see. */
 const MAX_FILE_CHARS = 3500
 const MAX_FILES = 14
@@ -218,82 +175,6 @@ Rules:
 - Answer ONLY with JSON:
 {"checks":[{"claim":"<criterion, short>","status":"done|fail","evidence":"<file: what in it proves it>","fix":"<what to do, only when fail>"}],"verdict":"done|rework","summary":"<one sentence for the user>"}`
 
-/**
- * The independent review: criteria vs. what is actually on disk.
- *
- * Cheap on purpose — one non-streaming call, no thinking budget, files lopped
- * at a few KB. It runs before the user is told "готово", and its verdict can
- * send the work back exactly once.
- */
-export async function checkAgainstSpec(opts: {
-  request: string
-  spec: string
-  report: string
-  files: { path: string; body: string }[]
-  apiKey: string
-  baseUrl: string
-  model: string
-  signal?: AbortSignal
-}): Promise<SpecReport | null> {
-  const criteria = specCriteria(opts.spec)
-  if (!opts.apiKey || (!criteria.length && !opts.spec.trim())) return null
-  const filesText = opts.files.length
-    ? opts.files.map((f) => `### ${f.path}\n\`\`\`\n${f.body}\n\`\`\``).join('\n\n')
-    : '(the run changed no files)'
-  // The checker must know where the project lives and what the request is, so it
-  // cannot pass work that drifted into another domain, and cannot fail work for
-  // not using a stack nobody asked for.
-  const user =
-    `ЗАПРОС ПОЛЬЗОВАТЕЛЯ:\n${opts.request.slice(0, 3000)}\n\n` +
-    `КРИТЕРИИ ПРИЁМКИ:\n${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}\n\n` +
-    `ОТЧЁТ СБОРЩИКА:\n${(opts.report || '(нет)').slice(0, 2500)}\n\n` +
-    `ИЗМЕНЁННЫЕ ФАЙЛЫ:\n${filesText}`
-  let raw = ''
-  try {
-    raw = await completeOnce({
-      apiKey: opts.apiKey,
-      baseUrl: opts.baseUrl,
-      model: opts.model,
-      system: CHECK_SYSTEM,
-      user,
-      maxTokens: 1200,
-      signal: opts.signal
-    })
-  } catch {
-    return null
-  }
-  const json = raw.match(/\{[\s\S]*\}/)?.[0]
-  if (!json) return null
-  let parsed: any
-  try {
-    parsed = JSON.parse(json)
-  } catch {
-    return null
-  }
-  const checks: SpecCheck[] = Array.isArray(parsed?.checks)
-    ? parsed.checks
-        .filter((c: any) => c && typeof c.claim === 'string')
-        .slice(0, 40)
-        .map((c: any) => ({
-          claim: String(c.claim).slice(0, 200),
-          status: c.status === 'done' ? 'done' : 'fail',
-          evidence: c.evidence ? String(c.evidence).slice(0, 300) : undefined,
-          fix: c.fix ? String(c.fix).slice(0, 300) : undefined
-        }))
-    : []
-  if (!checks.length) return null
-  const failed = checks.filter((c) => c.status === 'fail')
-  const verdict: 'done' | 'rework' = parsed?.verdict === 'rework' || failed.length ? 'rework' : 'done'
-  return {
-    verdict,
-    checks,
-    summary: String(parsed?.summary || (verdict === 'done' ? 'Все критерии подтверждены в коде.' : 'Часть критериев не подтверждена.'))
-      .slice(0, 400),
-    at: Date.now()
-  }
-}
-
-/** A short block the builder actually receives, so it chases criteria, not vibes. */
 export function specForBuilder(spec: string, caps: Capabilities | undefined, attempt: number): string {
   const criteria = specCriteria(spec)
   if (!criteria.length) return ''
@@ -307,16 +188,5 @@ export function specForBuilder(spec: string, caps: Capabilities | undefined, att
     '\n\nЭто не пожелания, а условие сдачи: приёмку проводит отдельный проверяющий, который смотрит файлы, а не твой отчёт. ' +
     'Невыполненный пункт нельзя заменить заглушкой или соседним пунктом.' +
     (caps && caps.edit === 'off' ? '\n(Правки файлов в этом прогоне запрещены — контракт всё равно остаётся.)' : '')
-  )
-}
-
-/** The block the reviewer hands back to the builder when it fails the work. */
-export function reworkBrief(report: SpecReport): string {
-  const failed = report.checks.filter((c) => c.status === 'fail')
-  return (
-    'Проверка НЕ приняла работу.\n\n' +
-    failed.map((c, i) => `${i + 1}. НЕ ВЫПОЛНЕНО: ${c.claim}${c.fix ? `\n   Что делать: ${c.fix}` : ''}`).join('\n') +
-    '\n\nДоработай именно эти пункты реальным кодом. Не переписывай то, что уже подтверждено, и не добавляй новое от себя.\n' +
-    'Когда закончишь — finish с отчётом, в котором по каждому пункту выше сказано, чем он подтверждён.'
   )
 }
