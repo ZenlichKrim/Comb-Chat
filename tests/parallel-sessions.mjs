@@ -128,11 +128,65 @@ const textB = threadB.messages.map((m) => m.content).join('|')
 check('output of the background run lands in its own session', textA.includes('РАБОТА А'), textA)
 check('the session on screen is not polluted by it', !textB.includes('РАБОТА А'), textB)
 
+// Stage events: the team runs `run:build` / `run:review`, the goal opens
+// `run:goal2`. These ids were not in `runs`, so the store could not place them
+// and dumped every later stage into whatever session was on screen.
+useStore.getState().handleEvent({ type: 'text-delta', runId: `${runIdA}:build`, text: 'СБОРКА А' })
+useStore.getState().handleEvent({ type: 'text-delta', runId: `${runIdA}:goal2`, text: 'РАУНД А' })
+const stageA = useStore.getState().threads.find((t) => t.id === a).messages.map((m) => m.content).join('|')
+const stageB = useStore.getState().threads.find((t) => t.id === b).messages.map((m) => m.content).join('|')
+check('a stage of a run stays in that run\'s session', stageA.includes('СБОРКА А') && stageA.includes('РАУНД А'), stageA.slice(-120))
+check('a stage never lands in the other session', !stageB.includes('СБОРКА А') && !stageB.includes('РАУНД А'), stageB.slice(-120))
+
+// An event stamped with its session is placed by that stamp even when the run id
+// is one the renderer never registered (a resumed run, or a stage opened in main).
+useStore.getState().handleEvent({ type: 'text-delta', runId: 'run-unknown-to-renderer:build', text: 'ПОМЕТКА СЕССИИ', threadId: a })
+const stamped = useStore.getState().threads.find((t) => t.id === a).messages.map((m) => m.content).join('|')
+check('an event carries its session and is placed by it', stamped.includes('ПОМЕТКА СЕССИИ'), stamped.slice(-120))
+
+// An answer must go back to the run that asked, not to the tab on screen.
+const voteSeen = []
+window.comb.agent.vote = async (runId, voteId) => { voteSeen.push([runId, voteId]) }
+const runIdB = useStore.getState().runs[b].runId
+useStore.getState().handleEvent({
+  type: 'tool-approval-request',
+  runId: runIdB,
+  call: { id: 'call-vote', name: 'ask_user', args: { question: 'Какую?', options: ['первую', 'вторую'], recommend: 'вторую' } }
+})
+useStore.getState().handleEvent({ type: 'tool-call', runId: runIdB, call: { id: 'call-vote', name: 'ask_user', args: { question: 'Какую?', options: ['первую', 'вторую'], recommend: 'вторую' } } })
+useStore.getState().handleEvent({ type: 'text-delta', runId: runIdB, text: 'СПРАШИВАЮ' })
+useStore.getState().selectThread(a)
+await useStore.getState().answerLiveVote('call-vote', 'первую')
+check('an answer is delivered to the run that asked, not the open tab', voteSeen.some(([r, v]) => v === 'call-vote' && r === runIdB), JSON.stringify(voteSeen))
+useStore.getState().selectThread(b)
+
 // A finishes; B keeps working
 useStore.getState().handleEvent({ type: 'run-end', runId: runIdA, reason: 'done' })
 const after = useStore.getState()
 check('ending one run does not end the other', !!after.runs[b] && after.running === true, JSON.stringify(Object.keys(after.runs)))
 check('the ended run is removed from the list', !after.runs[a])
+
+// Approval: the modal must name the session that asked, and the decision must go
+// back to that run even when another session is on screen.
+const approvals = []
+window.comb.agent.approve = async (runId, callId, decision) => { approvals.push([runId, callId, decision]) }
+const liveB = useStore.getState().runs[b] ? runIdB : useStore.getState().runs[a].runId
+const liveThread = useStore.getState().runs[b] ? b : a
+const otherThread = liveThread === a ? b : a
+useStore.getState().handleEvent({
+  type: 'tool-approval-request',
+  runId: liveB,
+  call: { id: 'call-write', name: 'write_file', args: { path: 'x.txt' } }
+})
+useStore.getState().selectThread(otherThread)
+const pending = useStore.getState()
+check('an approval from a background session is attributed to it', pending.approvalThreadId === liveThread && pending.approvalRunId === liveB, `${pending.approvalThreadId} / ${pending.approvalRunId}`)
+// and it survives a tab switch: the session that asked is still blocked
+useStore.getState().selectThread(liveThread)
+check('switching tabs does not lose a pending approval', useStore.getState().approvalRunId === liveB, String(useStore.getState().approvalRunId))
+await useStore.getState().approve('allow')
+check('the decision goes to the run that asked', approvals.some(([r, c, d]) => r === liveB && c === 'call-write' && d === 'allow'), JSON.stringify(approvals))
+useStore.getState().selectThread(b)
 
 // stopping is per session
 await useStore.getState().stopRun()

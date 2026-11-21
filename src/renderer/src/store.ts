@@ -503,11 +503,18 @@ export const useStore = create<State & Actions>((set, get) => ({
       activeThreadId: id,
       changedFiles: [],
       notes: thread?.notes ?? [],
-      // Switching to a session that is working restores its own live state: the
-      // approval card it is waiting on, the step it is on, and its message id.
-      pendingApproval: null,
-      approvalRunId: null,
-      approvalThreadId: null,
+      // Switching sessions restores the live state of the one you switched to —
+      // but an *approval* is not tab state. When it is answered the agent that
+      // asked keeps working, and while it is unanswered that agent is blocked.
+      // Clearing it on a tab switch lost the request and left a background session
+      // waiting on a card nobody could see any more. So it stays, labelled with
+      // the session it belongs to, until it is answered or its run ends.
+      // Keep it wherever it belongs: an approval for *this* session is this
+      // session's live state, an approval for another one is still owed to that
+      // one. Only a run that ended clears it (in `run-end`).
+      pendingApproval: get().pendingApproval,
+      approvalRunId: get().approvalRunId,
+      approvalThreadId: get().approvalThreadId,
       retryInfo: null,
       activity: null,
       activeRole: null,
@@ -682,13 +689,26 @@ export const useStore = create<State & Actions>((set, get) => ({
   },
 
   answerLiveVote: async (voteId: string, answer: string) => {
-    // the run is still going: the answer goes into the live run, the transcript
-    // only records it
-    const runId = get().runId
+    // The answer goes back to the run that asked the question. With two sessions
+    // in flight, `get().runId` is the session on screen — answering a question
+    // from the background one used to deliver the answer to the wrong agent, and
+    // the question it was meant for timed out. Find the asker by the vote id.
+    const st = get()
+    let asker: string | null = null
+    let askerThread: string | null = null
+    for (const t of st.threads) {
+      const vote = t.messages.find((m) => m.vote?.id === voteId)?.vote
+      if (vote) {
+        asker = vote.runId || st.runs[t.id]?.runId || null
+        askerThread = t.id
+        break
+      }
+    }
+    const runId = asker || (askerThread ? st.runs[askerThread]?.runId : undefined) || st.runId
     if (runId) await window.comb.agent.vote(runId, voteId, answer)
     set((s) => ({
       threads: s.threads.map((t) =>
-        t.id === get().activeThreadId
+        t.id === (askerThread || get().activeThreadId)
           ? {
               ...t,
               messages: t.messages.map((m) =>
@@ -752,14 +772,26 @@ export const useStore = create<State & Actions>((set, get) => ({
     // Events belong to the run that produced them, not to the tab the user has
     // open. Writing them into the active thread is what made a session look like
     // it had "just stopped": its output was landing in the other conversation.
+    // A run is not one id: the team runs `run:build`, `run:review`, and the goal
+    // opens `run:goal2`, `run:goal3`. Comparing ids exactly found no owner for
+    // every stage after the first, and the fallback below then poured that stage
+    // into whichever session happened to be on screen — the "messages from one
+    // session arrive in another" the user sees. Prefix match, longest first, so
+    // `run7` never claims the events of `run70`.
     const owner =
-      Object.entries(state.runs).find(([, r]) => r.runId === e.runId)?.[0] ??
-      // fall back to the active thread only if this run is not tracked at all
-      state.activeThreadId
+      Object.entries(state.runs).find(([, r]) => e.runId === r.runId)?.[0] ??
+      Object.entries(state.runs).find(([, r]) => e.runId.startsWith(`${r.runId}:`))?.[0] ??
+      // last resort: the session the main process stamped on the event
+      (e.threadId ? state.threads.find((t) => t.id === e.threadId)?.id : undefined) ??
+      // and only if the event belongs to nothing we track at all, the open tab —
+      // never for an event that belongs to a run we know
+      (e.runId ? undefined : state.activeThreadId)
     const threadId = owner ?? null
     if (!threadId) return
     const activeRun = state.runs[threadId]
-    const messageId = activeRun ? activeRun.messageId : state.streamingMessageId
+    // Same story for the message: a child stage writes into the bubble of the
+    // session on screen if we let it fall back while another session is streaming.
+    const messageId = activeRun ? activeRun.messageId : state.activeThreadId === threadId ? state.streamingMessageId : undefined
 
     const updateAssistant = (fn: (m: ChatMessage) => ChatMessage): void => {
       set((s) => ({
@@ -924,7 +956,7 @@ export const useStore = create<State & Actions>((set, get) => ({
           if (question && opts.length >= 2) {
             updateAssistant((m) => ({
               ...m,
-              vote: { id: e.call.id, question, options: opts.slice(0, 4), recommend: e.call.args?.recommend }
+              vote: { id: e.call.id, question, options: opts.slice(0, 4), recommend: e.call.args?.recommend, runId: e.runId }
             }))
           }
         }

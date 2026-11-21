@@ -336,8 +336,24 @@ function registerIpc(): void {
   ipcMain.handle('git:checkout', (_e, root: string, p: string) => git(['checkout', '--', p], root))
 
   /* agent */
+  /**
+   * Which session an event belongs to.
+   *
+   * The renderer knows the run id it started, but a run is a family of ids:
+   * `run:build`, `run:review`, `run:goal3`. Stamping the session here — where the
+   * run was started and the request is in hand — means the renderer never has to
+   * guess, and a stage can never surface in the wrong conversation.
+   */
+  const runThreads = new Map<string, string>()
+  const threadOfRun = (runId: string): string | undefined => {
+    const exact = runThreads.get(runId)
+    if (exact) return exact
+    const base = [...runThreads.keys()].find((k) => runId.startsWith(`${k}:`))
+    return base ? runThreads.get(base) : undefined
+  }
   const emit = (e: AgentEvent): void => {
-    mainWindow?.webContents.send('agent:event', e)
+    const threadId = e.threadId || threadOfRun(e.runId) || runThreads.get(e.type === 'run-start' ? e.runId : '')
+    mainWindow?.webContents.send('agent:event', threadId ? { ...e, threadId } : e)
     // Native toast for the things worth interrupting someone for. Clicking it
     // brings the window back instead of leaving them hunting for it.
     if (e.type === 'notify' && Notification.isSupported()) {
@@ -359,10 +375,17 @@ function registerIpc(): void {
     // approvals are dispatched by the agent loop through agent.ts' resolver;
     // the renderer answers via the 'agent:approve' channel below.
     // the team, not a single agent: author -> builder -> author review
-    return runTeam(req, {
-      emit,
-      requestApproval: async () => 'deny'
-    })
+    runThreads.set(req.runId, req.threadId)
+    try {
+      return await runTeam(req, {
+        emit,
+        requestApproval: async () => 'deny'
+      })
+    } finally {
+      // keep the mapping a moment past the end: the last events of a run are
+      // emitted while it unwinds, and dropping the key first would unplace them
+      setTimeout(() => runThreads.delete(req.runId), 60_000)
+    }
   })
   ipcMain.handle('agent:approve', (_e, runId: string, callId: string, decision: 'allow' | 'allow-always' | 'deny') => {
     resolveApproval(runId, callId, decision)

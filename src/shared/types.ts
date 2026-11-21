@@ -392,6 +392,8 @@ export interface AgentVote {
   auto?: string
   /** false once the agent is already past it and the answer only adjusts the plan */
   live?: boolean
+  /** the run that asked: an answer must go back to it, not to the open tab */
+  runId?: string
 }
 
 export interface FileDiff {
@@ -566,7 +568,18 @@ export interface Checkpoint {
 /* Agent streaming events (main -> renderer)                           */
 /* ------------------------------------------------------------------ */
 
-export type AgentEvent =
+/**
+ * Every event carries the session it belongs to.
+ *
+ * The renderer tracks runs by id, but a run is never one id — the team opens
+ * `run:build` and `run:review`, the goal opens `run:goal2`. Without the session on
+ * the event itself, a stage that the renderer could not place landed in whatever
+ * conversation was open, and the user watched one session's work appear in
+ * another. The id travels from the main process so placing it is never a guess.
+ */
+export type AgentEvent = (AgentEventBody & { threadId?: string })
+
+export type AgentEventBody =
   | { type: 'run-start'; runId: string; threadId: string; messageId: string }
   /** who is speaking right now: the author talks to the user, the builder works */
   | { type: 'role'; runId: string; role: AgentRole; phase: 'thinking' | 'working' | 'review' }
