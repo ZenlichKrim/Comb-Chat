@@ -788,10 +788,27 @@ export function ChatPane(): React.ReactElement {
                       onChange={(v) => void setSettings({ capabilities: { ...caps, planner: v as 'auto' | 'always' | 'off' } })}
                     />
                     <div className="composer-menu-sep" />
+                    {/* The switch that changes the whole character of a run, one
+                        click away: checked work is for code that must not break,
+                        free work is for making something that has to be good. */}
                     <button
                       className="composer-menu-item"
-                      data-on={settings.stableMode}
+                      data-on={(settings.freedom || 'checked') === 'free'}
                       onClick={() => {
+                        setMenu(false)
+                        void setSettings({ freedom: (settings.freedom || 'checked') === 'free' ? 'checked' : 'free' })
+                      }}
+                    >
+                      <Icon name="sparkles" size={12} className={(settings.freedom || 'checked') === 'free' ? 'acc' : 'faint'} />
+                      {t('chat.freedomTip')}
+                      <span className="composer-menu-state">{(settings.freedom || 'checked') === 'free' ? t('set.freedomFree') : t('set.freedomChecked')}</span>
+                    </button>
+                    <button
+                      className="composer-menu-item"
+                      data-on={settings.stableMode && (settings.freedom || 'checked') !== 'free'}
+                      data-disabled={(settings.freedom || 'checked') === 'free' || undefined}
+                      onClick={() => {
+                        if ((settings.freedom || 'checked') === 'free') return
                         setMenu(false)
                         void setSettings({ stableMode: !settings.stableMode })
                       }}

@@ -274,10 +274,26 @@ export function SettingsDialog(): React.ReactElement {
 
               {/* stability: the guarantees that make an unattended run safe */}
               <div className="setting-group-title">{t('set.stableGroup')}</div>
+              {/* The one switch that decides how much the app holds the agent to
+                  a checklist. Read first, because it changes everything below. */}
+              <Field label={t('set.freedom')} hint={t('set.freedomHint')}>
+                <div className="segmented">
+                  {(['checked', 'free'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      data-active={(settings.freedom || 'checked') === mode}
+                      onClick={() => void setSettings({ freedom: mode })}
+                    >
+                      {mode === 'checked' ? t('set.freedomChecked') : t('set.freedomFree')}
+                    </button>
+                  ))}
+                </div>
+              </Field>
               <Toggle
                 label={t('set.stableMode')}
                 hint={t('set.stableModeHint')}
                 value={settings.stableMode !== false}
+                disabled={(settings.freedom || 'checked') === 'free'}
                 onChange={(v) => void setSettings({ stableMode: v })}
               />
               <Row label={t('set.goalRounds')} hint={t('set.goalRoundsHint')}>
@@ -574,9 +590,9 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-function Toggle({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }): React.ReactElement {
+function Toggle({ label, hint, value, onChange, disabled }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void; disabled?: boolean }): React.ReactElement {
   return (
-    <button className="setting-row as-button" onClick={() => onChange(!value)}>
+    <button className="setting-row as-button" disabled={disabled} data-disabled={disabled || undefined} onClick={() => !disabled && onChange(!value)}>
       <div className="col" style={{ gap: 2, alignItems: 'flex-start' }}>
         <span className="t-sm" style={{ color: 'var(--fg-0)' }}>{label}</span>
         {hint && <span className="t-xs faint" style={{ textAlign: 'left' }}>{hint}</span>}

@@ -328,6 +328,45 @@ events.length = 0
 await runTeam({ ...req, maxSteps: 5, capabilities: { edit: 'auto', run: 'auto', planner: 'off' }, userMessage: { id: 'u7', role: 'user', content: 'Запиши hello в plain.txt.', createdAt: Date.now() } }, deps)
 check('a non-visual task is not nagged about previews', !events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
 
+/* ------------------------------------------------------------------ */
+/* 11. free mode: one mind, no gates, still eyes                      */
+/* ------------------------------------------------------------------ */
+console.log('free mode:')
+const { setSettings } = await import('../src/main/store.ts')
+const setFreedom = async (mode) => {
+  await setSettings({ freedom: mode })
+}
+script = [
+  { text: 'Делаю страницу.', tool: { name: 'write_file', args: { path: 'free.html', content: '<!doctype html><html><body><h1>x</h1></body></html>' } } },
+  { text: 'Готово.', tool: { name: 'finish', args: { summary: 'Страница готова, проверил.', work_done: true } } },
+  finalText('Страница free.html готова.')
+]
+events.length = 0
+requests = []
+await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, userMessage: { id: 'u8', role: 'user', content: 'Сделай красивую страницу free.html, как хочешь.', createdAt: Date.now() } }, deps)
+// write settings first, then run
+await setFreedom('free')
+events.length = 0
+requests = []
+script = [
+  { text: 'Придумал: тёмный фон, крупный заголовок, узкая колонка.', tool: { name: 'write_file', args: { path: 'free.html', content: '<!doctype html><html><body style="background:#14110e;color:#f4ece1"><h1>Comb</h1></body></html>' } } },
+  finalText('Сделал свободную версию free.html.')
+]
+const freeRes = await runTeam({ ...req, maxSteps: 6, capabilities: { edit: 'auto', run: 'auto', planner: 'auto' }, userMessage: { id: 'u9', role: 'user', content: 'Сделай красивую страницу free.html, как хочешь.', createdAt: Date.now() } }, deps)
+// the first request of a run is the background file-labeller; the run's own
+// system prompt is the one that introduces the agent
+const sys = String(requests.map((r) => r.messages?.[0]?.content || '').find((c) => /You are Comb/.test(c)) || '')
+check('free mode runs without a contract round', !events.some((e) => e.type === 'guard' && e.kind === 'contract'), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 200))
+check('free mode has no separate checker', !events.some((e) => e.type === 'spec-check'), 'a spec report was produced in free mode')
+check('free mode runs one agent, not a team', requests.length >= 1 && !events.some((e) => e.type === 'role' && e.role === 'author'), 'the author ran in free mode')
+check('the prompt grants room to invent', /Room to invent/i.test(sys), sys.slice(0, 120))
+check('the run still finishes', freeRes.ok === true, JSON.stringify(freeRes))
+// free mode does not put a gate in front of finish: the permission to invent is
+// also the permission to decide when a thing is good
+check('free mode does not gate "done"', !events.some((e) => e.type === 'guard' && /видел|look/i.test(`${e.title || ''}${e.detail || ''}`)), JSON.stringify(events.filter((e) => e.type === 'guard')).slice(0, 240))
+check('free mode still ships the file it made', /Сделал свободную версию|free\.html/.test(text()), text().slice(0, 200))
+await setFreedom('checked')
+
 server.close()
 console.log(`\nagent harness: ${pass + fail} checks, ${pass} passed${fail ? `, ${fail} FAILED` : ''}`)
 process.exit(fail ? 1 : 0)

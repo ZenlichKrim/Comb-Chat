@@ -215,6 +215,16 @@ export interface Settings {
   goalRounds: number
   /** .comb/memory.md: decisions the author carries between sessions */
   projectMemory: boolean
+  /**
+   * How much the app is allowed to hold the agent to a checklist.
+   *
+   * checked (the default) is the professional pass: a contract, a verification
+   * step, an independent checker, review rounds. It is what production work
+   * needs, and it is also what makes a creative task come out safe and dull —
+   * six gates and no room to invent. free drops the gates and keeps the one
+   * rule that matters: look at your own result before calling it done.
+   */
+  freedom: 'checked' | 'free'
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -262,7 +272,8 @@ export const DEFAULT_SETTINGS: Settings = {
   capabilities: { edit: 'ask', run: 'ask', planner: 'auto' },
   planner: 'auto',
   reviewPass: true,
-  projectMemory: true
+  projectMemory: true,
+  freedom: 'checked'
 }
 
 /* ------------------------------------------------------------------ */

@@ -151,6 +151,8 @@ function systemPrompt(opts: {
   custom: string
   contextFiles: string[]
   locale: string
+  /** no gates: the creative session, where invention is the point */
+  free?: boolean
 }): string {
   const extra = (opts.roots || []).slice(1)
   const rootsLine = extra.length
@@ -199,6 +201,9 @@ ${rootsLine}${extra.length ? '\nGlob and grep search all of them; results from e
 # No workspace open
 The user has not opened a folder. You cannot read or write files. Answer questions, explain code, design architecture — and tell them to open a workspace (⌘/Ctrl+O) when they need edits.`
 
+  const freeLine = opts.free
+    ? `\n# Room to invent\n- Nobody is checking your work against a list in this session. That is not permission to be sloppy; it is permission to be good. Pick the version you would be proud of, then prove it works the way you usually would.\n- Your taste is part of the deliverable. For anything seen, heard or played: composition, rhythm, contrast, timing, the moment worth a screenshot. Decide it deliberately and say what you chose.\n- Invent beyond the request when the invention makes the thing better, and tell the user in one line what you added. A safe, literal result is the failure here — the user asked for this because literal is what they already got.\n`
+    : ''
   return `You are Comb, a precise and senior software engineering agent running inside a desktop IDE called Comb Chat. You work directly on the user's machine.
 
 # Environment
@@ -239,7 +244,7 @@ ${opts.contextFiles.length ? `\n# Files the user is looking at\n${opts.contextFi
 - Never print, log or commit secrets. Never send data to endpoints other than the configured model API.
 - Do not create git commits unless the user asks.
 
-# Installed workspace context
+${freeLine}# Installed workspace context
 ${opts.contextFiles.length ? '' : '—'}${opts.custom ? `\n\n# Project / user instructions (highest priority)\n${opts.custom}` : ''}`
 }
 
@@ -410,6 +415,9 @@ export async function runAgent(
 
   const role = roleEarly
   const caps = capEarly
+  // Free mode is the creative setting, read before the prompt is built: it is as
+  // much a tone as a switch.
+  const free = (await getSettings()).freedom === 'free'
   const policy = earlyPolicy
 
   // Project memory: decisions the author carries between sessions, so a run
@@ -428,7 +436,8 @@ export async function runAgent(
           fullDisk,
           custom: req.customInstructions || settings.customInstructions || '',
           contextFiles: (req.openFiles || []).map((f) => f.rel),
-          locale: settings.locale || 'en'
+          locale: settings.locale || 'en',
+          free
         })
       : role === 'author'
         ? authorPrompt({
@@ -561,7 +570,12 @@ export async function runAgent(
   /* --- stable-mode state ------------------------------------------------ */
   // Stability is the baseline of this build, not a switch at the bottom of the
   // composer: the guards below run unless someone explicitly opts out.
-  const stableMode = req.mode ? req.mode === 'stable' : settings.stableMode !== false
+  // Free mode is the creative setting: the same agent, without the six gates.
+  // What stays is what protects the work from itself (a repeated failing call, a
+  // "done" with nothing done, a design nobody looked at); what goes is the
+  // contract, the verification pass, the reviewer and the goal rounds — the
+  // machinery that makes a good implementation and a dull invention.
+  const stableMode = free ? false : req.mode ? req.mode === 'stable' : settings.stableMode !== false
   /** rounds of pure reading allowed before the agent is told to act */
   const MAX_IDLE_READS = 14
   /** consecutive idle rounds before the "stop researching, do something" nudge */
@@ -1959,6 +1973,14 @@ export async function runTeam(req: RunRequest, deps: AgentDeps): Promise<TeamRes
   const caps: Capabilities =
     req.capabilities || settings.capabilities || { edit: 'ask', run: 'ask', planner: 'auto' }
   const text = req.userMessage?.content || ''
+  // Free mode is one mind, not a process: the same agent that designs also
+  // builds, and nobody hands it a checklist first. Splitting the roles was the
+  // fix for a single agent that answered a request with a plan; for creative work
+  // the split is what turns an idea into a ticket.
+  if ((settings.freedom || 'checked') === 'free') {
+    const res = await runAgent({ ...req, role: req.role || 'builder', roleMode: 'single' }, deps)
+    return { ok: res.ok, error: res.error, roles: ['builder'] }
+  }
   const plan = planRoles({ text, planner: caps.planner, substantial: text.length > 400 })
   // Main has no dictionary of its own: the two strings the app itself narrates
   // come from here so they read in the user's language like everything else.

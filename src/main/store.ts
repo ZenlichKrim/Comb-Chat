@@ -63,6 +63,7 @@ export async function getSettings(): Promise<Settings> {
   settingsCache.maxAgentSteps = num(settingsCache.maxAgentSteps, 40, 4, 200)
   settingsCache.maxTokens = num(settingsCache.maxTokens, 16384, 1024, 65536)
   settingsCache.goalRounds = num(settingsCache.goalRounds, 4, 1, 12)
+  settingsCache.freedom = settingsCache.freedom === 'free' ? 'free' : 'checked'
   settingsCache.terminalFontSize = num(settingsCache.terminalFontSize, 13, 9, 24)
   // deepseek-chat / deepseek-reasoner were retired by the API on 2026-07-24
   const legacy: Record<string, string> = {
